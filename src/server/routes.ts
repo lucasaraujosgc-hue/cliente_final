@@ -459,6 +459,9 @@ export function setupRoutes(app: Express) {
         delete webhookNotificationTimers[clientId];
 
         try {
+          const config = await db.select().from(serproConfig).where(eq(serproConfig.usuarioId, 1)).limit(1);
+          const multipleFilesText = config[0]?.multipleFilesText || "Vários arquivos recebidos";
+
           const rules = await db.select().from(scheduledNotifications)
             .where(eq(scheduledNotifications.type, 'on_file_available'));
           
@@ -476,7 +479,7 @@ export function setupRoutes(app: Express) {
               } else {
                 title = `Novos Documentos Recebidos (${docs.length})`;
                 let docsList = docs.map((d: any) => `- ${d.title || "Documento"}`).join('\\n');
-                body = body.replace(/\[NOME_GUIA\]/g, `Vários arquivos recebidos:\\n${docsList}`)
+                body = body.replace(/\[NOME_GUIA\]/g, `${multipleFilesText}:\\n${docsList}`)
                            .replace(/\[CATEGORIA\]/g, "Múltiplas Categorias")
                            .replace(/\[VENCIMENTO\]/g, "Verificar no sistema");
               }
@@ -2223,6 +2226,7 @@ export function setupRoutes(app: Express) {
           cnpjContratante: config[0].cnpjContratante,
           ambiente: config[0].ambiente,
           whatsappSupport: config[0].whatsappSupport,
+          multipleFilesText: config[0].multipleFilesText,
           updatedAt: config[0].updatedAt,
           hasSecret: !!config[0].consumerSecret,
           hasCert: certExists,
@@ -2250,6 +2254,7 @@ export function setupRoutes(app: Express) {
           cnpjContratante,
           ambiente,
           whatsappSupport,
+          multipleFilesText,
         } = req.body;
 
         const updateData: any = {
@@ -2258,6 +2263,7 @@ export function setupRoutes(app: Express) {
           cnpjContratante,
           ambiente,
           whatsappSupport,
+          multipleFilesText,
         };
 
         if (certSenha) updateData.certSenha = certSenha;

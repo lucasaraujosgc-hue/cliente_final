@@ -14,7 +14,8 @@ export function Settings() {
     certSenha: "",
     cnpjContratante: "",
     ambiente: "trial",
-    whatsappSupport: ""
+    whatsappSupport: "",
+    multipleFilesText: ""
   });
   const [certFile, setCertFile] = useState<File | null>(null);
   const [hasSavedCert, setHasSavedCert] = useState(false);
@@ -38,7 +39,8 @@ export function Settings() {
           certSenha: data.config.certSenha || "",
           cnpjContratante: data.config.cnpjContratante || "",
           ambiente: data.config.ambiente || "trial",
-          whatsappSupport: data.config.whatsappSupport || ""
+          whatsappSupport: data.config.whatsappSupport || "",
+          multipleFilesText: data.config.multipleFilesText || "Novos documentos foram adicionados ao seu painel."
         });
         setHasSavedCert(!!data.config.hasCert);
         setCertMissing(!!data.config.certMissing);
@@ -68,6 +70,7 @@ export function Settings() {
       payload.append("cnpjContratante", formData.cnpjContratante);
       payload.append("ambiente", formData.ambiente);
       payload.append("whatsappSupport", formData.whatsappSupport);
+      payload.append("multipleFilesText", formData.multipleFilesText);
       if (certFile) {
         payload.append("cert", certFile);
       }
@@ -125,6 +128,17 @@ export function Settings() {
                   onChange={e => setFormData({ ...formData, whatsappSupport: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
                   placeholder="Ex: 5511999999999"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Texto p/ Múltiplos Arquivos</label>
+                <input
+                  type="text"
+                  value={formData.multipleFilesText}
+                  onChange={e => setFormData({ ...formData, multipleFilesText: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                  placeholder="Ex: Novos documentos foram adicionados."
                 />
               </div>
             </div>

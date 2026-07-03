@@ -45,7 +45,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
           const normalized = textContent.items
             .map((item: any) => item.str)
             .join("")
-            .replace(/\s+/g, "");
+            .replace(/[\r\n\t]+/g, "");
 
           const isFGTSDigital =
             pageText.includes("GFD - Guia do FGTS Digital") ||
@@ -197,7 +197,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+5802BR[\s\S]+6304[A-Fa-f0-9]{4}/i;
             const fullMatch = pageText.match(pixRegex);
             if (fullMatch) {
-              foundCode = fullMatch[0].replace(/\s+/g, "");
+              foundCode = fullMatch[0].replace(/[\r\n\t]+/g, "");
               break;
             }
             const normalizedMatch = normalized.match(pixRegex);
@@ -328,21 +328,18 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   return (
     <button
       onClick={handleCopyClick}
-      className={`h-10 px-3 w-full sm:w-auto border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
+      className={`h-10 px-3 w-full sm:w-auto border text-xs font-bold rounded-xl transition-all flex items-center justify-center relative ${
         copied
           ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400"
           : "bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300"
       }`}
     >
-      {copied ? (
-        <span className="font-bold flex items-center gap-1">
-          <Check className="w-3.5 h-3.5" /> Pix Copiado!
-        </span>
-      ) : (
-        <span className="flex items-center gap-1 font-bold">
-          <Copy className="w-3 h-3 text-indigo-400" /> Copiar QrCode Pix
-        </span>
-      )}
+      <span className={`flex items-center gap-1 font-bold transition-opacity ${copied ? "opacity-0" : "opacity-100"}`}>
+        <Copy className="w-3 h-3 text-indigo-400" /> Copiar QrCode Pix
+      </span>
+      <span className={`absolute inset-0 flex items-center justify-center gap-1 font-bold transition-opacity ${copied ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        <Check className="w-3.5 h-3.5" /> Pix Copiado!
+      </span>
     </button>
   );
 }

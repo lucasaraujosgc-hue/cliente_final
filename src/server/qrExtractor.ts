@@ -31,9 +31,9 @@ const CONFIG = {
 function normalizePixPayload(value: string | null | undefined): string | null {
   if (!value) return null;
 
-  // Remove espaços, quebras de linha e caracteres não imprimíveis
+  // Remove quebras de linha, tabs e caracteres não-ASCII, preservando espaços normais
   let cleaned = value
-    .replace(/[\s\r\n\t]+/g, "")
+    .replace(/[\r\n\t]+/g, "")
     .replace(/[^\x20-\x7E]/g, "") // Remove caracteres não-ASCII
     .trim();
   
@@ -74,7 +74,7 @@ function extractPixFromText(text: string): string | null {
   }
 
   // Busca manual por 000201
-  const cleaned = text.replace(/[\s\r\n\t]+/g, "");
+  const cleaned = text.replace(/[\r\n\t]+/g, "");
   const start = cleaned.indexOf("000201");
   if (start === -1) return null;
   

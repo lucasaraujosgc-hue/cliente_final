@@ -3,6 +3,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { UploadCloud, Folder, FileIcon, Eye, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { handleFileAction } from "../../lib/utils";
 
 export function ClientUploads() {
   const [docs, setDocs] = useState<any[]>([]);
@@ -95,16 +96,13 @@ export function ClientUploads() {
                 
                 <div className="flex items-center gap-2 self-end sm:self-center">
                   {doc.fileUrl && (
-                    <a 
-                      href={doc.fileUrl} 
-                      target="_blank" 
-                      referrerPolicy="no-referrer"
-                      rel="noreferrer"
-                      className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors"
+                    <button 
+                      onClick={() => handleFileAction(doc.fileUrl, 'download', doc.title || 'documento')}
+                      className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors cursor-pointer"
                       title="Baixar Arquivo"
                     >
                       <Download className="w-3.5 h-3.5" />
-                    </a>
+                    </button>
                   )}
                 </div>
               </div>

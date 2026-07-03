@@ -32,6 +32,7 @@ import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
+import { handleFileAction } from "../../lib/utils";
 
 export function ClientDashboard() {
   const location = useLocation();
@@ -42,6 +43,9 @@ export function ClientDashboard() {
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => {
+    return 'Notification' in window ? Notification.permission : 'default';
+  });
   const [showPwaBanner, setShowPwaBanner] = useState(() => {
     return localStorage.getItem("dismissPwaBanner_v2") !== "true";
   });
@@ -211,8 +215,14 @@ export function ClientDashboard() {
         });
         console.log("Push notifications subscribed!");
       }
+      if ('Notification' in window) {
+         setNotificationPermission(Notification.permission);
+      }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
+      if ('Notification' in window) {
+         setNotificationPermission(Notification.permission);
+      }
     }
   };
 
@@ -400,8 +410,10 @@ export function ClientDashboard() {
       return { label: "Atrasado 🔴", colorClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/50 shadow-sm", badgeColor: "bg-rose-500", priority: 0, isOverdue: true };
     }
     
-    if (!doc.dueDate) {
-      return { label: "Sem Vencimento", colorClass: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-350", badgeColor: "bg-slate-400", priority: 4 };
+    const isSpecialCategory = ["contracheque", "notas fiscais", "nota fiscal", "outros", "payroll"].includes(doc.category?.toLowerCase() || "");
+
+    if (!doc.dueDate || isSpecialCategory) {
+      return { label: "Disponível ✓", colorClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", badgeColor: "bg-emerald-500", priority: 4 };
     }
 
     const todayDate = new Date(); // Use actual current date
@@ -502,7 +514,7 @@ export function ClientDashboard() {
             <div>
               <h4 className="font-extrabold text-sm sm:text-base tracking-tight">Dica de Aplicativo PWA 📱</h4>
               <p className="text-emerald-100 text-xs mt-1 leading-relaxed max-w-xl">
-                Acesse como aplicativo nativo! Toque em <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> em seu navegador móvel e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong> para enviar extratos e gerenciar vencimentos instantaneamente de seu celular.
+                Acesse como aplicativo nativo! No iOS, <strong className="text-white">esta ação deve ser feita obrigatoriamente através do navegador Safari</strong>: toque no botão de <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> (ícone de quadrado com uma seta para cima) e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong>. No Android, basta tocar nas opções do Chrome e escolher <strong className="text-white">"Instalar aplicativo"</strong>.
               </p>
             </div>
           </div>
@@ -521,10 +533,18 @@ export function ClientDashboard() {
       {/* HEADER SECTION */}
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
               Painel PWA Ativo
             </span>
+            {('Notification' in window) && Notification.permission !== 'granted' && (
+              <button 
+                onClick={() => subscribeToPush()}
+                className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition-colors cursor-pointer"
+              >
+                Ativar Notificações
+              </button>
+            )}
             {isRefreshing && (
               <span className="text-slate-400 text-xs flex items-center animate-pulse">
                 <RefreshCw className="w-3 h-3 animate-spin mr-1 text-slate-500" /> Sincronizando...
@@ -690,27 +710,20 @@ export function ClientDashboard() {
                             <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
                           {doc.fileUrl && (
                             <>
-                            <a 
-                              href={getAuthenticatedFileUrl(doc.fileUrl)} 
-                              target="_blank" 
-                              referrerPolicy="no-referrer"
-                              rel="noreferrer" 
-                              className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                            <button 
+                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'view', doc.title || 'documento')}
+                              className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Visualizar documento"
                             >
                               <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
-                            </a>
-                            <a 
-                              href={getAuthenticatedFileUrl(doc.fileUrl)} 
-                              target="_blank" 
-                              download
-                              referrerPolicy="no-referrer"
-                              rel="noreferrer" 
-                              className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                            </button>
+                            <button 
+                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'download', doc.title || 'documento')}
+                              className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Baixar Arquivo"
                             >
                               <Download className="w-3.5 h-3.5" />
-                            </a>
+                            </button>
                             </>
                           )}
 

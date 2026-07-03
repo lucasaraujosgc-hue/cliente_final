@@ -93,6 +93,7 @@ export const serproConfig = pgTable('serpro_config', {
   cnpjContratante: text('cnpj_contratante'),
   ambiente: text('ambiente').default('trial'),
   whatsappSupport: text('whatsapp_support'),
+  multipleFilesText: text('multiple_files_text'),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
