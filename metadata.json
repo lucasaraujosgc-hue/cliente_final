@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Portal do Cliente Contábil_final",
+  "description": "Plataforma de dupla via (Contador e Cliente) para gestão contábil, envio de documentos e integração via API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
