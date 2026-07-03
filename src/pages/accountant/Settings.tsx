@@ -130,17 +130,6 @@ export function Settings() {
                   placeholder="Ex: 5511999999999"
                 />
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Texto p/ Múltiplos Arquivos</label>
-                <input
-                  type="text"
-                  value={formData.multipleFilesText}
-                  onChange={e => setFormData({ ...formData, multipleFilesText: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                  placeholder="Ex: Novos documentos foram adicionados."
-                />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

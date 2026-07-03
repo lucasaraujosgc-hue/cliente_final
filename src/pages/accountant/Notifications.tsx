@@ -16,7 +16,7 @@ export function AccountantNotifications() {
   // Scheduled notification form
   const [formScheduled, setFormScheduled] = useState({
     clientId: "",
-    type: "3_days_before", // 'recurrent', '3_days_before', 'on_due_date', 'on_file_available'
+    type: "3_days_before", // 'recurrent', '3_days_before', 'on_due_date', 'on_file_available', 'on_multiple_files_available'
     title: "Lembrete: Vencimento da Guia [NOME_GUIA]",
     body: "Olá! Lembramos que sua guia [NOME_GUIA] vence em [VENCIMENTO]. Efetue o pagamento para evitar multas.",
     scheduleDay: "5", // Default day of month for recurrent
@@ -216,6 +216,7 @@ export function AccountantNotifications() {
       case "3_days_before": return "Faltando 3 Dias p/ Vencimento";
       case "on_due_date": return "No Dia do Vencimento";
       case "on_file_available": return "Assim que a Guia for Disponibilizada";
+      case "on_multiple_files_available": return "Assim que Várias Guias forem Disponibilizadas";
       default: return type;
     }
   };
@@ -397,6 +398,9 @@ export function AccountantNotifications() {
                       } else if (t === "on_file_available") {
                         title = "Nova Guia Disponível: [CATEGORIA]";
                         body = "Sua guia da categoria [CATEGORIA] está disponível no painel para pagamento. Vencimento: [VENCIMENTO].";
+                      } else if (t === "on_multiple_files_available") {
+                        title = "Novas Guias Disponíveis";
+                        body = "Os seguintes documentos estão disponíveis:\n[LISTA_GUIAS]";
                       }
                       setFormScheduled({...formScheduled, type: t, title, body});
                     }}
@@ -406,6 +410,7 @@ export function AccountantNotifications() {
                     <option value="on_due_date">No Dia do Vencimento de Guias</option>
                     <option value="recurrent">Recorrente Mensal (Lembrete de Faturamento)</option>
                     <option value="on_file_available">Assim que a guia for disponibilizada</option>
+                    <option value="on_multiple_files_available">Assim que várias guias forem disponibilizadas (lote)</option>
                   </select>
                 </div>
 
@@ -424,7 +429,7 @@ export function AccountantNotifications() {
                   </div>
                 )}
 
-                {formScheduled.type !== "on_file_available" && (
+                {formScheduled.type !== "on_file_available" && formScheduled.type !== "on_multiple_files_available" && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Horário de Envio (Brasília UTC-3)</label>
                     <input
@@ -455,9 +460,9 @@ export function AccountantNotifications() {
                     onChange={e => setFormScheduled({...formScheduled, body: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
                   />
-                  {(formScheduled.type === "3_days_before" || formScheduled.type === "on_due_date" || formScheduled.type === "on_file_available") && (
+                  {(formScheduled.type === "3_days_before" || formScheduled.type === "on_due_date" || formScheduled.type === "on_file_available" || formScheduled.type === "on_multiple_files_available") && (
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Variáveis aceitas: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[NOME_GUIA]</code>, <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[VENCIMENTO]</code> e <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[CATEGORIA]</code>
+                      Variáveis aceitas: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[NOME_GUIA]</code>, <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[VENCIMENTO]</code>, <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[CATEGORIA]</code>{formScheduled.type === "on_multiple_files_available" && <span> e <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[LISTA_GUIAS]</code></span>}
                     </span>
                   )}
                 </div>
