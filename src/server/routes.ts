@@ -1561,6 +1561,35 @@ export function setupRoutes(app: Express) {
     },
   );
 
+
+  app.post(
+    "/api/accountant/client/:id/reset-password",
+    verifyAccountantAuth,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const clientList = await db.select().from(clients).where(eq(clients.id, id));
+        if (clientList.length === 0) {
+          return res.status(404).json({ error: "Cliente não encontrado" });
+        }
+        
+        const client = clientList[0];
+        const cleanCnpj = client.cnpj.replace(/\D/g, "");
+        
+        await db.update(clients)
+          .set({ 
+             passwordHash: cleanCnpj,
+             firstAccessDone: false
+          })
+          .where(eq(clients.id, id));
+          
+        res.json({ success: true });
+      } catch (e: any) {
+        res.status(400).json({ error: e.message });
+      }
+    }
+  );
+
   app.put(
     "/api/accountant/client/:id",
     verifyAccountantAuth,
@@ -2055,6 +2084,18 @@ export function setupRoutes(app: Express) {
 
         const targetClient = clientList[0];
 
+        let finalFileUrl = null;
+        if (arquivoBase64) {
+           const match = arquivoBase64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+           if (match) {
+              const buffer = Buffer.from(match[2], 'base64');
+              const safeFilename = `${Date.now()}_${nomeArquivo || "documento.pdf"}`;
+              const filePath = path.join(UPLOADS_DIR, safeFilename);
+              fs.writeFileSync(filePath, buffer);
+              finalFileUrl = `/uploads/${safeFilename}`;
+           }
+        }
+
         // Create document
         const [newDoc] = await db
           .insert(documents)
@@ -2065,7 +2106,7 @@ export function setupRoutes(app: Express) {
             dueDate: dataVencimento || null,
             status: "new",
             uploadedBy: "accountant",
-            fileUrl: arquivoBase64,
+            fileUrl: finalFileUrl,
           })
           .returning();
 
