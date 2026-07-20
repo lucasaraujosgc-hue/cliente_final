@@ -478,7 +478,7 @@ export function setupRoutes(app: Express) {
           } else {
             const multiRules = await db.select().from(scheduledNotifications)
               .where(eq(scheduledNotifications.type, 'on_multiple_files_available'));
-            let docsList = docs.map((d: any) => d.category || "Documento").join(', ');
+            let docsList = docs.map((d: any) => `- ${d.title || "Documento"}`).join('\\n');
             for (const rule of multiRules) {
               if (!rule.clientId || rule.clientId === clientId) {
                 let title = (rule.title || `Novos Documentos Recebidos (${docs.length})`)

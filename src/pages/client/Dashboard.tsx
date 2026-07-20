@@ -830,7 +830,7 @@ export function ClientDashboard() {
         {/* Stat 3: Guias em Atraso Geral */}
         <div 
           className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${allOverdueDocs.length > 0 ? 'cursor-pointer hover:shadow-md ring-2 ring-rose-500/20' : 'hover:shadow-md cursor-pointer'}`}
-          onClick={() => navigate('/client/overdue')}
+          onClick={() => navigate('/overdue')}
         >
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">GUIAS EM ATRASO GERAL</p>

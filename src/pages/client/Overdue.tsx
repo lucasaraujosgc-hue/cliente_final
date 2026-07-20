@@ -241,21 +241,20 @@ export function ClientOverdue() {
                           Pago
                         </button>
                       </div>
-                      {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.category === "taxes" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
-                        <div className="w-full">
+                        <div className="w-full mt-2">
                           <GuiaAtualizarButton 
                             clienteId={doc.clientId}
                             guia={{
                               id: doc.id,
-                              tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
+                              tipoGuia: (doc.category === "DCTFWEB" || doc.category === "INSS" || doc.category?.toUpperCase()?.includes("INSS") || doc.title?.toUpperCase()?.includes("DCTFWEB") || doc.title?.toUpperCase()?.includes("INSS")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.category?.toUpperCase()?.includes("SIMPLES") || doc.title?.toUpperCase()?.includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
                               competencia: doc.competence || "01/2026",
-                              status: doc.status
+                              status: doc.status,
+                              title: doc.title
                             }}
                             isOverdue={true}
                             onAtualizado={() => loadData()}
                           />
                         </div>
-                      )}
                     </div>
                   )}
                 </div>

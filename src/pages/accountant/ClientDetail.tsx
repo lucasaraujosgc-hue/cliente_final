@@ -119,6 +119,26 @@ export function ClientDetail() {
     return url;
   };
 
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("Tem certeza que deseja excluir este arquivo?")) return;
+    try {
+      const res = await apiFetch("/api/accountant/files/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds: [docId] })
+      }, "accountant");
+      if (res.ok) {
+        alert("Arquivo excluído com sucesso!");
+        loadData();
+      } else {
+        alert("Erro ao excluir arquivo");
+      }
+    } catch (e: any) {
+      alert("Erro de conexão: " + e.message);
+    }
+  };
+
   const loadData = () => {
     apiFetch(`/api/accountant/client/${id}`, {
       
@@ -652,6 +672,7 @@ export function ClientDetail() {
                      <button onClick={() => markDocStatus(doc.id, "paid")} title="Marcar como Em Dia / Pago" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
                         <CheckCircle className="w-4 h-4" />
                      </button>
+                     <button onClick={() => handleDeleteDoc(doc.id)} title="Excluir Arquivo" className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><Trash2 className="w-4 h-4" /></button>
                      {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && doc.status !== 'paid' && doc.status !== 'late' && (
                         <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
                            <Check className="w-4 h-4" />
