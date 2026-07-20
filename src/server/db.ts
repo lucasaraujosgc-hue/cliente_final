@@ -11,8 +11,9 @@ export const pool = new Pool({
 export const db = drizzle(pool, { schema });
 
 export async function initDb() {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     // Basic automatic table creation for quick testing if they don't exist
     await client.query(`
       CREATE TABLE IF NOT EXISTS "clients" (
@@ -157,7 +158,7 @@ export async function initDb() {
   } catch (err) {
     console.error("Failed to initialize database:", err);
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 
