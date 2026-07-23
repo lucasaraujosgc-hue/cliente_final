@@ -1,6 +1,6 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 
-// Certifique-se de que a variável de ambiente DATABASE_URL está disponível
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -9,10 +9,6 @@ async function run() {
   const client = await pool.connect();
   try {
     console.log("Iniciando a remoção de guias/documentos duplicados...");
-    
-    // A query abaixo identifica documentos com o mesmo:
-    // client_id, titulo, categoria, data de vencimento e competência.
-    // Ela mantém o registro mais antigo (ORDER BY created_at ASC) e exclui as duplicatas (row_num > 1).
     const sql = `
       WITH duplicates AS (
         SELECT id,
@@ -28,11 +24,9 @@ async function run() {
       )
       RETURNING id, title;
     `;
-    
     const result = await client.query(sql);
     console.log(`Limpeza concluída com sucesso!`);
     console.log(`${result.rowCount} registros duplicados foram removidos do banco de dados.`);
-    
   } catch(e) {
     console.error("Erro durante a execução:", e);
   } finally {

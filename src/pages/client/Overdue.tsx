@@ -252,7 +252,7 @@ export function ClientOverdue() {
                               title: doc.title
                             }}
                             isOverdue={true}
-                            onAtualizado={() => loadData()}
+                            onAtualizado={() => {}}
                           />
                         </div>
                     </div>
