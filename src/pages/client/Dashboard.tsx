@@ -43,9 +43,26 @@ export function ClientDashboard() {
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => {
-    return 'Notification' in window ? Notification.permission : 'default';
-  });
+  const [isCapacitorApp, setIsCapacitorApp] = useState(false);
+  const [pushGranted, setPushGranted] = useState(false);
+
+  useEffect(() => {
+    const checkPushState = async () => {
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+      setIsCapacitorApp(isCapacitor);
+      if (isCapacitor) {
+        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
+        if (PushNotifications) {
+          const status = await PushNotifications.checkPermissions();
+          setPushGranted(status.receive === 'granted');
+        }
+      } else if ('Notification' in window) {
+        setPushGranted(Notification.permission === 'granted');
+      }
+    };
+    checkPushState();
+  }, []);
+
   const [showPwaBanner, setShowPwaBanner] = useState(() => {
     return localStorage.getItem("dismissPwaBanner_v2") !== "true";
   });
@@ -215,13 +232,25 @@ export function ClientDashboard() {
         });
         console.log("Push notifications subscribed!");
       }
-      if ('Notification' in window) {
-         setNotificationPermission(Notification.permission);
+      if (isCapacitor) {
+        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
+        if (PushNotifications) {
+          const status = await PushNotifications.checkPermissions();
+          setPushGranted(status.receive === 'granted');
+        }
+      } else if ('Notification' in window) {
+        setPushGranted(Notification.permission === 'granted');
       }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
-      if ('Notification' in window) {
-         setNotificationPermission(Notification.permission);
+      if (isCapacitorApp) {
+        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
+        if (PushNotifications) {
+          const status = await PushNotifications.checkPermissions();
+          setPushGranted(status.receive === 'granted');
+        }
+      } else if ('Notification' in window) {
+        setPushGranted(Notification.permission === 'granted');
       }
     }
   };
@@ -229,6 +258,21 @@ export function ClientDashboard() {
   useEffect(() => {
     loadData();
     subscribeToPush();
+    
+    const checkPushState = async () => {
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+      setIsCapacitorApp(isCapacitor);
+      if (isCapacitor) {
+        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
+        if (PushNotifications) {
+          const status = await PushNotifications.checkPermissions();
+          setPushGranted(status.receive === 'granted');
+        }
+      } else if ('Notification' in window) {
+        setPushGranted(Notification.permission === 'granted');
+      }
+    };
+    checkPushState();
   }, []);
 
   function urlBase64ToUint8Array(base64String: string) {
@@ -537,9 +581,9 @@ export function ClientDashboard() {
             <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
               Painel PWA Ativo
             </span>
-            {('Notification' in window) && Notification.permission !== 'granted' && (
+            {!pushGranted && (
               <button 
-                onClick={() => subscribeToPush()}
+                onClick={() => subscribeToPush().then(() => setPushGranted(true))}
                 className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition-colors cursor-pointer"
               >
                 Ativar Notificações

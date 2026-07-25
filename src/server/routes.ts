@@ -2364,6 +2364,21 @@ export function setupRoutes(app: Express) {
         const clientId = (req as any).user.clientId;
         const { subscriptionObject, fcmToken, deviceName } = req.body;
 
+        if (fcmToken) {
+          const existing = await db
+            .select()
+            .from(subscriptions)
+            .where(eq(subscriptions.fcmToken, fcmToken));
+
+          if (existing.length > 0) {
+            await db
+              .update(subscriptions)
+              .set({ clientId, deviceName: deviceName || "Dispositivo" })
+              .where(eq(subscriptions.fcmToken, fcmToken));
+            return res.status(200).json({ success: true, updated: true });
+          }
+        }
+
         await db.insert(subscriptions).values({
           clientId,
           subscriptionObject,
