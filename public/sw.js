@@ -18,13 +18,14 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // bypass non-get or api endpoints
   if (e.request.method !== 'GET' || e.request.url.includes('/api/')) {
     return;
   }
   e.respondWith(
     fetch(e.request).catch(() => {
-      return caches.match(e.request);
+      return caches.match(e.request).then((response) => {
+        return response || new Response('Network error', { status: 503 });
+      });
     })
   );
 });
@@ -38,18 +39,16 @@ self.addEventListener('push', function(e) {
       data.body = e.data.text();
     }
   }
-
   const options = {
     body: data.body,
-    icon: '/icon.png',
-    badge: '/icon.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
       primaryKey: '2'
     }
   };
-
   e.waitUntil(
     self.registration.showNotification(data.title, options)
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X, Bell, AlertCircle } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X, Bell, AlertCircle, Smartphone } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
