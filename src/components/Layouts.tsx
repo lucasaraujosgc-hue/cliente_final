@@ -362,6 +362,7 @@ export function AccountantLayout() {
       path: "/admin/gallery", 
       icon: Folder 
     },
+    { name: "Dispositivos", path: "/admin/devices", icon: Smartphone },
     { name: "Configurações", path: "/admin/settings", icon: Settings },
   ];
 
