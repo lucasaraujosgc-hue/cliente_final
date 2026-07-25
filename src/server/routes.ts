@@ -466,10 +466,10 @@ export function setupRoutes(app: Express) {
             for (const rule of rules) {
               if (!rule.clientId || rule.clientId === clientId) {
                 let title = (rule.title || "Nova Guia Disponível")
-                            .replace(/\[NOME_GUIA\]/g, doc.title || "")
+                            .replace(/\[NOME_GUIA\]/g, doc.category || "")
                             .replace(/\[CATEGORIA\]/g, doc.category || "");
                 let body = (rule.body || "")
-                           .replace(/\[NOME_GUIA\]/g, doc.title || "")
+                           .replace(/\[NOME_GUIA\]/g, doc.category || "")
                            .replace(/\[CATEGORIA\]/g, doc.category || "")
                            .replace(/\[VENCIMENTO\]/g, doc.dueDate || "N/A");
                 await sendClientNotification(clientId, title, body);
@@ -478,7 +478,7 @@ export function setupRoutes(app: Express) {
           } else {
             const multiRules = await db.select().from(scheduledNotifications)
               .where(eq(scheduledNotifications.type, 'on_multiple_files_available'));
-            let docsList = docs.map((d: any) => `- ${d.title || "Documento"}`).join('\\n');
+            let docsList = docs.map((d: any) => `- ${d.category || "Documento"}`).join('\n');
             for (const rule of multiRules) {
               if (!rule.clientId || rule.clientId === clientId) {
                 let title = (rule.title || `Novos Documentos Recebidos (${docs.length})`)
@@ -1522,8 +1522,8 @@ export function setupRoutes(app: Express) {
         
         for (const rule of rules) {
           if (!rule.clientId || rule.clientId === doc.clientId) {
-            let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, doc.title).replace(/\[CATEGORIA\]/g, doc.category);
-            let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, doc.title)
+            let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, doc.category).replace(/\[CATEGORIA\]/g, doc.category);
+            let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, doc.category)
                                          .replace(/\[CATEGORIA\]/g, doc.category)
                                          .replace(/\[VENCIMENTO\]/g, updatedDoc.dueDate || "N/A");
             
