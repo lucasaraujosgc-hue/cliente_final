@@ -59,7 +59,7 @@ webpush.setVapidDetails(
   vapidKeys.publicKey,
   vapidKeys.privateKey,
 );
-import { eq, desc, asc, inArray, or } from "drizzle-orm";
+import { eq, desc, asc, inArray, or, sql } from "drizzle-orm";
 import fs from "fs";
 import { Resend } from 'resend';
 
@@ -330,6 +330,65 @@ async function serproPost(
 
 const webhookNotificationTimers: Record<string, NodeJS.Timeout> = {};
 const webhookNotificationDocs: Record<string, any[]> = {};
+export function triggerDebouncedDocumentNotification(doc: any) {
+  const clientId = doc.clientId;
+  if (!webhookNotificationDocs[clientId]) {
+    webhookNotificationDocs[clientId] = [];
+  }
+  webhookNotificationDocs[clientId].push(doc);
+
+  if (webhookNotificationTimers[clientId]) {
+    clearTimeout(webhookNotificationTimers[clientId]);
+  }
+
+  webhookNotificationTimers[clientId] = setTimeout(async () => {
+    const docs = webhookNotificationDocs[clientId];
+    delete webhookNotificationDocs[clientId];
+    delete webhookNotificationTimers[clientId];
+
+    try {
+      if (docs.length === 1) {
+        const rules = await db.select().from(scheduledNotifications)
+          .where(eq(scheduledNotifications.type, 'on_file_available'));
+        const docObj = docs[0];
+        for (const rule of rules) {
+          if (!rule.clientId || rule.clientId === clientId) {
+            let title = (rule.title || "Nova Guia Disponível")
+                        .replace(/\[NOME_GUIA\]/g, docObj.category || "")
+                        .replace(/\[CATEGORIA\]/g, docObj.category || "");
+            let body = (rule.body || "")
+                       .replace(/\[NOME_GUIA\]/g, docObj.category || "")
+                       .replace(/\[CATEGORIA\]/g, docObj.category || "")
+                       .replace(/\[VENCIMENTO\]/g, docObj.dueDate || "N/A");
+            await sendClientNotification(clientId, title, body);
+          }
+        }
+      } else {
+        const multiRules = await db.select().from(scheduledNotifications)
+          .where(eq(scheduledNotifications.type, 'on_multiple_files_available'));
+        let docsList = Array.from(new Set(docs.map((d: any) => d.category || "Documento"))).join(' · ');
+        for (const rule of multiRules) {
+          if (!rule.clientId || rule.clientId === clientId) {
+            let title = (rule.title || `Novos Documentos Recebidos (${docs.length})`)
+                        .replace(/\[CATEGORIA\]/g, "Múltiplas Categorias")
+                        .replace(/\[NOME_GUIA\]/g, "Vários arquivos")
+                        .replace(/\[VENCIMENTO\]/g, "Diversos")
+                        .replace(/\[LISTA_GUIAS\]/g, docsList);
+            let body = (rule.body || "")
+                       .replace(/\[CATEGORIA\]/g, "Múltiplas Categorias")
+                       .replace(/\[NOME_GUIA\]/g, "Vários arquivos")
+                       .replace(/\[VENCIMENTO\]/g, "Diversos")
+                       .replace(/\[LISTA_GUIAS\]/g, docsList);
+            await sendClientNotification(clientId, title, body);
+          }
+        }
+      }
+    } catch(e) {
+      console.error("Error in debounced notification", e);
+    }
+  }, 30000); // 30 seconds debounce
+}
+
 
 export function setupRoutes(app: Express) {
   app.get("/api/fix-db", async (req, res) => {
@@ -478,7 +537,7 @@ export function setupRoutes(app: Express) {
           } else {
             const multiRules = await db.select().from(scheduledNotifications)
               .where(eq(scheduledNotifications.type, 'on_multiple_files_available'));
-            let docsList = docs.map((d: any) => `- ${d.category || "Documento"}`).join('\n');
+            let docsList = Array.from(new Set(docs.map((d: any) => d.category || "Documento"))).join(' · ');
             for (const rule of multiRules) {
               if (!rule.clientId || rule.clientId === clientId) {
                 let title = (rule.title || `Novos Documentos Recebidos (${docs.length})`)
@@ -1516,20 +1575,8 @@ export function setupRoutes(app: Express) {
           .where(eq(documents.id, id))
           .returning();
 
-        // Trigger on_file_available notification logic here for this document
-        const rules = await db.select().from(scheduledNotifications)
-          .where(eq(scheduledNotifications.type, 'on_file_available'));
-        
-        for (const rule of rules) {
-          if (!rule.clientId || rule.clientId === doc.clientId) {
-            let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, doc.category).replace(/\[CATEGORIA\]/g, doc.category);
-            let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, doc.category)
-                                         .replace(/\[CATEGORIA\]/g, doc.category)
-                                         .replace(/\[VENCIMENTO\]/g, updatedDoc.dueDate || "N/A");
-            
-            await sendClientNotification(doc.clientId, title, body);
-          }
-        }
+        // Trigger debounced notification
+        triggerDebouncedDocumentNotification(updatedDoc);
 
         res.json({ success: true, document: updatedDoc });
       } catch (e: any) {
@@ -1842,6 +1889,9 @@ export function setupRoutes(app: Express) {
           uploadedBy: "accountant",
         })
         .returning();
+        
+      // Trigger debounced notification
+      triggerDebouncedDocumentNotification(newDoc);
 
       res.json({
         success: true,
@@ -2377,6 +2427,19 @@ export function setupRoutes(app: Express) {
               .where(eq(subscriptions.fcmToken, fcmToken));
             return res.status(200).json({ success: true, updated: true });
           }
+        } else if (subscriptionObject && subscriptionObject.endpoint) {
+          const existing = await db
+            .select()
+            .from(subscriptions)
+            .where(sql`subscription_object->>'endpoint' = ${subscriptionObject.endpoint}`);
+            
+          if (existing.length > 0) {
+            await db
+              .update(subscriptions)
+              .set({ clientId, deviceName: deviceName || "Dispositivo" })
+              .where(eq(subscriptions.id, existing[0].id));
+            return res.status(200).json({ success: true, updated: true });
+          }
         }
 
         await db.insert(subscriptions).values({
@@ -2531,6 +2594,8 @@ export function setupRoutes(app: Express) {
       res.status(500).json({ error: e.message });
     }
   });
+
+
 
   app.delete("/api/accountant/subscriptions/:id", verifyAccountantAuth, async (req, res) => {
     try {

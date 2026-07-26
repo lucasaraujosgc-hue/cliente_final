@@ -1,17 +1,13 @@
-require('dotenv').config();
-const { Pool } = require('pg');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import { db, initDb } from "./src/server/db";
+import { subscriptions } from "./src/server/schema";
+import { sql } from "drizzle-orm";
 
 async function run() {
-  const client = await pool.connect();
+  await initDb();
+  console.log("Iniciando limpeza de assinaturas...");
   try {
-    console.log("Iniciando a remoção de assinaturas duplicadas...");
-    
-    // Clean FCM tokens
-    const sqlFCM = `
+    // 1. Delete duplicate FCM tokens
+    const fcmResult = await db.execute(sql`
       WITH duplicates AS (
         SELECT id,
                ROW_NUMBER() OVER(
@@ -25,13 +21,11 @@ async function run() {
       WHERE id IN (
         SELECT id FROM duplicates WHERE row_num > 1
       )
-      RETURNING id, fcm_token;
-    `;
-    const resultFCM = await client.query(sqlFCM);
-    console.log(`${resultFCM.rowCount} assinaturas de FCM duplicadas foram removidas.`);
+    `);
+    console.log("FCM tokens limpos");
 
-    // Clean Web Push subscriptions by endpoint
-    const sqlWeb = `
+    // 2. Delete duplicate Web Push subscriptions
+    const webResult = await db.execute(sql`
       WITH duplicates AS (
         SELECT id,
                ROW_NUMBER() OVER(
@@ -45,16 +39,12 @@ async function run() {
       WHERE id IN (
         SELECT id FROM duplicates WHERE row_num > 1
       )
-      RETURNING id;
-    `;
-    const resultWeb = await client.query(sqlWeb);
-    console.log(`${resultWeb.rowCount} assinaturas Web (PWA) duplicadas foram removidas.`);
-
-  } catch(e) {
-    console.error("Erro durante a execução:", e);
+    `);
+    console.log("Web Push subscriptions limpos");
+  } catch (e) {
+    console.error("Erro:", e);
   } finally {
-    client.release();
-    await pool.end();
+    process.exit(0);
   }
 }
 run();
