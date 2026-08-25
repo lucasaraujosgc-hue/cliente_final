@@ -490,9 +490,7 @@ export function ClientDashboard() {
     d.competence === selectedCompetence && 
     d.category !== "bank_statement" && 
     d.category !== "SITFIS_RECEITA" && 
-    d.category?.toLowerCase() !== "sitfis" &&
-    d.status !== "paid" &&
-    d.status !== "ok"
+    d.category?.toLowerCase() !== "sitfis"
   );
   
   const sitFisDoc = data.documents.find((d: any) => (d.category === 'SITFIS_RECEITA' || d.category === 'sitfis' || d.category?.toUpperCase() === 'SITFIS') && d.extractedData);
@@ -800,30 +798,37 @@ export function ClientDashboard() {
                           )}
 
 
-                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
+                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) ? (
                             <button 
                               onClick={() => handleMarkAsPaid(doc.id)}
                               className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
                             >
-                              Marcar Pago
+                              Marcar como Pago
                             </button>
-                          )}
+                          ) : doc.status === "paid" ? (
+                            <div className="flex-1 sm:flex-none h-10 px-3 bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-500 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs opacity-70">
+                              <CheckCircle className="w-4 h-4" />
+                              Pago
+                            </div>
+                          ) : null}
                         </div>
                         {/* INICIO BOTAO GERAR GUIA */}
-                        <div className="w-full mt-2">
-                            <GuiaAtualizarButton 
-                                clienteId={data.client.id}
-                                guia={{
-                                    id: doc.id,
-                                    tipoGuia: (doc.category === "DCTFWEB" || doc.category === "INSS" || doc.category?.toUpperCase()?.includes("INSS") || doc.title?.toUpperCase()?.includes("DCTFWEB") || doc.title?.toUpperCase()?.includes("INSS")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.category?.toUpperCase()?.includes("SIMPLES") || doc.title?.toUpperCase()?.includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
-                                    competencia: doc.competence || selectedCompetence || "01/2026",
-                                    status: doc.status,
-                                    title: doc.title
-                                }}
-                                isOverdue={dueInfo.isOverdue}
-                                onAtualizado={() => loadData()}
-                            />
-                        </div>
+                        {doc.status !== "paid" && (
+                          <div className="w-full mt-2">
+                              <GuiaAtualizarButton 
+                                  clienteId={data.client.id}
+                                  guia={{
+                                      id: doc.id,
+                                      tipoGuia: (doc.category === "DCTFWEB" || doc.category === "INSS" || doc.category?.toUpperCase()?.includes("INSS") || doc.title?.toUpperCase()?.includes("DCTFWEB") || doc.title?.toUpperCase()?.includes("INSS")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.category?.toUpperCase()?.includes("SIMPLES") || doc.title?.toUpperCase()?.includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
+                                      competencia: doc.competence || selectedCompetence || "01/2026",
+                                      status: doc.status,
+                                      title: doc.title
+                                  }}
+                                  isOverdue={dueInfo.isOverdue}
+                                  onAtualizado={() => loadData()}
+                              />
+                          </div>
+                        )}
                         {/* FIM BOTAO GERAR GUIA */}
                         </div>
                       )}

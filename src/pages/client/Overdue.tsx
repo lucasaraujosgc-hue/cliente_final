@@ -24,7 +24,6 @@ export function ClientOverdue() {
       
       // Filtra documentos enviados pelo contador que estão pendentes e com prazo expirado
       const overdue = data.documents.filter((doc: any) => {
-        if (doc.status === "paid" || doc.status === "ok") return false;
         if (!doc.dueDate) return false;
         
         try {
@@ -167,14 +166,14 @@ export function ClientOverdue() {
             return (
               <div 
                 key={doc.id} 
-                className="relative overflow-hidden p-4 rounded-2xl border transition-all bg-gradient-to-r from-red-50/50 to-amber-50/20 shadow-xs border-amber-200 dark:from-rose-950/15 dark:to-amber-950/5 dark:border-rose-900/40"
+                className={`relative overflow-hidden p-4 rounded-2xl border transition-all shadow-xs ${doc.status === "paid" ? "bg-white/40 dark:bg-slate-900/10 border-slate-100 dark:border-slate-800 opacity-75" : "bg-gradient-to-r from-red-50/50 to-amber-50/20 border-amber-200 dark:from-rose-950/15 dark:to-amber-950/5 dark:border-rose-900/40"}`}
               >
-                <div className="absolute top-0 bottom-0 left-0 w-1.5 bg-rose-500" />
+                <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${doc.status === "paid" ? "bg-emerald-500" : "bg-rose-500"}`} />
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
                   <div className="flex items-start sm:items-center gap-3">
-                    <div className="p-2.5 rounded-xl shrink-0 mt-0.5 sm:mt-0 bg-rose-500/10 text-rose-500 dark:bg-rose-500/20">
-                      <AlertCircle className="w-5 h-5 animate-pulse" />
+                    <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 sm:mt-0 ${doc.status === "paid" ? "bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20" : "bg-rose-500/10 text-rose-500 dark:bg-rose-500/20"}`}>
+                      {doc.status === "paid" ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5 animate-pulse" />}
                     </div>
 
                     <div>
@@ -182,9 +181,15 @@ export function ClientOverdue() {
                         <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm capitalize">
                           {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : (doc.category || 'Geral')}
                         </h4>
-                        <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20 animate-pulse">
-                          Atrasado {daysOverdue} {daysOverdue === 1 ? "dia" : "dias"}
-                        </span>
+                        {doc.status === "paid" ? (
+                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                            Pago
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20 animate-pulse">
+                            Atrasado {daysOverdue} {daysOverdue === 1 ? "dia" : "dias"}
+                          </span>
+                        )}
                         {doc.competence && (
                           <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                             Comp: {doc.competence}
@@ -233,14 +238,22 @@ export function ClientOverdue() {
                             <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
                           </div>
                         )}
-                        <button
-                          onClick={() => handleMarkAsPaid(doc.id)}
-                          className="flex-1 sm:flex-none h-8 px-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Pago
-                        </button>
+                        {doc.status !== "paid" ? (
+                          <button
+                            onClick={() => handleMarkAsPaid(doc.id)}
+                            className="flex-1 sm:flex-none h-8 px-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Marcar como Pago
+                          </button>
+                        ) : (
+                          <div className="flex-1 sm:flex-none h-8 px-3 bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-500 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black flex items-center justify-center gap-1.5 shadow-xs opacity-70">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Pago
+                          </div>
+                        )}
                       </div>
+                      {doc.status !== "paid" && (
                         <div className="w-full mt-2">
                           <GuiaAtualizarButton 
                             clienteId={doc.clientId}
@@ -255,6 +268,7 @@ export function ClientOverdue() {
                             onAtualizado={() => {}}
                           />
                         </div>
+                      )}
                     </div>
                   )}
                 </div>

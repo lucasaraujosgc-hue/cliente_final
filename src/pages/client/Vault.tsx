@@ -7,7 +7,7 @@ import { handleFileAction } from "../../lib/utils";
 
 export function ClientVault() {
   const [docs, setDocs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("company");
+  const [activeTab, setActiveTab] = useState("received");
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -58,17 +58,19 @@ export function ClientVault() {
   };
 
   const tabs = [
+    { id: "received", label: "Guias e Arquivos", icon: FileIcon },
     { id: "company", label: "Documentos Empresa", icon: FileIcon },
   ];
 
   const filteredDocs = docs.filter(d => {
     if (activeTab === "received") {
-      return (d.category === "taxes" || d.category === "payroll" || d.category === "webhook_doc" || d.category === "SITFIS_RECEITA") && d.competence === selectedCompetence;
+      const matchCompetence = !d.competence || d.competence === selectedCompetence;
+      return d.uploadedBy === "accountant" && d.category !== "company" && matchCompetence;
     }
     if (activeTab === "company") {
       return d.category === "company";
     }
-    return d.category === activeTab;
+    return true;
   });
 
   // Helper parser for Brazilian date strings DD/MM/YYYY
