@@ -487,7 +487,12 @@ export function ClientDashboard() {
 
   // Find all documents for the selected competence or with important upcoming maturities
   const allCurrentDocs = data.documents.filter((d: any) => 
-    d.competence === selectedCompetence && d.category !== "bank_statement" && d.category !== "SITFIS_RECEITA" && d.category?.toLowerCase() !== "sitfis"
+    d.competence === selectedCompetence && 
+    d.category !== "bank_statement" && 
+    d.category !== "SITFIS_RECEITA" && 
+    d.category?.toLowerCase() !== "sitfis" &&
+    d.status !== "paid" &&
+    d.status !== "ok"
   );
   
   const sitFisDoc = data.documents.find((d: any) => (d.category === 'SITFIS_RECEITA' || d.category === 'sitfis' || d.category?.toUpperCase() === 'SITFIS') && d.extractedData);
@@ -496,7 +501,7 @@ export function ClientDashboard() {
 
   // Calculate global overdue documents (across all competencies)
   const allOverdueDocs = data.documents.filter((d: any) => {
-    if (d.status === "paid" || d.category === "bank_statement" || d.category === "SITFIS_RECEITA" || d.category?.toLowerCase() === "sitfis") return false;
+    if (d.status === "paid" || d.status === "ok" || d.category === "bank_statement" || d.category === "SITFIS_RECEITA" || d.category?.toLowerCase() === "sitfis") return false;
     if (['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())) return false;
     const dueInfo = getDocDueStatus(d);
     return dueInfo.isOverdue;

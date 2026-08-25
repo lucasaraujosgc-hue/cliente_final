@@ -24,7 +24,7 @@ export function ClientOverdue() {
       
       // Filtra documentos enviados pelo contador que estão pendentes e com prazo expirado
       const overdue = data.documents.filter((doc: any) => {
-        if (doc.status === "paid") return false;
+        if (doc.status === "paid" || doc.status === "ok") return false;
         if (!doc.dueDate) return false;
         
         try {
