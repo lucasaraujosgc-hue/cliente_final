@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients, documents, billingData } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
+import { hashPassword } from "../services/password";
 
 // External-facing integration API, authenticated via each client's
 // integration hash token (not JWT).
@@ -57,7 +58,7 @@ export function registerIntegrationRoutes(app: Express) {
           .values({
             cnpj,
             name,
-            passwordHash: cnpj.replace(/[^0-9]/g, "").slice(0, 6),
+            passwordHash: await hashPassword(cnpj.replace(/[^0-9]/g, "").slice(0, 6)),
             regularityStatus: regularityStatus || "green",
           })
           .returning();

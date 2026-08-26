@@ -7,6 +7,7 @@ export const clientForgotPasswordSchema = z.object({
 });
 
 export const clientResetPasswordSchema = z.object({
+  cnpj: z.string().min(11, "CNPJ inválido."),
   token: z.string().min(1, "Token é obrigatório."),
   newPassword: z.string().min(6, "A senha precisa ter ao menos 6 caracteres."),
 });

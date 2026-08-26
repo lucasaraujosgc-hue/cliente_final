@@ -2,7 +2,7 @@ export interface Client {
   id: string;
   cnpj: string; // Storing the numeric part or formatted? Let's just keep as string (formatted or raw)
   name: string;
-  passwordHash: string; // Fake hash for simple prototype
+  passwordHash: string; // bcrypt hash (legacy accounts may still be plaintext until their next login, which triggers an automatic upgrade)
   regularityStatus: "green" | "warning" | "red";
   email?: string;
   firstAccessDone?: boolean;

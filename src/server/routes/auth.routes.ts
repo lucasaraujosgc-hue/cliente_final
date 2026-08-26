@@ -5,6 +5,7 @@ import { isBefore, parseISO } from "date-fns";
 import { db } from "../db";
 import { clients } from "../schema";
 import { resend } from "../services/mailer";
+import { hashPassword, verifyPassword } from "../services/password";
 import { JWT_SECRET } from "../middleware/auth";
 import { authLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
@@ -85,7 +86,7 @@ export function registerAuthRoutes(app: Express) {
 
       await db.update(clients)
         .set({ 
-          passwordHash: newPassword,
+          passwordHash: await hashPassword(newPassword),
           resetToken: null,
           resetTokenExpires: null,
           firstAccessDone: true 
@@ -128,16 +129,29 @@ export function registerAuthRoutes(app: Express) {
     const cleanCnpj = String(cnpj).replace(/\D/g, "");
 
     const clientList = await db.select().from(clients);
-    const client = clientList.find((c) => {
+    let matchedClient: (typeof clientList)[number] | undefined;
+    for (const c of clientList) {
       const dbCnpj = String(c.cnpj).replace(/\D/g, "");
-      const dbPassStr = String(c.passwordHash);
-      const inputPassStr = String(password);
-
-      const passMatches =
-        dbPassStr === inputPassStr ||
-        dbPassStr.replace(/\D/g, "") === inputPassStr.replace(/\D/g, "");
-      return dbCnpj === cleanCnpj && passMatches;
-    });
+      if (dbCnpj !== cleanCnpj) continue;
+      const { valid, needsRehash } = await verifyPassword(
+        String(password),
+        String(c.passwordHash),
+      );
+      if (valid) {
+        matchedClient = c;
+        if (needsRehash) {
+          // Silently upgrade legacy plaintext passwords to a proper bcrypt
+          // hash now that we know the plaintext value.
+          const newHash = await hashPassword(String(password));
+          await db
+            .update(clients)
+            .set({ passwordHash: newHash })
+            .where(eq(clients.id, c.id));
+        }
+        break;
+      }
+    }
+    const client = matchedClient;
 
     if (!client) {
       return res.status(401).json({ error: "Credenciais inválidas" });

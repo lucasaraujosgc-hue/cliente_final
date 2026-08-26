@@ -15,6 +15,7 @@ import {
 import { transporter } from "../services/mailer";
 import { upload } from "../services/upload";
 import { getSerproToken, serproPost, isUuid } from "../services/serpro";
+import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 
 // Routes used by the client-facing portal: dashboard, profile, billing,
@@ -79,7 +80,7 @@ export function registerClientRoutes(app: Express) {
       firstAccessDone: true,
     };
     if (password) {
-      updateData.passwordHash = password;
+      updateData.passwordHash = await hashPassword(password);
     }
 
     const [client] = await db

@@ -15,6 +15,7 @@ import {
   scheduledNotifications,
 } from "../schema";
 import { upload, uploadCert } from "../services/upload";
+import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { verifyAccountantAuth } from "../middleware/auth";
 
@@ -118,7 +119,10 @@ export function registerAccountantRoutes(app: Express) {
           .values({
             cnpj,
             name,
-            passwordHash: cnpj,
+            // Default password is the client's own CNPJ; they're expected
+            // to change it on first access. Stored as a bcrypt hash, never
+            // in plaintext.
+            passwordHash: await hashPassword(String(cnpj)),
             regularityStatus: regularityStatus || "green",
             integrationHash: integrationHash || null,
             accountantCategory: accountantCategory || null,
@@ -148,7 +152,7 @@ export function registerAccountantRoutes(app: Express) {
         
         await db.update(clients)
           .set({ 
-             passwordHash: cleanCnpj,
+             passwordHash: await hashPassword(cleanCnpj),
              firstAccessDone: false
           })
           .where(eq(clients.id, id));
