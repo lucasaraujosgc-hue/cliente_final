@@ -1,0 +1,108 @@
+import https from "https";
+
+export function isUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+interface TokenCache {
+  access_token: string;
+  jwt_token: string;
+  expiresAt: number;
+}
+const serproTokenCache: { [key: string]: TokenCache } = {};
+
+// Helper HTTP nativo (evita problemas com node-fetch ESM)
+function httpsPost(
+  urlStr: string,
+  headers: Record<string, string>,
+  body: string,
+  agent?: any,
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any> }> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const bodyBuf = Buffer.from(body, "utf8");
+    const opts: any = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: "POST",
+      headers: { ...headers, "Content-Length": bodyBuf.byteLength },
+    };
+    if (agent) opts.agent = agent;
+
+    const req = https.request(opts, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          ok: res.statusCode! >= 200 && res.statusCode! < 300,
+          status: res.statusCode!,
+          text: async () => text,
+          json: async () => JSON.parse(text),
+        });
+      });
+    });
+    req.on("error", reject);
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
+export async function getSerproToken(config: any, agent?: any): Promise<{ access_token: string; jwt_token: string }> {
+  const cacheKey = `${config.consumerKey}:${config.ambiente}`;
+  const cached = serproTokenCache[cacheKey];
+
+  // Reutiliza o token se estiver válido e faltar mais de 5 minutos para expirar
+  if (cached && cached.expiresAt > Date.now() + 5 * 60 * 1000) {
+    return { access_token: cached.access_token, jwt_token: cached.jwt_token };
+  }
+
+  const credentials = Buffer.from(
+    `${config.consumerKey}:${config.consumerSecret}`
+  ).toString("base64");
+
+  const resp = await httpsPost(
+    "https://autenticacao.sapi.serpro.gov.br/authenticate",
+    {
+      Authorization: `Basic ${credentials}`,
+      "role-type": "TERCEIROS",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    "grant_type=client_credentials",
+    agent,
+  );
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Erro ao obter token SERPRO: ${resp.status} - ${errText}`);
+  }
+  const data = await resp.json() as any;
+
+  const expiresIn = data.expires_in || 3600;
+  const entry: TokenCache = {
+    access_token: data.access_token,
+    jwt_token: data.jwt_token || "",
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+  serproTokenCache[cacheKey] = entry;
+
+  return { access_token: entry.access_token, jwt_token: entry.jwt_token };
+}
+
+export async function serproPost(
+  url: string,
+  tokens: { access_token: string; jwt_token: string },
+  payload: any,
+  agent?: any,
+) {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${tokens.access_token}`,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Cache-Control": "no-cache",
+  };
+  if (tokens.jwt_token) headers["jwt_token"] = tokens.jwt_token;
+
+  return httpsPost(url, headers, JSON.stringify(payload), agent);
+}
