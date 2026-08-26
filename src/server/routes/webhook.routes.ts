@@ -8,19 +8,8 @@ import { upload, UPLOADS_DIR } from "../services/upload";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 
 // Routes used by external systems (accounting software, file providers, etc.)
-// to push documents into the platform, plus a couple of maintenance endpoints.
+// to push documents into the platform.
 export function registerWebhookRoutes(app: Express) {
-  // NOTE: leftover debug endpoint from development. It force-resets every
-  // "waiting_accountant" document back to "new". Consider removing before
-  // shipping to production, or protect it behind auth if it's still needed.
-  app.get("/api/fix-db", async (req, res) => {
-    await db
-      .update(documents)
-      .set({ status: "new" })
-      .where(eq(documents.status, "waiting_accountant"));
-    res.json({ fixed: true });
-  });
-
   // Webhook for receiving files from external systems
   app.post("/api/webhook/receitas", async (req, res) => {
     try {
