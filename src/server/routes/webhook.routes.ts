@@ -6,12 +6,15 @@ import { db } from "../db";
 import { clients, documents } from "../schema";
 import { upload, UPLOADS_DIR } from "../services/upload";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
+import { webhookLimiter } from "../middleware/rateLimit";
+import { validateBody } from "../middleware/validate";
+import { webhookReceitasSchema } from "../schemas/validation";
 
 // Routes used by external systems (accounting software, file providers, etc.)
 // to push documents into the platform.
 export function registerWebhookRoutes(app: Express) {
   // Webhook for receiving files from external systems
-  app.post("/api/webhook/receitas", async (req, res) => {
+  app.post("/api/webhook/receitas", webhookLimiter, validateBody(webhookReceitasSchema), async (req, res) => {
     try {
       const {
         hash_empresa,
@@ -23,9 +26,7 @@ export function registerWebhookRoutes(app: Express) {
         dados_extraidos,
       } = req.body;
 
-      if (!hash_empresa) {
-        return res.status(400).json({ error: "hash_empresa is required" });
-      }
+      // hash_empresa presence/shape is already guaranteed by validateBody().
       if (!arquivo_base64 && categoria !== "SITFIS_RECEITA") {
         return res
           .status(400)
@@ -127,6 +128,7 @@ export function registerWebhookRoutes(app: Express) {
   // Webhook for External System Integration
   app.post(
     "/api/webhook/documentos",
+    webhookLimiter,
     upload.single("arquivo"),
     async (req, res) => {
       try {

@@ -6,10 +6,18 @@ import { db } from "../db";
 import { clients } from "../schema";
 import { resend } from "../services/mailer";
 import { JWT_SECRET } from "../middleware/auth";
+import { authLimiter } from "../middleware/rateLimit";
+import { validateBody } from "../middleware/validate";
+import {
+  clientForgotPasswordSchema,
+  clientResetPasswordSchema,
+  clientLoginSchema,
+  accountantLoginSchema,
+} from "../schemas/validation";
 
 // Login / password-recovery routes for both clients and the accountant admin.
 export function registerAuthRoutes(app: Express) {
-  app.post("/api/auth/client/forgot-password", async (req, res) => {
+  app.post("/api/auth/client/forgot-password", authLimiter, validateBody(clientForgotPasswordSchema), async (req, res) => {
     try {
       const { cnpj } = req.body;
       const cleanCnpj = String(cnpj).replace(/\D/g, "");
@@ -56,7 +64,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Client Reset Password
-  app.post("/api/auth/client/reset-password", async (req, res) => {
+  app.post("/api/auth/client/reset-password", authLimiter, validateBody(clientResetPasswordSchema), async (req, res) => {
     try {
       const { cnpj, token, newPassword } = req.body;
       const cleanCnpj = String(cnpj).replace(/\D/g, "");
@@ -91,7 +99,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Client Login
-  app.post("/api/auth/client/login", async (req, res) => {
+  app.post("/api/auth/client/login", authLimiter, validateBody(clientLoginSchema), async (req, res) => {
     const { cnpj, password } = req.body;
 
     // Check if it's the admin
@@ -152,7 +160,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Accountant Login
-  app.post("/api/auth/accountant/login", (req, res) => {
+  app.post("/api/auth/accountant/login", authLimiter, validateBody(accountantLoginSchema), (req, res) => {
     const { username, password } = req.body;
 
     const adminUser = String(process.env.ADMIN || "admin").trim();
