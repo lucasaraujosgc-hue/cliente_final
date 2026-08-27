@@ -4,7 +4,7 @@ import path from "path";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients, documents } from "../schema";
-import { upload, UPLOADS_DIR } from "../services/upload";
+import { upload, UPLOADS_DIR, sanitizeFilename } from "../services/upload";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { webhookLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
@@ -51,7 +51,7 @@ export function registerWebhookRoutes(app: Express) {
       let extractedValue = null;
       if (arquivo_base64) {
         const buffer = Buffer.from(arquivo_base64, "base64");
-        safeFilename = `${Date.now()}_${nome_arquivo || "documento"}`;
+        safeFilename = `${Date.now()}_${sanitizeFilename(nome_arquivo || "documento")}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
         fs.writeFileSync(filePath, buffer);
 
@@ -182,7 +182,7 @@ export function registerWebhookRoutes(app: Express) {
            const match = arquivoBase64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
            if (match) {
               const buffer = Buffer.from(match[2], 'base64');
-              const safeFilename = `${Date.now()}_${nomeArquivo || "documento.pdf"}`;
+              const safeFilename = `${Date.now()}_${sanitizeFilename(nomeArquivo || "documento.pdf")}`;
               const filePath = path.join(UPLOADS_DIR, safeFilename);
               fs.writeFileSync(filePath, buffer);
               finalFileUrl = `/uploads/${safeFilename}`;

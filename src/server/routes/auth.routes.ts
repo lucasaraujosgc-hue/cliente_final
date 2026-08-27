@@ -1,6 +1,6 @@
 import { Express } from "express";
 import jwt from "jsonwebtoken";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { isBefore, parseISO } from "date-fns";
 import { db } from "../db";
 import { clients } from "../schema";
@@ -16,14 +16,24 @@ import {
   accountantLoginSchema,
 } from "../schemas/validation";
 
+// Look up clients by CNPJ ignoring formatting (dots / slashes / dashes),
+// filtering in SQL so we never pull the whole clients table into memory just
+// to `.find()` over it — that turned every login attempt into an O(n)
+// bcrypt-compare loop and an easy CPU-exhaustion lever.
+function findClientsByCnpj(rawCnpj: string) {
+  const clean = String(rawCnpj).replace(/\D/g, "");
+  return db
+    .select()
+    .from(clients)
+    .where(sql`regexp_replace(${clients.cnpj}, '[^0-9]', '', 'g') = ${clean}`);
+}
+
 // Login / password-recovery routes for both clients and the accountant admin.
 export function registerAuthRoutes(app: Express) {
   app.post("/api/auth/client/forgot-password", authLimiter, validateBody(clientForgotPasswordSchema), async (req, res) => {
     try {
       const { cnpj } = req.body;
-      const cleanCnpj = String(cnpj).replace(/\D/g, "");
-      const clientList = await db.select().from(clients);
-      const client = clientList.find(c => String(c.cnpj).replace(/\D/g, "") === cleanCnpj);
+      const client = (await findClientsByCnpj(cnpj))[0];
 
       if (!client) {
         return res.status(404).json({ error: "CNPJ não encontrado." });
@@ -68,9 +78,7 @@ export function registerAuthRoutes(app: Express) {
   app.post("/api/auth/client/reset-password", authLimiter, validateBody(clientResetPasswordSchema), async (req, res) => {
     try {
       const { cnpj, token, newPassword } = req.body;
-      const cleanCnpj = String(cnpj).replace(/\D/g, "");
-      const clientList = await db.select().from(clients);
-      const client = clientList.find(c => String(c.cnpj).replace(/\D/g, "") === cleanCnpj);
+      const client = (await findClientsByCnpj(cnpj))[0];
 
       if (!client) {
         return res.status(404).json({ error: "CNPJ não encontrado." });
@@ -126,13 +134,9 @@ export function registerAuthRoutes(app: Express) {
       });
     }
 
-    const cleanCnpj = String(cnpj).replace(/\D/g, "");
-
-    const clientList = await db.select().from(clients);
+    const clientList = await findClientsByCnpj(cnpj);
     let matchedClient: (typeof clientList)[number] | undefined;
     for (const c of clientList) {
-      const dbCnpj = String(c.cnpj).replace(/\D/g, "");
-      if (dbCnpj !== cleanCnpj) continue;
       const { valid, needsRehash } = await verifyPassword(
         String(password),
         String(c.passwordHash),

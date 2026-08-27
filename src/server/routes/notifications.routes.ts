@@ -6,6 +6,8 @@ import { db } from "../db";
 import { clients, subscriptions, scheduledNotifications } from "../schema";
 import { vapidKeys, webpush } from "../services/push";
 import { verifyClientAuth, verifyAccountantAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { scheduledNotificationSchema } from "../schemas/validation";
 
 // Web-push / FCM subscription management and scheduled-notification rules.
 export function registerNotificationRoutes(app: Express) {
@@ -154,12 +156,10 @@ export function registerNotificationRoutes(app: Express) {
   app.post(
     "/api/admin/notifications/schedule",
     verifyAccountantAuth,
+    validateBody(scheduledNotificationSchema),
     async (req, res) => {
       try {
         const { clientId, type, title, body, scheduleDay, scheduleTime } = req.body;
-        if (!type || !title || !body) {
-          return res.status(400).json({ error: "Campos obrigatórios: type, title, body" });
-        }
 
         const [newRule] = await db
           .insert(scheduledNotifications)

@@ -18,6 +18,16 @@ import { upload, uploadCert } from "../services/upload";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { verifyAccountantAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import {
+  accountantCreateClientSchema,
+  accountantUpdateClientSchema,
+  accountantMessageSchema,
+  accountantBulkMessageSchema,
+  accountantEditMessageSchema,
+  billingUpdateSchema,
+  billingBulkSchema,
+} from "../schemas/validation";
 
 // Routes used by the accountant-facing admin panel: client CRUD, file
 // management, inbox/messages, billing, and SERPRO integration settings.
@@ -105,6 +115,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/clients",
     verifyAccountantAuth,
+    validateBody(accountantCreateClientSchema),
     async (req, res) => {
       const {
         cnpj,
@@ -167,6 +178,7 @@ export function registerAccountantRoutes(app: Express) {
   app.put(
     "/api/accountant/client/:id",
     verifyAccountantAuth,
+    validateBody(accountantUpdateClientSchema),
     async (req, res) => {
       const { name, regularityStatus, integrationHash, accountantCategory } =
         req.body;
@@ -486,6 +498,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/message",
     verifyAccountantAuth,
+    validateBody(accountantMessageSchema),
     async (req, res) => {
       const { clientId, content } = req.body;
 
@@ -502,12 +515,9 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/message/bulk",
     verifyAccountantAuth,
+    validateBody(accountantBulkMessageSchema),
     async (req, res) => {
       const { clientIds, content } = req.body;
-
-      if (!Array.isArray(clientIds) || clientIds.length === 0) {
-        return res.status(400).json({ error: "Nenhum cliente selecionado" });
-      }
 
       const newMessages = clientIds.map((id: string) => ({
         clientId: id,
@@ -553,6 +563,7 @@ export function registerAccountantRoutes(app: Express) {
   app.put(
     "/api/accountant/message/:id",
     verifyAccountantAuth,
+    validateBody(accountantEditMessageSchema),
     async (req, res) => {
       try {
         const { content } = req.body;
@@ -614,6 +625,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/client/:id/update-billing",
     verifyAccountantAuth,
+    validateBody(billingUpdateSchema),
     async (req, res) => {
       const clientId = req.params.id;
       const {
@@ -665,6 +677,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/client/:id/bulk-billing",
     verifyAccountantAuth,
+    validateBody(billingBulkSchema),
     async (req, res) => {
       const clientId = req.params.id;
       const { data } = req.body; // Array of items
@@ -824,9 +837,7 @@ export function registerAccountantRoutes(app: Express) {
         res.json({ success: true });
       } catch (e: any) {
         console.error("ERRO SERPRO POST:", e);
-        res
-          .status(500)
-          .json({ error: e.message, stack: e.stack, detail: e.toString() });
+        res.status(500).json({ error: "Falha ao salvar a configuração do Integra Contador." });
       }
     },
   );

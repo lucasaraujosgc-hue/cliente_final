@@ -17,6 +17,8 @@ import { upload } from "../services/upload";
 import { getSerproToken, serproPost, isUuid } from "../services/serpro";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { billingUpdateSchema, billingBulkSchema } from "../schemas/validation";
 
 // Routes used by the client-facing portal: dashboard, profile, billing,
 // document acknowledgement, messages, and SERPRO "guia" (tax slip) generation.
@@ -121,7 +123,7 @@ export function registerClientRoutes(app: Express) {
     res.json({ success: true, client });
   });
 
-  app.post("/api/client/update-billing", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/update-billing", verifyClientAuth, validateBody(billingUpdateSchema), async (req, res) => {
     const clientId = (req as any).user.clientId;
     const {
       month,
@@ -167,7 +169,7 @@ export function registerClientRoutes(app: Express) {
     }
   });
 
-  app.post("/api/client/bulk-billing", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/bulk-billing", verifyClientAuth, validateBody(billingBulkSchema), async (req, res) => {
     const clientId = (req as any).user.clientId;
     const { data } = req.body; // Array of items
 

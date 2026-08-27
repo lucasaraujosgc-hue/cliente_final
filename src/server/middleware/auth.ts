@@ -4,9 +4,11 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients } from "../schema";
 
+// In production, env.ts (validateEnv) refuses to boot without a real
+// JWT_SECRET, so this fallback only ever applies to local development.
 export const JWT_SECRET =
   process.env.JWT_SECRET ||
-  "virgula-secret-key-persistent-across-deploys-12345";
+  "insecure-dev-only-secret-do-not-use-in-production";
 
 export async function verifyIntegrationToken(
   req: Request,
@@ -55,6 +57,7 @@ export function verifyAccountantAuth(req: Request, res: Response, next: NextFunc
   try {
     const payload = jwt.verify(token, JWT_SECRET) as any;
     if (payload.role !== "accountant") throw new Error("Invalid role");
+    (req as any).user = payload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });
