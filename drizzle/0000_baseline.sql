@@ -1,3 +1,14 @@
+CREATE TABLE "audit_log" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"actor" text NOT NULL,
+	"action" text NOT NULL,
+	"target_type" text,
+	"target_id" text,
+	"summary" text,
+	"metadata" json,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "billing_data" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"client_id" uuid NOT NULL,
@@ -22,8 +33,9 @@ CREATE TABLE "clients" (
 	"integration_hash" text,
 	"accountant_category" text,
 	"notification_preferences" json DEFAULT '{"receives_all":true,"recurrent":true,"before_due":true,"on_due":true,"on_new_file":true}'::json,
-	"reset_token" text,
-	"reset_token_expires" text,
+	"reset_code_hash" text,
+	"reset_code_expires" timestamp,
+	"reset_code_attempts" integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "clients_cnpj_unique" UNIQUE("cnpj"),
 	CONSTRAINT "clients_integration_hash_unique" UNIQUE("integration_hash")
 );
@@ -40,7 +52,7 @@ CREATE TABLE "documents" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"file_url" text,
 	"pix_code" text,
-	"extracted_data" json
+	"extracted_data" jsonb
 );
 --> statement-breakpoint
 CREATE TABLE "guias_geradas" (
@@ -98,15 +110,15 @@ CREATE TABLE "serpro_config" (
 CREATE TABLE "subscriptions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"client_id" uuid NOT NULL,
-	"subscription_object" json,
+	"subscription_object" jsonb,
 	"fcm_token" text,
 	"device_name" text,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "billing_data" ADD CONSTRAINT "billing_data_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "documents" ADD CONSTRAINT "documents_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "guias_geradas" ADD CONSTRAINT "guias_geradas_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "messages" ADD CONSTRAINT "messages_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "billing_data" ADD CONSTRAINT "billing_data_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documents" ADD CONSTRAINT "documents_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "guias_geradas" ADD CONSTRAINT "guias_geradas_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "scheduled_notifications" ADD CONSTRAINT "scheduled_notifications_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;

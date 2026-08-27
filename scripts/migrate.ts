@@ -1,17 +1,20 @@
 /**
- * Applies pending Drizzle migrations from ./drizzle.
+ * The one and only way the Postgres schema evolves.
  *
- * Workflow going forward:
  *   1. edit src/server/schema.ts
- *   2. npm run db:generate      (writes a new drizzle/NNNN_*.sql)
+ *   2. npm run db:generate      -> writes drizzle/NNNN_*.sql
  *   3. commit it
- *   4. npm run db:migrate       (locally / in the deploy pipeline)
+ *   4. npm run db:migrate       -> applies pending migrations
  *
- * Baseline adoption: migration 0000_baseline describes the schema that the
- * legacy initDb() already builds with CREATE TABLE IF NOT EXISTS. For any
- * database that predates migrations we mark 0000 as already applied so the
- * migrator only runs 0001+ (running 0000's bare CREATE TABLEs against a
- * populated DB would fail). A brand-new empty DB gets 0000 applied normally.
+ * The server never touches the schema at boot. Deploy runs this first
+ * (package.json "prestart" -> node dist/migrate.cjs).
+ *
+ * Legacy bridge: databases created by the old src/server/db.ts
+ * CREATE/ALTER-on-boot path have the tables but no migration history. The
+ * first run here detects that, applies drizzle/reconcile-legacy.sql (fully
+ * idempotent, additive — see the file header) to bring them exactly to
+ * drizzle/0000_baseline.sql, marks the baseline as applied, and from then on
+ * everything is plain Drizzle migrations.
  */
 import "dotenv/config";
 import fs from "fs";
@@ -21,54 +24,147 @@ import { pool, db } from "../src/server/db";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 
 const MIGRATIONS_FOLDER = path.join(process.cwd(), "drizzle");
+const MIGRATIONS_SCHEMA = "drizzle";
+const MIGRATIONS_TABLE = "__drizzle_migrations";
 
-async function adoptBaselineIfNeeded() {
-  const journalPath = path.join(MIGRATIONS_FOLDER, "meta", "_journal.json");
-  if (!fs.existsSync(journalPath)) return;
+async function tableExists(schema: string, name: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT to_regclass($1) IS NOT NULL AS present`,
+    [`${schema}.${name}`],
+  );
+  return rows[0]?.present === true;
+}
 
-  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
-  const baseline = journal.entries?.[0];
-  if (!baseline) return;
-
-  await pool.query(`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
+async function ensureMigrationsTable() {
+  await pool.query(`CREATE SCHEMA IF NOT EXISTS "${MIGRATIONS_SCHEMA}"`);
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+    CREATE TABLE IF NOT EXISTS "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" (
       id SERIAL PRIMARY KEY,
       hash text NOT NULL,
       created_at bigint
     )
   `);
+}
 
+async function migrationsRecorded(): Promise<number> {
   const { rows } = await pool.query(
-    `SELECT count(*)::int AS n FROM "drizzle"."__drizzle_migrations"`,
+    `SELECT count(*)::int AS n FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"`,
   );
-  if (rows[0].n > 0) return; // migrations already tracked, nothing to adopt
+  return rows[0].n as number;
+}
 
-  // Does the DB already contain the baseline schema (i.e. this is a pre-existing
-  // deployment)? If "clients" exists, treat 0000 as done.
-  const { rows: t } = await pool.query(`SELECT to_regclass('public.clients') AS c`);
-  if (!t[0].c) return; // fresh DB — let migrate() run 0000 normally
-
+function baselineEntry() {
+  const journal = JSON.parse(
+    fs.readFileSync(path.join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
+  );
+  const entry = journal.entries?.[0];
+  if (!entry || entry.idx !== 0) {
+    throw new Error("drizzle/meta/_journal.json: expected a baseline entry at idx 0");
+  }
   const sql = fs.readFileSync(
-    path.join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`),
+    path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
     "utf8",
   );
-  const hash = crypto.createHash("sha256").update(sql).digest("hex");
-  await pool.query(
-    `INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)`,
-    [hash, baseline.when],
+  return { when: entry.when as number, hash: crypto.createHash("sha256").update(sql).digest("hex") };
+}
+
+async function reconcileLegacyDatabase() {
+  const sql = fs.readFileSync(
+    path.join(MIGRATIONS_FOLDER, "reconcile-legacy.sql"),
+    "utf8",
   );
-  console.log("[migrate] adopted existing schema as baseline 0000");
+  const baseline = baselineEntry();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(sql);
+    await client.query(
+      `INSERT INTO "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" (hash, created_at) VALUES ($1, $2)`,
+      [baseline.hash, baseline.when],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+  console.log("[migrate] legacy database reconciled to baseline 0000");
+}
+
+const EXPECTED_TABLES = [
+  "clients",
+  "documents",
+  "billing_data",
+  "messages",
+  "subscriptions",
+  "serpro_config",
+  "guias_geradas",
+  "scheduled_notifications",
+  "audit_log",
+];
+
+// Sanity check after migrating: every table exists, the password-reset
+// hardening columns landed, and the client_id FKs cascade. Missing table =>
+// hard fail; softer mismatches => warning.
+async function verifySchema() {
+  const { rows: tableRows } = await pool.query(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ANY($1)`,
+    [EXPECTED_TABLES],
+  );
+  const present = new Set(tableRows.map((r) => r.table_name));
+  const missing = EXPECTED_TABLES.filter((t) => !present.has(t));
+  if (missing.length) {
+    throw new Error(`schema verification failed — missing tables: ${missing.join(", ")}`);
+  }
+
+  const { rows: colRows } = await pool.query(
+    `SELECT column_name, data_type FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='clients'
+        AND column_name IN ('reset_code_hash','reset_code_expires','reset_code_attempts','reset_token','reset_token_expires')`,
+  );
+  const cols = new Map(colRows.map((r) => [r.column_name, r.data_type]));
+  for (const c of ["reset_code_hash", "reset_code_expires", "reset_code_attempts"]) {
+    if (!cols.has(c)) console.warn(`[migrate] WARN: clients.${c} is missing`);
+  }
+  if (cols.has("reset_token") || cols.has("reset_token_expires")) {
+    console.warn("[migrate] WARN: legacy clients.reset_token* column still present");
+  }
+
+  const { rows: fkRows } = await pool.query(
+    `SELECT rel.relname AS child, c.confdeltype
+       FROM pg_constraint c
+       JOIN pg_class rel ON rel.oid = c.conrelid
+       JOIN pg_namespace n ON n.oid = rel.relnamespace
+      WHERE n.nspname='public' AND c.contype='f'
+        AND rel.relname = ANY($1)`,
+    [["documents", "billing_data", "messages", "subscriptions", "guias_geradas", "scheduled_notifications"]],
+  );
+  for (const r of fkRows) {
+    if (r.confdeltype !== "c") {
+      console.warn(`[migrate] WARN: ${r.child}.client_id FK is not ON DELETE CASCADE (confdeltype=${r.confdeltype})`);
+    }
+  }
+
+  console.log(`[migrate] schema verified — ${EXPECTED_TABLES.length} tables present`);
 }
 
 async function main() {
-  await adoptBaselineIfNeeded();
+  await ensureMigrationsTable();
+
+  if ((await migrationsRecorded()) === 0 && (await tableExists("public", "clients"))) {
+    await reconcileLegacyDatabase();
+  }
+
   await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  console.log("[migrate] up to date");
+  await verifySchema();
+  console.log("[migrate] schema up to date");
   await pool.end();
 }
 
 main().catch((err) => {
-  console.error("[migrate] failed:", err);
+  console.error("[migrate] FAILED:", err);
   process.exit(1);
 });

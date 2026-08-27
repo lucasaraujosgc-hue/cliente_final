@@ -35,18 +35,19 @@ company regular?" and give the accountant one place to service them.
 ## Run / check
 
 ```bash
-npm run dev        # tsx server.ts — Vite middleware + API on :3000 (needs DATABASE_URL)
+npm run dev        # db:migrate (predev hook) then tsx server.ts on :3000 (needs DATABASE_URL)
 npm run lint       # tsc --noEmit — always run before committing
-npm test           # vitest, server-only (src/server/**/*.test.ts)
-npm run build      # vite build + esbuild bundle server -> dist/server.cjs
-npm start          # node dist/server.cjs (prod)
-npm run db:generate / db:migrate / db:studio   # Drizzle (see MIGRATIONS.md)
+npm test           # vitest, server-only (src/server/**/*.test.ts); migrations.test.ts uses pglite
+npm run build      # vite build + esbuild -> dist/server.cjs + dist/migrate.cjs
+npm start          # db:migrate (prestart hook via dist/migrate.cjs) then node dist/server.cjs
+npm run db:generate / db:migrate / db:seed / db:studio   # Drizzle (see MIGRATIONS.md)
 ```
 
 CI (`.github/workflows`) runs lint + test + build on push/PR to `main`.
 Local dev without a real DB: point `DATABASE_URL` at a throwaway Postgres
-(Neon/Supabase free tier work); `initDb()` creates tables and seeds two demo
-clients (CNPJ `12.345.678/0001-99`, password = same CNPJ).
+(Neon/Supabase free tier work). `npm run db:migrate` builds the schema;
+`npm run db:seed` adds two demo clients (CNPJ `12.345.678/0001-99`,
+password = same CNPJ).
 
 ## Layout
 
@@ -70,7 +71,7 @@ src/
     accountant/              Dashboard, ClientsList, ClientDetail, Notifications,
                              FileGallery, Devices, Settings, Audit
   server/
-    db.ts                    pg Pool + drizzle + initDb() (legacy schema bootstrap)
+    db.ts                    pg Pool + drizzle; initDb() only checks connectivity now
     schema.ts                Drizzle schema — SINGLE SOURCE OF TRUTH for tables
     env.ts                   validateEnv() (fail-fast in prod), corsOrigins(), PORT
     types.ts                 Express.Request augmentation + getAuth/getClientId/getIntegrationClient
@@ -89,11 +90,12 @@ src/
       billing.ts             upsertBilling() — the one place billing rows are written
       audit.ts               logAudit(req, action, {...}) — call on sensitive accountant actions
       password.ts            hashPassword / verifyPassword (bcrypt + legacy-plaintext upgrade)
+      resetCode.ts           password-recovery one-time code (CSPRNG, sha256+pepper, attempt cap)
       upload.ts              multer config, sanitizeFilename, extension allow-list, dir constants
       files.ts               resolveUploadPath / resolveGuiaPdfPath (traversal-safe) + streamers
       mailer.ts, push.ts, serpro.ts, notificationSweeper.ts
-drizzle/                     generated migrations (scaffolded; initDb still the active path)
-scripts/                     migrate.ts, migrate-passwords.ts
+drizzle/                     migrations — SINGLE SOURCE OF TRUTH. 0000_baseline + reconcile-legacy.sql
+scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate-passwords.ts
 ```
 
 ## Conventions & gotchas
@@ -104,10 +106,10 @@ scripts/                     migrate.ts, migrate-passwords.ts
 - **Server route handlers**: guard with `verify*Auth`, validate bodies with
   `validateBody(zodSchema)`, read identity via `getClientId(req)` /
   `getIntegrationClient(req)` / `getAuth(req)` (typed; no `(req as any)`).
-- **Schema changes**: edit `src/server/schema.ts` AND add a matching
-  `ALTER TABLE ... IF NOT EXISTS` to the `ALTER_STATEMENTS` list (new tables →
-  `CREATE_STATEMENTS`) in `src/server/db.ts`, then `npm run db:generate`.
-  Both mechanisms must agree until the migrations cutover (see `MIGRATIONS.md`).
+- **Schema changes**: edit `src/server/schema.ts`, then `npm run db:generate`,
+  review the generated `drizzle/NNNN_*.sql`, commit both. `npm run db:migrate`
+  applies them (auto-run by the `predev`/`prestart` hooks). The server does NOT
+  touch the schema at boot. See `MIGRATIONS.md`.
 - **CNPJ** is stored *formatted* (`12.345.678/0001-99`). Look clients up with a
   normalized-in-SQL query (`regexp_replace(cnpj,'[^0-9]','','g')`), never by
   loading the whole table.
@@ -115,9 +117,13 @@ scripts/                     migrate.ts, migrate-passwords.ts
   (`servicesRevenue/salesRevenue/totalIncomes/servicesTaken`) plus legacy
   `revenue/expenses/payroll` kept in sync — always write via `upsertBilling()`.
 - **Two dashboards named `Dashboard.tsx`** — `pages/client/` vs `pages/accountant/`.
-- **`initDb()` runs every boot**; it's idempotent. It also seeds/removes demo data.
+- **Password recovery**: `POST /api/auth/client/forgot-password` returns an
+  identical 200 for every case (found / not found / no email) — no CNPJ oracle;
+  the code work happens after the response. `reset-password` gives one generic
+  error for every rejection and burns the code after `RESET_CODE_MAX_ATTEMPTS`.
 - **Env**: prod refuses to start without real `JWT_SECRET`, `ADMIN`, `PASSWORD`,
   `DATABASE_URL` (`src/server/env.ts`). `CORS_ORIGINS` is required in prod too.
+  `PASSWORD_RESET_PEPPER` optional (falls back to `JWT_SECRET`).
 - **Admin login** is env-based (`ADMIN`/`PASSWORD`), not a DB row.
 - **File uploads**: 10 MB cap, one file, extension allow-list
   (`ALLOWED_UPLOAD_EXTENSIONS`), random stored name (no overwrite), names run

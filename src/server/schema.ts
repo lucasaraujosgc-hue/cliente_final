@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, json, serial, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const clients = pgTable('clients', {
@@ -18,13 +18,17 @@ export const clients = pgTable('clients', {
     on_due: true,
     on_new_file: true
   }),
-  resetToken: text('reset_token'),
-  resetTokenExpires: text('reset_token_expires')
+  // Password-recovery: only a hash of the one-time code is stored, never the
+  // code itself. `resetCodeAttempts` caps online brute force. See
+  // services/resetCode.ts + auth.routes.ts.
+  resetCodeHash: text('reset_code_hash'),
+  resetCodeExpires: timestamp('reset_code_expires', { mode: 'date' }),
+  resetCodeAttempts: integer('reset_code_attempts').default(0).notNull(),
 });
 
 export const documents = pgTable('documents', {
   id: uuid('id').primaryKey().defaultRandom(),
-  clientId: uuid('client_id').notNull().references(() => clients.id),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   category: text('category').notNull(), // taxes, payroll, company, other, bank_statement
   competence: text('competence'), // "MM/YYYY" like "05/2026"
@@ -34,12 +38,12 @@ export const documents = pgTable('documents', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   fileUrl: text('file_url'),
   pixCode: text('pix_code'),
-  extractedData: json('extracted_data'),
+  extractedData: jsonb('extracted_data'),
 });
 
 export const billingData = pgTable('billing_data', {
   id: uuid('id').primaryKey().defaultRandom(),
-  clientId: uuid('client_id').notNull().references(() => clients.id),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
   month: text('month').notNull(), // "MM/YYYY"
   servicesRevenue: integer('services_revenue').default(0).notNull(),
   salesRevenue: integer('sales_revenue').default(0).notNull(),
@@ -54,7 +58,7 @@ export const billingData = pgTable('billing_data', {
 
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
-  clientId: uuid('client_id').notNull().references(() => clients.id),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   direction: text('direction').default('accountant_to_client').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -63,8 +67,8 @@ export const messages = pgTable('messages', {
 
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  clientId: uuid('client_id').references(() => clients.id).notNull(),
-  subscriptionObject: json('subscription_object'),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  subscriptionObject: jsonb('subscription_object'),
   fcmToken: text('fcm_token'),
   deviceName: text('device_name'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -99,7 +103,7 @@ export const serproConfig = pgTable('serpro_config', {
 
 export const guiasGeradas = pgTable('guias_geradas', {
   id: serial('id').primaryKey(),
-  clientId: uuid('client_id').notNull().references(() => clients.id),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
   usuarioId: integer('usuario_id').notNull().default(1),
   tipoGuia: text('tipo_guia').notNull(),
   competencia: text('competencia').notNull(),
@@ -129,6 +133,7 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 
 export const scheduledNotifications = pgTable('scheduled_notifications', {
   id: serial('id').primaryKey(),
+  // Nullable: a rule with no client_id is a broadcast to every client.
   clientId: uuid('client_id').references(() => clients.id, { onDelete: 'cascade' }),
   type: text('type').notNull(), // 'immediate', 'recurrent', '3_days_before', 'on_due_date'
   title: text('title').notNull(),

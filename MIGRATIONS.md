@@ -1,41 +1,75 @@
 # Database migrations
 
-The schema lives in [`src/server/schema.ts`](src/server/schema.ts) (Drizzle ORM).
+**Drizzle migrations are the single source of truth for the schema.** The
+server never creates or alters tables at boot.
 
-## Current state
-
-Two mechanisms exist during the transition:
-
-| Mechanism | Where | Status |
-|-----------|-------|--------|
-| `initDb()` | [`src/server/db.ts`](src/server/db.ts) | **Active** — runs on every server start, `CREATE TABLE IF NOT EXISTS` + idempotent `ALTER`s. Safe but doesn't track versions. |
-| Drizzle migrations | [`drizzle/`](drizzle/) + [`scripts/migrate.ts`](scripts/migrate.ts) | **Scaffolded** — `0000_baseline.sql` matches what `initDb` builds. |
+- Schema definition: [`src/server/schema.ts`](src/server/schema.ts)
+- Migration files: [`drizzle/`](drizzle/)
+- Runner: [`scripts/migrate.ts`](scripts/migrate.ts) → `npm run db:migrate`
 
 ## Everyday workflow
 
 ```bash
 # 1. edit src/server/schema.ts
-# 2. generate a migration file
-npm run db:generate
-# 3. review + commit drizzle/NNNN_*.sql and drizzle/meta/*
-# 4. apply it
-npm run db:migrate
+npm run db:generate     # writes drizzle/NNNN_<name>.sql + updates meta/
+# 2. review the generated SQL, commit it together with the schema change
+npm run db:migrate      # apply locally
 ```
 
-`npm run db:migrate` is safe to run repeatedly. On a database that predates
-migrations it marks `0000_baseline` as already applied (see the baseline-adoption
-logic in `scripts/migrate.ts`) and only runs `0001+`. On a fresh empty database
-it runs everything from `0000`.
+`npm run db:migrate` is safe to run repeatedly — it only applies what's
+pending. It also runs automatically:
 
-## Cutover (one-time, deliberate)
+| When | How |
+|------|-----|
+| local dev | `predev` hook (`npm run dev` → migrate → start) |
+| production | `prestart` hook (`npm start` → `node dist/migrate.cjs` → server) |
+| deploy | run `npm run db:migrate` (or `node dist/migrate.cjs`) as an explicit release step before routing traffic |
 
-When you're ready to make migrations the single source of truth:
+The Docker image bundles the runner to `dist/migrate.cjs` and copies
+`drizzle/` so the SQL files are available at runtime.
 
-1. Run `npm run db:migrate` against production once (adopts the baseline).
-2. Add `npm run db:migrate` as a release step in the deploy pipeline
-   (before the new container serves traffic).
-3. Reduce `initDb()` to just the seed / "remove test companies" block, or
-   delete it entirely.
+## The legacy bridge (one-time, automatic)
 
-Until then, keep new columns represented **both** in `schema.ts` and as an
-`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `initDb()` so both paths agree.
+Databases created by the **old** `src/server/db.ts` (which did
+`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE` on every boot) have the tables
+but no `drizzle.__drizzle_migrations` history. The first `db:migrate` against
+such a database:
+
+1. detects it (`clients` exists, migration history empty),
+2. runs [`drizzle/reconcile-legacy.sql`](drizzle/reconcile-legacy.sql) in a
+   transaction — fully idempotent and additive: creates any missing table
+   (`audit_log`), adds any missing column, renames `reset_token` →
+   `reset_code_hash` / `reset_token_expires` → `reset_code_expires`, converts
+   `json` → `jsonb` where the schema expects it, and normalises every
+   `client_id` foreign key to `ON DELETE CASCADE` with the drizzle-standard
+   name,
+3. marks `0000_baseline` as applied,
+4. then applies `0001+` normally.
+
+Fresh/empty databases skip step 2 and just get `0000_baseline.sql`.
+
+**It never drops a table and never drops a data column.** The reconcile is
+exercised by [`src/server/services/__tests__/migrations.test.ts`](src/server/services/__tests__/migrations.test.ts)
+against a real Postgres engine (pglite), including a data-preservation check.
+
+> Before the first production deploy of this change, run `npm run db:migrate`
+> against a **copy** of the production database and confirm
+> `[migrate] schema verified` with no warnings.
+
+## Schema facts worth knowing
+
+- FKs: every `client_id` → `clients.id` is `ON DELETE CASCADE`. `audit_log`
+  deliberately has **no** FK so the trail survives client deletion.
+- Unique: `clients.cnpj`, `clients.integration_hash`.
+- `json` vs `jsonb`: `documents.extracted_data` and
+  `subscriptions.subscription_object` are `jsonb`;
+  `clients.notification_preferences` and `audit_log.metadata` are `json`.
+- Defaults: `billing_data.*` money columns default `0`;
+  `clients.reset_code_attempts` defaults `0`;
+  `clients.notification_preferences` has a JSON default.
+
+## Seeding (dev only)
+
+```bash
+npm run db:seed   # refuses to run if NODE_ENV=production or clients table is non-empty
+```
