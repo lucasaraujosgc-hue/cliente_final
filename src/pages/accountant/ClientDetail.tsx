@@ -1,4 +1,5 @@
 import { apiFetch, openDocument } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
@@ -272,7 +273,7 @@ export function ClientDetail() {
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900">{data.client.name}</h1>
-          <p className="text-slate-500 text-xs mt-1">CNPJ: {data.client.cnpj} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600' : 'text-amber-600'}`}>Status: {data.client.regularityStatus}</span></p>
+          <p className="text-slate-500 text-xs mt-1">CNPJ: {formatCnpj(data.client.cnpj)} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600' : 'text-amber-600'}`}>Status: {data.client.regularityStatus}</span></p>
         </div>
       </header>
 

@@ -86,6 +86,10 @@ async function assertTargetSchema(db: PGlite) {
   // 0001: integration token digest column
   expect(await columnType(db, "clients", "integration_hash_digest")).toBe("text");
   expect(await constraintExists(db, "clients_integration_hash_digest_unique")).toBe(true);
+
+  // 0002: every stored CNPJ is digits-only
+  const cnpjs = await db.query<{ cnpj: string }>(`SELECT cnpj FROM clients`);
+  for (const r of cnpjs.rows) expect(r.cnpj).toMatch(/^\d*$/);
 }
 
 // Approximates a database built by the pre-migrations src/server/db.ts:
@@ -213,7 +217,8 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
       `SELECT cnpj, reset_code_hash, reset_code_attempts, integration_hash_digest FROM clients`,
     );
     expect(c.rows).toHaveLength(1);
-    expect(c.rows[0].cnpj).toBe("12.345.678/0001-99");
+    // 0002 normalised the CNPJ to digits-only, keeping the row
+    expect(c.rows[0].cnpj).toBe("12345678000199");
     // legacy plaintext token (6 chars) was cleared, not carried over as a "hash"
     expect(c.rows[0].reset_code_hash).toBeNull();
     expect(c.rows[0].reset_code_attempts).toBe(0);

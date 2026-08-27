@@ -26,6 +26,7 @@ import {
   clearIntegrationToken,
 } from "../services/integrationToken";
 import { clientAdminDTO } from "../dto/client";
+import { normalizeCnpj } from "../../lib/cnpj";
 import { verifyAccountantAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import {
@@ -220,15 +221,18 @@ export function registerAccountantRoutes(app: Express) {
         accountantCategory,
       } = req.body;
       try {
+        const cnpjDigits = normalizeCnpj(cnpj);
+        if (cnpjDigits.length < 11) {
+          return res.status(400).json({ error: "CNPJ inválido." });
+        }
         const [newClient] = await db
           .insert(clients)
           .values({
-            cnpj,
+            cnpj: cnpjDigits,
             name,
-            // Default password is the client's own CNPJ; they're expected
-            // to change it on first access. Stored as a bcrypt hash, never
-            // in plaintext.
-            passwordHash: await hashPassword(String(cnpj)),
+            // Default password is the client's own CNPJ (digits-only); they're
+            // expected to change it on first access. bcrypt hash, never plaintext.
+            passwordHash: await hashPassword(cnpjDigits),
             regularityStatus: regularityStatus || "green",
             // A pasted integration token is stored hashed, never in plaintext.
             ...(typeof integrationHash === "string" && integrationHash.trim()

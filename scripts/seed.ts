@@ -8,9 +8,10 @@ import "dotenv/config";
 import { pool } from "../src/server/db";
 import { hashPassword } from "../src/server/services/password";
 
+// CNPJ is stored digits-only. Login with "12345678000199" (or any punctuation).
 const DEMO = [
-  { id: "c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101", cnpj: "12.345.678/0001-99", name: "Empresa XPTO Ltda", status: "warning" },
-  { id: "c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb102", cnpj: "98.765.432/0001-11", name: "Startup Inovadora S/A", status: "green" },
+  { id: "c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101", cnpj: "12345678000199", name: "Empresa XPTO Ltda", status: "warning" },
+  { id: "c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb102", cnpj: "98765432000111", name: "Startup Inovadora S/A", status: "green" },
 ];
 
 async function main() {

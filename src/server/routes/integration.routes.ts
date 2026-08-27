@@ -5,6 +5,7 @@ import { clients, documents } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
 import { getIntegrationClient } from "../types";
 import { clientIntegrationDTO } from "../dto/client";
+import { normalizeCnpj } from "../../lib/cnpj";
 import { hashPassword } from "../services/password";
 import { upsertBilling } from "../services/billing";
 import { validateBody } from "../middleware/validate";
@@ -50,26 +51,27 @@ export function registerIntegrationRoutes(app: Express) {
     verifyIntegrationToken,
     validateBody(integrationSyncClientSchema),
     async (req, res) => {
-      const { cnpj, name, regularityStatus } = req.body;
+      const { name, regularityStatus } = req.body;
+      const cnpjDigits = normalizeCnpj(req.body.cnpj);
       const integrationClient = getIntegrationClient(req);
 
-      // Segurança: O token de integração de um cliente só pode sincronizar o faturamento dele mesmo (mesmo CNPJ)!
-      if (cnpj.replace(/\D/g, "") !== integrationClient.cnpj.replace(/\D/g, "")) {
+      // A client's integration token may only sync that same client (CNPJ).
+      if (cnpjDigits !== normalizeCnpj(integrationClient.cnpj)) {
         return res.status(403).json({ error: "Acesso negado. Token não autorizado para este CNPJ." });
       }
 
       const clientList = await db
         .select()
         .from(clients)
-        .where(eq(clients.cnpj, cnpj));
+        .where(eq(clients.cnpj, cnpjDigits));
       let client;
       if (clientList.length === 0) {
         [client] = await db
           .insert(clients)
           .values({
-            cnpj,
+            cnpj: cnpjDigits,
             name,
-            passwordHash: await hashPassword(cnpj.replace(/[^0-9]/g, "").slice(0, 6)),
+            passwordHash: await hashPassword(cnpjDigits),
             regularityStatus: regularityStatus || "green",
           })
           .returning();
@@ -81,7 +83,7 @@ export function registerIntegrationRoutes(app: Express) {
             regularityStatus:
               regularityStatus || clientList[0].regularityStatus,
           })
-          .where(eq(clients.cnpj, cnpj))
+          .where(eq(clients.cnpj, cnpjDigits))
           .returning();
       }
       res.json({ success: true, client: clientIntegrationDTO(client) });

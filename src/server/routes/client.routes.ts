@@ -26,6 +26,7 @@ import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 import { getClientId } from "../types";
 import { clientSelfDTO } from "../dto/client";
+import { formatCnpj } from "../../lib/cnpj";
 import { validateBody } from "../middleware/validate";
 import {
   billingUpdateSchema,
@@ -128,7 +129,7 @@ export function registerClientRoutes(app: Express) {
                </div>
                <h2>Olá, ${client.name}!</h2>
                <p>Seu primeiro acesso ao nosso portal foi realizado com sucesso.</p>
-               <p>Seu login é: <strong>${client.cnpj}</strong></p>
+               <p>Seu login é: <strong>${formatCnpj(client.cnpj)}</strong></p>
                <p>Agora você pode acompanhar as guias, envios de documentos e mural de recados pelo nosso sistema centralizado.</p>
                <p>Atenciosamente,<br>Equipe Vírgula Contábil</p>
              </div>

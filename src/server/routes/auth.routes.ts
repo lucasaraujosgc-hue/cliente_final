@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { clients } from "../schema";
+import { formatCnpj } from "../../lib/cnpj";
 import { resend } from "../services/mailer";
 import { hashPassword, verifyPassword } from "../services/password";
 import {
@@ -90,7 +91,7 @@ export function registerAuthRoutes(app: Express) {
               html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
                    <h2>Recuperação de Senha</h2>
-                   <p>Você solicitou a recuperação de senha para o CNPJ <strong>${client.cnpj}</strong>.</p>
+                   <p>Você solicitou a recuperação de senha para o CNPJ <strong>${formatCnpj(client.cnpj)}</strong>.</p>
                    <p>Seu código de verificação é:</p>
                    <h1 style="background: #f4f4f5; padding: 16px; text-align: center; letter-spacing: 4px; border-radius: 8px;">${code}</h1>
                    <p>Este código expira em ${minutes} minutos e só pode ser usado uma vez.</p>
@@ -192,26 +193,29 @@ export function registerAuthRoutes(app: Express) {
       });
     }
 
+    // The first-access password is the client's CNPJ, which is now stored
+    // digits-only. Accept the CNPJ typed in any punctuation for that case.
+    const passwordDigits = String(password).replace(/\D/g, "");
+    const candidates =
+      passwordDigits && passwordDigits !== String(password)
+        ? [String(password), passwordDigits]
+        : [String(password)];
+
     const clientList = await findClientsByCnpj(cnpj);
     let matchedClient: (typeof clientList)[number] | undefined;
     for (const c of clientList) {
-      const { valid, needsRehash } = await verifyPassword(
-        String(password),
-        String(c.passwordHash),
-      );
-      if (valid) {
+      for (const attempt of candidates) {
+        const { valid, needsRehash } = await verifyPassword(attempt, String(c.passwordHash));
+        if (!valid) continue;
         matchedClient = c;
         if (needsRehash) {
-          // Silently upgrade legacy plaintext passwords to a proper bcrypt
-          // hash now that we know the plaintext value.
-          const newHash = await hashPassword(String(password));
-          await db
-            .update(clients)
-            .set({ passwordHash: newHash })
-            .where(eq(clients.id, c.id));
+          // Silently upgrade legacy plaintext passwords to a proper bcrypt hash.
+          const newHash = await hashPassword(attempt);
+          await db.update(clients).set({ passwordHash: newHash }).where(eq(clients.id, c.id));
         }
         break;
       }
+      if (matchedClient) break;
     }
     const client = matchedClient;
 

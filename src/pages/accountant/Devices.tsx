@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Trash2, Smartphone, AlertCircle, RefreshCw } from "lucide-react";
 import { apiFetch } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 
 export function Devices() {
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
@@ -97,7 +98,7 @@ export function Devices() {
                         {sub.client?.name || "Desconhecido"}
                       </div>
                       <div className="text-xs text-slate-500 font-mono mt-0.5">
-                        {sub.client?.cnpj || "S/ CNPJ"}
+                        {sub.client?.cnpj ? formatCnpj(sub.client.cnpj) : "S/ CNPJ"}
                       </div>
                     </td>
                     <td className="px-6 py-4">
