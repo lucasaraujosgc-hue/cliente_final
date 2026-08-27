@@ -1,38 +1,25 @@
 import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef } from "react";
 import { 
-  AlertCircle, 
-  CheckCircle, 
-  Copy, 
   Bell, 
   Upload, 
   FileCheck, 
-  FileSpreadsheet, 
   Edit3, 
-  Calendar, 
-  Clock, 
-  Smartphone, 
-  X, 
-  TrendingUp, 
-  Activity, 
-  Download, 
-  RefreshCw,
-  Check,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  Send,
-  DollarSign,
-  Settings
+  RefreshCw,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
-import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
+import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
-import { PixScannerButton } from "../../components/PixScannerButton";
-import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 import { handleFileAction } from "../../lib/utils";
+import { PwaBanner } from "./dashboard/PwaBanner";
+import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
+import { KpiCards } from "./dashboard/KpiCards";
+import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
+import { SupportCards } from "./dashboard/SupportCards";
+import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
 
 export function ClientDashboard() {
   const location = useLocation();
@@ -551,31 +538,7 @@ export function ClientDashboard() {
     <div className="space-y-6 pb-24 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-7xl mx-auto">
       
       {/* 📱 PWA SMART HELPER BANNER */}
-      {showPwaBanner && (
-        <div className="relative bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-3xl shadow-lg border border-emerald-500/20 flex flex-col sm:flex-row items-center sm:justify-between gap-4 overflow-hidden transform duration-250 hover:shadow-xl mt-3">
-          <div className="absolute top-0 right-0 p-16 bg-white/5 rounded-full translate-x-12 -translate-y-12 pointer-events-none"></div>
-          <div className="flex items-center gap-4 z-10">
-            <div className="p-3 bg-white/15 backdrop-blur-md rounded-2xl text-emerald-100 animate-bounce shrink-0">
-              <Smartphone className="w-6 h-6" />
-            </div>
-            <div>
-              <h4 className="font-extrabold text-sm sm:text-base tracking-tight">Dica de Aplicativo PWA 📱</h4>
-              <p className="text-emerald-100 text-xs mt-1 leading-relaxed max-w-xl">
-                Acesse como aplicativo nativo! No iOS, <strong className="text-white">esta ação deve ser feita obrigatoriamente através do navegador Safari</strong>: toque no botão de <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> (ícone de quadrado com uma seta para cima) e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong>. No Android, basta tocar nas opções do Chrome e escolher <strong className="text-white">"Instalar aplicativo"</strong>.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2 shrink-0 z-10 self-end sm:self-center">
-            <button 
-              onClick={dismissPwaBanner} 
-              className="p-2 bg-black/10 hover:bg-black/25 rounded-xl text-white transition-all"
-              title="Dispensar sugestão"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
 
       {/* HEADER SECTION */}
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-3">
@@ -655,259 +618,27 @@ export function ClientDashboard() {
 
 
           {/* 🚨 DEDICATED HIGH-VISIBILITY DUE DATE SECTION (VENCIMENTOS) */}
-          <div className="bg-white/80 dark:bg-slate-800/90 backdrop-blur-lg rounded-3xl border border-slate-150/80 dark:border-slate-800/80 p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700/50 gap-2 mb-4">
-              <div>
-                <h3 className="font-black text-slate-800 dark:text-white text-base flex items-center gap-1.5">
-                  <Clock className="w-5 h-5 text-amber-500" />
-                  Próximos Vencimentos de Guias e Impostos
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Acompanhe e pague as guias enviadas pelo escritório. Data de referência: 22/06/2026.
-                </p>
-              </div>
-              <span className="self-start sm:self-center px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-350 text-[10px] font-bold rounded-lg uppercase tracking-wide">
-                Competência: {selectedCompetence}
-              </span>
-            </div>
+          <DueDatesCard
+            docs={sortedExpirations}
+            selectedCompetence={selectedCompetence}
+            clientId={data.client.id}
+            copiedId={copiedId}
+            getDocDueStatus={getDocDueStatus}
+            getAuthenticatedFileUrl={getAuthenticatedFileUrl}
+            onCopyCode={handleCopyCode}
+            onMarkAsPaid={handleMarkAsPaid}
+            onReloadData={loadData}
+          />
 
-            {sortedExpirations.length === 0 ? (
-              <div className="py-12 text-center rounded-2xl bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/50">
-                <CheckCircle className="w-10 h-10 text-emerald-400 dark:text-emerald-500/30 mx-auto mb-2" />
-                <h4 className="font-bold text-slate-800 dark:text-slate-300 text-sm">Limpo e Seguro!</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-relaxed">
-                  Nenhum documento contábil emitido ou com vencimento cadastrado para {selectedCompetence}.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {sortedExpirations.map((doc: any) => {
-                  const dueInfo = getDocDueStatus(doc);
-                  const isHighlighted = dueInfo.isOverdue || dueInfo.isSoon;
-
-                  return (
-                    <div 
-                      key={doc.id} 
-                      className={`relative overflow-hidden p-4 rounded-2xl border transition-all ${
-                        isHighlighted 
-                          ? "bg-gradient-to-r from-red-50/50 to-amber-50/20 shadow-xs border-amber-200 dark:from-rose-950/15 dark:to-amber-950/5 dark:border-rose-900/40"
-                          : doc.status === "paid"
-                            ? "bg-white/40 dark:bg-slate-900/10 border-slate-100 dark:border-slate-800 opacity-75"
-                            : "bg-white dark:bg-slate-900/30 border-slate-200 hover:border-slate-300 dark:border-slate-805 dark:hover:border-slate-700"
-                      }`}
-                    >
-                      {/* Visual neon priority pill at the side */}
-                      {isHighlighted && (
-                        <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${dueInfo.isOverdue ? 'bg-rose-500' : 'bg-amber-500'}`} />
-                      )}
-
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-                        <div className="flex items-start sm:items-center gap-3">
-                          <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 sm:mt-0 ${
-                            doc.status === "paid" 
-                              ? "bg-emerald-500/10 text-emerald-500" 
-                              : dueInfo.isOverdue 
-                                ? "bg-rose-500/10 text-rose-500 dark:bg-rose-500/20" 
-                                : "bg-amber-500/10 text-amber-500 dark:bg-amber-500/20"
-                          }`}>
-                            {doc.status === "paid" ? (
-                              <Check className="w-5 h-5 text-emerald-500" />
-                            ) : (
-                              <AlertCircle className={`w-5 h-5 ${dueInfo.isOverdue ? 'animate-pulse' : ''}`} />
-                            )}
-                          </div>
-
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm capitalize">
-                                {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : (doc.category || 'Geral')}
-                              </h4>
-                              <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full ${dueInfo.colorClass}`}>
-                                {dueInfo.label}
-                              </span>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
-                              </span>
-                              {doc.extractedData?.extractedValue && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
-                                <>
-                                  <span>•</span>
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                                    <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                                  </span>
-                                </>
-                              )}
-                              <span>•</span>
-                              <span className="font-medium break-all">Arquivo: {doc.title || "Documento"}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {doc.status === "waiting_accountant" ? (
-                           <div className="flex items-center p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl mt-3 sm:mt-0 sm:self-center w-full sm:w-auto">
-                               <span className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                                   <Send className="w-3.5 h-3.5" /> Aguardando contador enviar a guia.
-                               </span>
-                           </div>
-                        ) : (
-                          <div className="flex flex-col gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-                            {/* Interactive tactile buttons */}
-                            <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
-                          {doc.fileUrl && (
-                            <>
-                            <button 
-                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'view', doc.title || 'documento')}
-                              className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
-                              title="Visualizar documento"
-                            >
-                              <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
-                            </button>
-                            <button 
-                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'download', doc.title || 'documento')}
-                              className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
-                              title="Baixar Arquivo"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                            </>
-                          )}
-
-                          {doc.pixCode ? (
-                            <button 
-                              onClick={() => handleCopyCode(doc.id, doc.pixCode)}
-                              className="flex-1 sm:flex-none h-10 px-3 w-full sm:w-auto bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
-                            >
-                              {copiedId === doc.id ? (
-                                <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
-                                  <Check className="w-3.5 h-3.5" /> Copiado!
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 font-bold">
-                                  <Copy className="w-3 h-3 text-indigo-400" /> Copiar qrcode pix
-                                </span>
-                              )}
-                            </button>
-                          ) : (
-                            doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
-                              <div className="flex-1 sm:flex-none">
-                                <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
-                              </div>
-                            )
-                          )}
-
-
-                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) ? (
-                            <button 
-                              onClick={() => handleMarkAsPaid(doc.id)}
-                              className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
-                            >
-                              Marcar como Pago
-                            </button>
-                          ) : doc.status === "paid" ? (
-                            <div className="flex-1 sm:flex-none h-10 px-3 bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-500 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs opacity-70">
-                              <CheckCircle className="w-4 h-4" />
-                              Pago
-                            </div>
-                          ) : null}
-                        </div>
-                        {/* INICIO BOTAO GERAR GUIA */}
-                        {doc.status !== "paid" && (
-                          <div className="w-full mt-2">
-                              <GuiaAtualizarButton 
-                                  clienteId={data.client.id}
-                                  guia={{
-                                      id: doc.id,
-                                      tipoGuia: (doc.category === "DCTFWEB" || doc.category === "INSS" || doc.category?.toUpperCase()?.includes("INSS") || doc.title?.toUpperCase()?.includes("DCTFWEB") || doc.title?.toUpperCase()?.includes("INSS")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.category?.toUpperCase()?.includes("SIMPLES") || doc.title?.toUpperCase()?.includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
-                                      competencia: doc.competence || selectedCompetence || "01/2026",
-                                      status: doc.status,
-                                      title: doc.title
-                                  }}
-                                  isOverdue={dueInfo.isOverdue}
-                                  onAtualizado={() => loadData()}
-                              />
-                          </div>
-                        )}
-                        {/* FIM BOTAO GERAR GUIA */}
-                        </div>
-                      )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-
-      {/* ⚡ TACTILE QUICK KPI STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Stat 1: Faturamento do Mês */}
-        <div className="bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm hover:shadow-md transition-shadow flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Faturamento Declarado ({selectedCompetence})</p>
-            <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
-              {monthsTotalBilling.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </h3>
-            <p className="text-[10px] text-slate-500 flex items-center">
-              <TrendingUp className="w-3 h-3 text-emerald-500 mr-1" />
-              Preenchido pela contabilidade & manual
-            </p>
-          </div>
-          <div className="p-3 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 rounded-2xl">
-            <Activity className="w-5 h-5" />
-          </div>
-        </div>
-
-        {/* Stat 2: Documentos e Guias Pendentes */}
-        <div className="bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm hover:shadow-md transition-shadow flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Guias de Impostos / Salários ({selectedCompetence})</p>
-            <h3 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-              {pendingDocs.length} {pendingDocs.length === 1 ? 'pendência' : 'pendências'}
-            </h3>
-            {pendingDocs.length > 0 && (
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                Total: {totalPendingValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
-            )}
-            <p className="text-[10px] text-slate-500">
-              {pendingDocs.length === 0 ? "🎉 Tudo pago e em dia!" : "⚠️ Requer atenção no vencimento"}
-            </p>
-          </div>
-          <div className={`p-3 rounded-2xl ${pendingDocs.length > 0 ? "bg-amber-500/10 text-amber-500 dark:text-amber-400" : "bg-slate-100 dark:bg-slate-700 text-slate-400"}`}>
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        {/* Stat 3: Guias em Atraso Geral */}
-        <div 
-          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${allOverdueDocs.length > 0 ? 'cursor-pointer hover:shadow-md ring-2 ring-rose-500/20' : 'hover:shadow-md cursor-pointer'}`}
-          onClick={() => navigate('/overdue')}
-        >
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">GUIAS EM ATRASO GERAL</p>
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-              {allOverdueDocs.length > 0 ? (
-                <span className="text-rose-500 dark:text-rose-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">
-                  {allOverdueDocs.length} atrasadas
-                </span>
-              ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  Nenhuma 🟢
-                </span>
-              )}
-            </h3>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-              Total: {totalOverdueValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-            </p>
-          </div>
-          <div className={`p-3 rounded-2xl ${allOverdueDocs.length > 0 ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"}`}>
-            {allOverdueDocs.length > 0 ? <AlertCircle className="w-5 h-5 animate-pulse" /> : <CheckCircle className="w-5 h-5" />}
-          </div>
-        </div>
-      </div>
+          {/* ⚡ TACTILE QUICK KPI STATS CARDS */}
+          <KpiCards
+            selectedCompetence={selectedCompetence}
+            monthsTotalBilling={monthsTotalBilling}
+            pendingDocsCount={pendingDocs.length}
+            totalPendingValue={totalPendingValue}
+            overdueDocsCount={allOverdueDocs.length}
+            totalOverdueValue={totalOverdueValue}
+          />
 
       {/* SECURITY / PASSWORD RESET NOTIFICATION BOX */}
       <div className="bg-gradient-to-r from-slate-50 to-indigo-50 dark:from-slate-800/30 dark:to-slate-800/10 border border-slate-200/50 dark:border-slate-700/50 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
@@ -965,158 +696,21 @@ export function ClientDashboard() {
         </div>
 
         {/* COLUMN 3 */}
-        <div className="space-y-6">
-          
-          {/* PLANTÃO CONTÁBIL */}
-          <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden shadow-md">
-            <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
-            <h4 className="font-extrabold text-sm tracking-tight mb-2">Suporte e Plantão Contábil 📞</h4>
-            <p className="text-slate-300 text-xs leading-relaxed mb-4">
-              Dúvidas na declaração do faturamento ou na conciliação bancária do seu extrato? Fale direto em nosso chat.
-            </p>
-            <a 
-              href={`https://wa.me/${whatsappSupport.replace(/\D/g, '')}`}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full inline-block text-center py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition-all"
-            >
-              Iniciar Chat de Plantão
-            </a>
-          </div>
-
-          {/* SISTEMA FINANCEIRO */}
-          <div className="bg-gradient-to-br from-indigo-900 to-purple-900 text-white rounded-3xl p-6 relative overflow-hidden shadow-md mt-6">
-            <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
-            <h4 className="font-extrabold text-sm tracking-tight mb-2">Gestão Financeira Completa 💼</h4>
-            <p className="text-indigo-200 text-xs leading-relaxed mb-4">
-              Tenha acesso a um sistema financeiro completo para gerenciar sua empresa. Controle de caixa, emissão de boletos e mais.
-            </p>
-            <a 
-              href="https://financeiro.virgulacontabil.com.br"
-              target="_blank"
-              rel="noreferrer"
-              className="w-full inline-block text-center py-2 bg-white/20 hover:bg-white/30 text-white font-extrabold text-xs rounded-xl transition-all backdrop-blur-sm"
-            >
-              Acessar Sistema Financeiro
-            </a>
-          </div>
-
-        </div>
+        <SupportCards whatsappSupport={whatsappSupport} />
       </div>
 
       {/* 📊 ACCUMULATED HISTORIC GRAPH AREA SECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-slate-50/50 dark:bg-slate-900/50 p-4 rounded-3xl border border-slate-100 dark:border-slate-800">
-        
-        {/* Graph 1 */}
-        <div className="bg-white dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-100 dark:border-slate-800 p-6">
-          <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-4">Faturamento Declarado (Histórico 12 Meses)</h3>
-          <div className="h-[230px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorServNew" x1="0" y1="0" x2="0" y2="1">
-                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorVendNew" x1="0" y1="0" x2="0" y2="1">
-                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.15} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'medium' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', background: 'rgba(30,41,59,0.95)', color: 'white', backdropFilter: 'blur(8px)', fontSize: '12px' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px', color: '#94a3b8' }} />
-                <Area type="monotone" name="Serviços" dataKey="FaturamentoServiço" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorServNew)" />
-                <Area type="monotone" name="Mercadorias" dataKey="FaturamentoVendas" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorVendNew)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Graph 2 */}
-        <div className="bg-white dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-100 dark:border-slate-800 p-6">
-          <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-4">Total de Entradas vs Serviços Tomados</h3>
-          <div className="h-[230px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.15} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'medium' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ borderRadius: '12px', border: 'none', background: 'rgba(30,41,59,0.95)', color: 'white', backdropFilter: 'blur(8px)', fontSize: '12px' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px', color: '#94a3b8' }} />
-                <Bar dataKey="Entradas" name="Entradas Totais" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Tomados" name="Serviços Tomados" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-      </div>
+      <BillingHistoryCharts chartData={chartData} />
       </div>
 
       {/* MODAL CONFIG NOTIFICAÇÕES */}
-      {showPrefsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <Settings className="w-5 h-5 text-indigo-500" /> Preferências
-              </h3>
-              <button 
-                onClick={() => setShowPrefsModal(false)}
-                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                <input 
-                  type="checkbox" 
-                  checked={prefsForm.receives_all} 
-                  onChange={e => setPrefsForm({...prefsForm, receives_all: e.target.checked})}
-                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 dark:border-slate-700 focus:ring-indigo-600 focus:ring-2"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-none mb-1">Receber Notificações</p>
-                  <p className="text-[10px] text-slate-500">Ativa o recebimento de avisos do contador.</p>
-                </div>
-              </label>
-
-              {prefsForm.receives_all && (
-                <div className="space-y-3 pl-2 border-l-2 border-slate-100 dark:border-slate-800">
-                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
-                    <input type="checkbox" checked={prefsForm.recurrent} onChange={e => setPrefsForm({...prefsForm, recurrent: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Lembretes Mensais</span>
-                  </label>
-                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
-                    <input type="checkbox" checked={prefsForm.before_due} onChange={e => setPrefsForm({...prefsForm, before_due: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Avisar dias antes do vencimento</span>
-                  </label>
-                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
-                    <input type="checkbox" checked={prefsForm.on_due} onChange={e => setPrefsForm({...prefsForm, on_due: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Avisar no dia do vencimento</span>
-                  </label>
-                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
-                    <input type="checkbox" checked={prefsForm.on_new_file} onChange={e => setPrefsForm({...prefsForm, on_new_file: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Quando gerar nova guia</span>
-                  </label>
-                </div>
-              )}
-            </div>
-            
-            <button
-              onClick={handleSavePrefs}
-              className="mt-6 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-colors"
-            >
-              Salvar Preferências
-            </button>
-          </div>
-        </div>
-      )}
+      <NotificationPreferencesModal
+        show={showPrefsModal}
+        form={prefsForm}
+        onChange={setPrefsForm}
+        onClose={() => setShowPrefsModal(false)}
+        onSave={handleSavePrefs}
+      />
 
     </div>
   );
