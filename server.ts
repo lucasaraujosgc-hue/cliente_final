@@ -42,9 +42,26 @@ async function startServer() {
   app.set("trust proxy", 1);
   app.use(
     helmet({
-      // The SPA is served from the same origin; a strict CSP would need
-      // per-asset tuning with Vite. Keep the other protections on.
-      contentSecurityPolicy: false,
+      // Opt-in CSP (CSP_ENABLED=true). The built SPA loads its own JS/CSS from
+      // /assets, Google Fonts for the wordmark, and remote images (the favicon
+      // lives on virgulacontabil.com.br). 'unsafe-inline' for styles is needed
+      // because Tailwind/we inject a few inline style attributes.
+      contentSecurityPolicy:
+        process.env.CSP_ENABLED === "true"
+          ? {
+              directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+                fontSrc: ["'self'", "https://fonts.gstatic.com"],
+                imgSrc: ["'self'", "data:", "https:"],
+                connectSrc: ["'self'"],
+                frameAncestors: ["'self'"],
+                objectSrc: ["'none'"],
+                baseUri: ["'self'"],
+              },
+            }
+          : false,
       crossOriginEmbedderPolicy: false,
     }),
   );

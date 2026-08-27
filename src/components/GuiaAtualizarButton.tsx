@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { RefreshCw, FileText, Send, Copy, Check, Download, AlertCircle } from "lucide-react";
+import { apiFetch } from "../lib/apiClient";
 
 interface Guia {
   id: string; // O ID do documento
@@ -37,20 +38,15 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
     setLoading(true);
     setErro(null);
     try {
-      const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-      
       if (isSupported) {
         const parts = (guia.competencia || "").split("/");
         const compStr = parts.length === 2 ? `${parts[1]}${parts[0]}` : "202605";
 
-        const res = await fetch(`/api/pendencies/guia/${clienteId}`, {
+        const res = await apiFetch(`/api/pendencies/guia/${clienteId}`, {
           method: "POST",
-          headers: { 
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}` 
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tipoGuia: guia.tipoGuia, competencia: compStr, documentId: guia.id }),
-        });
+        }, "client");
         if (!res.ok) {
           const err = await res.json();
           throw new Error(err.error || "Erro ao gerar guia.");
@@ -79,24 +75,21 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
       } else {
          // Envia mensagem ao contador
          const msg = `Por favor, preciso recalcular a guia: ${tipoLabel} - Competência: ${guia.competencia}.`;
-         const res = await fetch(`/api/client/message`, {
+         const res = await apiFetch(`/api/client/message`, {
              method: "POST",
-             headers: {
-                 "Content-Type": "application/json",
-                 "Authorization": `Bearer ${token}`
-             },
+             headers: { "Content-Type": "application/json" },
              body: JSON.stringify({ content: msg, clientId: clienteId })
-         });
-         
+         }, "client");
+
          if (!res.ok) {
             throw new Error("Erro ao enviar mensagem.");
          }
-         
-         await fetch(`/api/client/mark-doc/${guia.id}`, {
+
+         await apiFetch(`/api/client/mark-doc/${guia.id}`, {
              method: "POST",
-             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+             headers: { "Content-Type": "application/json" },
              body: JSON.stringify({ status: "waiting_accountant" })
-         });
+         }, "client");
 
          setMensagemEnviada(true);
          onAtualizado({...guia, aguardandoContador: true});

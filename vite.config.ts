@@ -11,6 +11,21 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Split the big, rarely-changing libs out of the main bundle so a
+          // client on the dashboard doesn't download the accountant-only
+          // spreadsheet / PDF / charting code.
+          manualChunks: {
+            react: ['react', 'react-dom', 'react-router-dom'],
+            charts: ['recharts'],
+            xlsx: ['xlsx'],
+            pdf: ['pdfjs-dist', 'jsqr'],
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

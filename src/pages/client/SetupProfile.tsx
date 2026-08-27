@@ -16,17 +16,12 @@ export function SetupProfile() {
       setError("Você deve aceitar os termos de uso para continuar.");
       return;
     }
-    const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-    
     try {
       const res = await apiFetch("/api/client/setup-profile", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
-      });
+      }, "client");
       const data = await res.json();
       if (res.ok) {
         navigate("/dashboard");

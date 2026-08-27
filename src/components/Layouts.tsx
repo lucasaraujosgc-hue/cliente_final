@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History } from "lucide-react";
 import { cn } from "../lib/utils";
+import { apiFetch } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 
@@ -83,17 +84,16 @@ export function ClientLayout() {
 
     setIsSaving(true);
     try {
-      const res = await fetch("/api/client/setup-profile", {
+      const res = await apiFetch("/api/client/setup-profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           email: emailForm,
           password: passwordForm || undefined
         })
-      });
+      }, "client");
 
       const data = await res.json();
       if (res.ok) {
@@ -317,9 +317,7 @@ export function AccountantLayout() {
     // Fetch stats
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/accountant/files/stats", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await apiFetch("/api/accountant/files/stats", {}, "accountant");
         const data = await res.json();
         if (data.totalSize !== undefined) {
           setTotalSize(data.totalSize);
@@ -361,6 +359,7 @@ export function AccountantLayout() {
       icon: Folder 
     },
     { name: "Dispositivos", path: "/admin/devices", icon: Smartphone },
+    { name: "Histórico", path: "/admin/audit", icon: History },
     { name: "Configurações", path: "/admin/settings", icon: Settings },
   ];
 
