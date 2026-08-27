@@ -5,62 +5,62 @@
 // development defaults (which would let anyone forge admin tokens or brute
 // force the admin login).
 
-const isProd = process.env.NODE_ENV === "production";
-
 // Values that ship in .env.example / code fallbacks and must never reach prod.
 const INSECURE_VALUES = new Set([
   "admin",
   "admin_password",
   "your_long_random_secret_string_here",
   "virgula-secret-key-persistent-across-deploys-12345",
+  "insecure-dev-only-secret-do-not-use-in-production",
   "re_123",
   "MY_GEMINI_API_KEY",
 ]);
 
-const problems: string[] = [];
-const warnings: string[] = [];
+const REQUIRED_SECRETS = ["JWT_SECRET", "ADMIN", "PASSWORD"] as const;
+const RECOMMENDED = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "CORS_ORIGINS"] as const;
 
-function checkRequiredSecret(name: string) {
-  const value = process.env[name];
-  if (!value || INSECURE_VALUES.has(value)) {
-    problems.push(
-      `${name} is missing or set to a well-known default. Set a strong, unique value.`,
-    );
-  }
+export interface EnvReport {
+  problems: string[];
+  warnings: string[];
 }
 
-function checkRecommended(name: string) {
-  if (!process.env[name]) {
-    warnings.push(`${name} is not set — the related feature will be disabled.`);
+// Pure — collects issues without touching the process. Exported for testing.
+export function collectEnvIssues(env: NodeJS.ProcessEnv = process.env): EnvReport {
+  const problems: string[] = [];
+  const warnings: string[] = [];
+
+  for (const name of REQUIRED_SECRETS) {
+    const value = env[name];
+    if (!value || INSECURE_VALUES.has(value)) {
+      problems.push(`${name} is missing or set to a well-known default.`);
+    }
   }
+  if (!env.DATABASE_URL) problems.push("DATABASE_URL is required.");
+
+  for (const name of RECOMMENDED) {
+    if (!env[name]) warnings.push(`${name} is not set — the related feature will be limited.`);
+  }
+
+  return { problems, warnings };
 }
 
 export function validateEnv() {
-  checkRequiredSecret("JWT_SECRET");
-  checkRequiredSecret("ADMIN");
-  checkRequiredSecret("PASSWORD");
-
-  if (!process.env.DATABASE_URL) {
-    problems.push("DATABASE_URL is required.");
-  }
-
-  checkRecommended("VAPID_PUBLIC_KEY");
-  checkRecommended("VAPID_PRIVATE_KEY");
-  checkRecommended("CORS_ORIGINS");
+  const { problems, warnings } = collectEnvIssues();
 
   for (const w of warnings) console.warn(`[env] ${w}`);
 
-  if (problems.length > 0) {
-    const msg =
-      "Environment configuration errors:\n" +
-      problems.map((p) => `  - ${p}`).join("\n");
-    if (isProd) {
-      throw new Error(msg);
-    }
-    console.warn(
-      `[env] ${msg}\n[env] Continuing with insecure defaults because NODE_ENV !== "production".`,
-    );
+  if (problems.length === 0) return;
+
+  const msg =
+    "Environment configuration errors:\n" +
+    problems.map((p) => `  - ${p}`).join("\n");
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(msg);
   }
+  console.warn(
+    `[env] ${msg}\n[env] Continuing with insecure defaults because NODE_ENV !== "production".`,
+  );
 }
 
 // Allowed browser origins for CORS. Empty in dev (reflect request origin);

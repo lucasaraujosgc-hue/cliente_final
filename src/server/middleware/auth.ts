@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients } from "../schema";
+import type { AuthPayload } from "../types";
 
 // In production, env.ts (validateEnv) refuses to boot without a real
 // JWT_SECRET, so this fallback only ever applies to local development.
@@ -30,7 +31,7 @@ export async function verifyIntegrationToken(
   }
 
   // Attach client to request
-  (req as any).integrationClient = clientList[0];
+  req.integrationClient = clientList[0];
   next();
 }
 
@@ -43,7 +44,7 @@ export function verifyClientAuth(req: Request, res: Response, next: NextFunction
     if (payload.role !== "client") throw new Error("Invalid role");
 
     // Attach to request
-    (req as any).user = payload;
+    req.user = payload as AuthPayload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });
@@ -57,7 +58,7 @@ export function verifyAccountantAuth(req: Request, res: Response, next: NextFunc
   try {
     const payload = jwt.verify(token, JWT_SECRET) as any;
     if (payload.role !== "accountant") throw new Error("Invalid role");
-    (req as any).user = payload;
+    req.user = payload as AuthPayload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });
@@ -71,7 +72,7 @@ export function verifyAnyAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as any;
     if (payload.role !== "client" && payload.role !== "accountant") throw new Error("Invalid role");
-    (req as any).user = payload;
+    req.user = payload as AuthPayload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });

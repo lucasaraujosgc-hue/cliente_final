@@ -6,6 +6,7 @@ import { db } from "../db";
 import { clients, subscriptions, scheduledNotifications } from "../schema";
 import { vapidKeys, webpush } from "../services/push";
 import { verifyClientAuth, verifyAccountantAuth } from "../middleware/auth";
+import { getClientId } from "../types";
 import { validateBody } from "../middleware/validate";
 import { scheduledNotificationSchema } from "../schemas/validation";
 
@@ -20,7 +21,7 @@ export function registerNotificationRoutes(app: Express) {
     verifyClientAuth,
     async (req, res) => {
       try {
-        const clientId = (req as any).user.clientId;
+        const clientId = getClientId(req);
         const { subscriptionObject, fcmToken, deviceName } = req.body;
 
         if (fcmToken) {

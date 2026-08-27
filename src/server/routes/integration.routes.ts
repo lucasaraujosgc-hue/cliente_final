@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients, documents } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
+import { getIntegrationClient } from "../types";
 import { hashPassword } from "../services/password";
 import { upsertBilling } from "../services/billing";
 
@@ -13,7 +14,7 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integration/upload-doc",
     verifyIntegrationToken,
     async (req, res) => {
-      const client = (req as any).integrationClient;
+      const client = getIntegrationClient(req);
       const { title, category, dueDate } = req.body;
 
       const [newDoc] = await db
@@ -41,7 +42,7 @@ export function registerIntegrationRoutes(app: Express) {
     verifyIntegrationToken,
     async (req, res) => {
       const { cnpj, name, regularityStatus } = req.body;
-      const integrationClient = (req as any).integrationClient;
+      const integrationClient = getIntegrationClient(req);
 
       // Segurança: O token de integração de um cliente só pode sincronizar o faturamento dele mesmo (mesmo CNPJ)!
       if (cnpj.replace(/\D/g, "") !== integrationClient.cnpj.replace(/\D/g, "")) {
@@ -84,7 +85,7 @@ export function registerIntegrationRoutes(app: Express) {
     verifyIntegrationToken,
     async (req, res) => {
       const { clientId, month } = req.body;
-      const integrationClient = (req as any).integrationClient;
+      const integrationClient = getIntegrationClient(req);
 
       // Segurança: O token de integração de um cliente só pode alterar o faturamento dele mesmo!
       if (clientId !== integrationClient.id) {

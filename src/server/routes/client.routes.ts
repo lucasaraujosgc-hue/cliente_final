@@ -17,6 +17,7 @@ import { upload } from "../services/upload";
 import { getSerproToken, serproPost, isUuid } from "../services/serpro";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
+import { getClientId } from "../types";
 import { validateBody } from "../middleware/validate";
 import { billingUpdateSchema, billingBulkSchema } from "../schemas/validation";
 import { upsertBilling } from "../services/billing";
@@ -25,7 +26,7 @@ import { upsertBilling } from "../services/billing";
 // document acknowledgement, messages, and SERPRO "guia" (tax slip) generation.
 export function registerClientRoutes(app: Express) {
   app.get("/api/client/dashboard", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     const clientList = await db
       .select()
       .from(clients)
@@ -68,7 +69,7 @@ export function registerClientRoutes(app: Express) {
   });
 
   app.post("/api/client/setup-profile", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     const { email, password } = req.body;
 
     const clientList = await db
@@ -125,7 +126,7 @@ export function registerClientRoutes(app: Express) {
   });
 
   app.post("/api/client/update-billing", verifyClientAuth, validateBody(billingUpdateSchema), async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     try {
       await upsertBilling(clientId, req.body);
       res.json({ success: true });
@@ -135,7 +136,7 @@ export function registerClientRoutes(app: Express) {
   });
 
   app.post("/api/client/bulk-billing", verifyClientAuth, validateBody(billingBulkSchema), async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     try {
       for (const item of req.body.data) {
         await upsertBilling(clientId, item);
@@ -160,8 +161,8 @@ export function registerClientRoutes(app: Express) {
           return res.status(400).json({ error: "ID do cliente no formato inválido." });
         }
 
-        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
-        const tokenRole = (req as any).user?.role;
+        const tokenClientId = req.user?.clientId;
+        const tokenRole = req.user?.role;
         if (tokenRole === "client" && tokenClientId !== clientId) {
           return res.status(403).json({ error: "Acesso negado." });
         }
@@ -444,8 +445,8 @@ export function registerClientRoutes(app: Express) {
       }
 
       // Segurança contra IDOR/BOLA: Se for cliente, valida se a guia é dele
-      const tokenClientId = (req as any).user?.clientId;
-      const tokenRole = (req as any).user?.role;
+      const tokenClientId = req.user?.clientId;
+      const tokenRole = req.user?.role;
       if (tokenRole === "client" && guia[0].clientId !== tokenClientId) {
         return res.status(403).send("Acesso negado. Esta guia pertence a outro cliente.");
       }
@@ -493,8 +494,8 @@ export function registerClientRoutes(app: Express) {
       try {
         const clientId = req.params.clienteId;
 
-        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
-        const tokenRole = (req as any).user?.role;
+        const tokenClientId = req.user?.clientId;
+        const tokenRole = req.user?.role;
         if (tokenRole === "client" && tokenClientId !== clientId) {
           return res.status(403).json({ error: "Acesso negado." });
         }
@@ -518,7 +519,7 @@ export function registerClientRoutes(app: Express) {
     verifyClientAuth,
     upload.single("file"),
     async (req, res) => {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { title, category, competence } = req.body;
 
       const [newDoc] = await db
@@ -542,7 +543,7 @@ export function registerClientRoutes(app: Express) {
   );
 
   app.post("/api/client/mark-doc/:id", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     const docId = req.params.id;
     const { status } = req.body;
 
@@ -560,7 +561,7 @@ export function registerClientRoutes(app: Express) {
 
   app.post("/api/client/message", verifyClientAuth, async (req, res) => {
     try {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { content } = req.body;
 
       const [newMsg] = await db
@@ -584,7 +585,7 @@ export function registerClientRoutes(app: Express) {
 
   app.put("/api/client/preferences", verifyClientAuth, async (req, res) => {
     try {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { notificationPreferences } = req.body;
 
       await db.update(clients)

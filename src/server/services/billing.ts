@@ -23,15 +23,15 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-// Insert or update the billing row for (clientId, month). Centralised here so
-// the four call sites (client / accountant × single / bulk) can't drift apart.
-export async function upsertBilling(clientId: string, input: BillingInput) {
+// Normalises an arbitrary billing input into the exact column set, coercing
+// junk to 0 and deriving the legacy columns. Pure — exported for testing.
+export function buildBillingPayload(input: BillingInput) {
   const servicesRevenue = num(input.servicesRevenue);
   const salesRevenue = num(input.salesRevenue);
   const totalIncomes = num(input.totalIncomes);
   const servicesTaken = num(input.servicesTaken);
 
-  const payload = {
+  return {
     servicesRevenue,
     salesRevenue,
     totalIncomes,
@@ -41,6 +41,12 @@ export async function upsertBilling(clientId: string, input: BillingInput) {
     expenses: input.expenses != null ? num(input.expenses) : servicesTaken,
     payroll: num(input.payroll),
   };
+}
+
+// Insert or update the billing row for (clientId, month). Centralised here so
+// the four call sites (client / accountant × single / bulk) can't drift apart.
+export async function upsertBilling(clientId: string, input: BillingInput) {
+  const payload = buildBillingPayload(input);
 
   const [existing] = await db
     .select()
