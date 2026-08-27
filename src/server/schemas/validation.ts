@@ -3,13 +3,16 @@ import { z } from "zod";
 // --- Auth ---------------------------------------------------------------
 
 export const clientForgotPasswordSchema = z.object({
-  cnpj: z.string().min(11, "CNPJ inválido."),
+  cnpj: z.string().min(11, "CNPJ inválido.").max(20),
 });
 
 export const clientResetPasswordSchema = z.object({
-  cnpj: z.string().min(11, "CNPJ inválido."),
-  token: z.string().min(1, "Token é obrigatório."),
-  newPassword: z.string().min(6, "A senha precisa ter ao menos 6 caracteres."),
+  cnpj: z.string().min(11, "CNPJ inválido.").max(20),
+  code: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().regex(/^\d{6}$/, "Código inválido.")),
+  newPassword: z.string().min(8, "A senha precisa ter ao menos 8 caracteres.").max(200),
 });
 
 export const clientLoginSchema = z.object({

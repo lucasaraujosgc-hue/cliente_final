@@ -1,10 +1,29 @@
 import rateLimit from "express-rate-limit";
 
-// Strict limiter for login / password-recovery endpoints: these are the
-// classic brute-force / credential-stuffing / email-bombing targets.
+// Strict limiter for login: the classic brute-force / credential-stuffing
+// target.
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas. Tente novamente em alguns minutos." },
+});
+
+// forgot-password: each hit can trigger an email, so keep it tight. Per-IP.
+export const passwordResetRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas solicitações de recuperação. Tente novamente mais tarde." },
+});
+
+// reset-password (submitting a code): the per-account attempt cap in
+// resetCode.ts is the real defence; this just stops IP-level hammering.
+export const passwordResetSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Muitas tentativas. Tente novamente em alguns minutos." },

@@ -19,28 +19,37 @@ describe("validation schemas", () => {
     expect(clientForgotPasswordSchema.safeParse({ cnpj: "12345678901234" }).success).toBe(true);
   });
 
-  it("clientResetPasswordSchema requires cnpj, token, and a newPassword with min length", () => {
+  it("clientResetPasswordSchema requires cnpj, a 6-digit code, and newPassword >= 8", () => {
     // Regression test: an earlier version of this schema forgot `cnpj`,
     // which would have caused validateBody() to silently strip it from
     // req.body (Zod drops unknown keys by default), breaking the endpoint.
     const result = clientResetPasswordSchema.safeParse({
       cnpj: "12345678901234",
-      token: "abc123",
-      newPassword: "newpass1",
+      code: " 123456 ",
+      newPassword: "newpass12",
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toHaveProperty("cnpj");
+      expect(result.data.code).toBe("123456"); // trimmed
     }
 
     expect(
-      clientResetPasswordSchema.safeParse({ token: "abc123", newPassword: "newpass1" }).success,
+      clientResetPasswordSchema.safeParse({ code: "123456", newPassword: "newpass12" }).success,
     ).toBe(false); // missing cnpj
 
     expect(
       clientResetPasswordSchema.safeParse({
         cnpj: "12345678901234",
-        token: "abc123",
+        code: "12345",
+        newPassword: "newpass12",
+      }).success,
+    ).toBe(false); // code not 6 digits
+
+    expect(
+      clientResetPasswordSchema.safeParse({
+        cnpj: "12345678901234",
+        code: "123456",
         newPassword: "short",
       }).success,
     ).toBe(false); // password too short

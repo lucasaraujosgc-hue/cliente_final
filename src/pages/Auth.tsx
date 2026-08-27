@@ -12,7 +12,7 @@ export function Login() {
   const [showForgotPwd, setShowForgotPwd] = useState(false);
   const [resetStep, setResetStep] = useState(1); // 1: request, 2: reset
   const [resetCnpj, setResetCnpj] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetMsg, setResetMsg] = useState({ text: "", type: "" });
   const [isResetLoading, setIsResetLoading] = useState(false);
@@ -84,9 +84,17 @@ export function Login() {
       const data = await res.json();
       if (res.ok) {
         setResetStep(2);
-        setResetMsg({ text: "Código enviado para o e-mail cadastrado.", type: "success" });
+        setResetMsg({
+          text:
+            data.message ||
+            "Se este CNPJ estiver cadastrado com um e-mail, enviamos um código de recuperação.",
+          type: "success",
+        });
       } else {
-        setResetMsg({ text: data.error, type: "error" });
+        setResetMsg({
+          text: data.error || "Não foi possível processar a solicitação.",
+          type: "error",
+        });
       }
     } catch {
       setResetMsg({ text: "Erro no servidor", type: "error" });
@@ -102,7 +110,7 @@ export function Login() {
       const res = await apiFetch("/api/auth/client/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cnpj: resetCnpj, token: resetToken, newPassword: resetNewPassword })
+        body: JSON.stringify({ cnpj: resetCnpj, code: resetCode, newPassword: resetNewPassword })
       });
       const data = await res.json();
       if (res.ok) {
@@ -111,7 +119,7 @@ export function Login() {
           setShowForgotPwd(false);
           setResetStep(1);
           setResetCnpj("");
-          setResetToken("");
+          setResetCode("");
           setResetNewPassword("");
           setResetMsg({ text: "", type: "" });
         }, 2500);
@@ -273,10 +281,13 @@ export function Login() {
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Código de Verificação</label>
                   <input
                     type="text"
-                    className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-center text-lg tracking-widest uppercase font-mono"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-center text-lg tracking-widest font-mono"
                     placeholder="000000"
-                    value={resetToken}
-                    onChange={(e) => setResetToken(e.target.value)}
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     required
                   />
                 </div>
@@ -284,8 +295,10 @@ export function Login() {
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Nova Senha</label>
                   <input
                     type="password"
+                    minLength={8}
+                    autoComplete="new-password"
                     className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green"
-                    placeholder="Digite sua nova senha"
+                    placeholder="Mínimo de 8 caracteres"
                     value={resetNewPassword}
                     onChange={(e) => setResetNewPassword(e.target.value)}
                     required
