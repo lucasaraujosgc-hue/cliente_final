@@ -24,6 +24,7 @@ import { getSerproToken, serproPost, isUuid } from "../services/serpro";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 import { getClientId } from "../types";
+import { clientSelfDTO } from "../dto/client";
 import { validateBody } from "../middleware/validate";
 import { billingUpdateSchema, billingBulkSchema } from "../schemas/validation";
 import { upsertBilling } from "../services/billing";
@@ -60,7 +61,7 @@ export function registerClientRoutes(app: Express) {
     const whatsappSupport = serproConf[0]?.whatsappSupport || "";
 
     res.json({
-      client,
+      client: clientSelfDTO(client),
       whatsappSupport,
       documents: docs.map((d) => ({
         ...d,
@@ -128,7 +129,7 @@ export function registerClientRoutes(app: Express) {
       }
     }
 
-    res.json({ success: true, client });
+    res.json({ success: true, client: clientSelfDTO(client) });
   });
 
   app.post("/api/client/update-billing", verifyClientAuth, validateBody(billingUpdateSchema), async (req, res) => {

@@ -1,6 +1,5 @@
 import { Express } from "express";
 import fs from "fs";
-import { v4 as uuidv4 } from "uuid";
 import { eq, desc, inArray, or } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -20,6 +19,12 @@ import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { upsertBilling } from "../services/billing";
 import { logAudit } from "../services/audit";
+import {
+  generateIntegrationToken,
+  setIntegrationToken,
+  clearIntegrationToken,
+} from "../services/integrationToken";
+import { clientAdminDTO } from "../dto/client";
 import { verifyAccountantAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import {
@@ -54,7 +59,7 @@ function fileSizeFor(fileUrl: string | null): number {
 export function registerAccountantRoutes(app: Express) {
   app.get("/api/accountant/clients", verifyAccountantAuth, async (req, res) => {
     const allClients = await db.select().from(clients);
-    res.json({ clients: allClients });
+    res.json({ clients: allClients.map(clientAdminDTO) });
   });
 
   // High-level counters for the accountant home screen.
@@ -216,7 +221,10 @@ export function registerAccountantRoutes(app: Express) {
             // in plaintext.
             passwordHash: await hashPassword(String(cnpj)),
             regularityStatus: regularityStatus || "green",
-            integrationHash: integrationHash || null,
+            // A pasted integration token is stored hashed, never in plaintext.
+            ...(typeof integrationHash === "string" && integrationHash.trim()
+              ? setIntegrationToken(integrationHash.trim())
+              : {}),
             accountantCategory: accountantCategory || null,
           })
           .returning();
@@ -225,7 +233,7 @@ export function registerAccountantRoutes(app: Express) {
           targetId: newClient.id,
           summary: `Criou o cliente ${newClient.name} (${newClient.cnpj})`,
         });
-        res.json({ success: true, client: newClient });
+        res.json({ success: true, client: clientAdminDTO(newClient) });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
       }
@@ -274,14 +282,20 @@ export function registerAccountantRoutes(app: Express) {
       const { name, regularityStatus, integrationHash, accountantCategory } =
         req.body;
       try {
+        const patch: Record<string, unknown> = {
+          name,
+          regularityStatus,
+          accountantCategory: accountantCategory || null,
+        };
+        // The integration token is only ever touched here when the accountant
+        // explicitly pasted one — it's stored hashed (see setIntegrationToken).
+        // Managed independently by generate-token / revoke-token.
+        if (typeof integrationHash === "string" && integrationHash.trim()) {
+          Object.assign(patch, setIntegrationToken(integrationHash.trim()));
+        }
         const [updated] = await db
           .update(clients)
-          .set({
-            name,
-            regularityStatus,
-            integrationHash: integrationHash || null,
-            accountantCategory: accountantCategory || null,
-          })
+          .set(patch)
           .where(eq(clients.id, req.params.id))
           .returning();
         await logAudit(req, "client.update", {
@@ -290,7 +304,7 @@ export function registerAccountantRoutes(app: Express) {
           summary: `Atualizou o cliente ${updated?.name ?? req.params.id}`,
           metadata: { regularityStatus, accountantCategory },
         });
-        res.json({ success: true, client: updated });
+        res.json({ success: true, client: updated ? clientAdminDTO(updated) : null });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
       }
@@ -354,7 +368,7 @@ export function registerAccountantRoutes(app: Express) {
         .where(eq(billingData.clientId, clientId));
 
       res.json({
-        client,
+        client: clientAdminDTO(client),
         documents: docs.map((d) => ({
           ...d,
           createdAt: d.createdAt.toISOString(),
@@ -664,10 +678,10 @@ export function registerAccountantRoutes(app: Express) {
       if (clientList.length === 0)
         return res.status(404).json({ error: "Client not found" });
 
-      const newToken = "hash_" + uuidv4().replace(/-/g, "");
+      const newToken = generateIntegrationToken();
       await db
         .update(clients)
-        .set({ integrationHash: newToken })
+        .set(setIntegrationToken(newToken))
         .where(eq(clients.id, clientId));
 
       await logAudit(req, "token.generate", {
@@ -675,6 +689,7 @@ export function registerAccountantRoutes(app: Express) {
         targetId: clientId,
         summary: `Gerou um token de integração para ${clientList[0].name}`,
       });
+      // Only time the plaintext token is ever returned.
       res.json({ token: newToken });
     },
   );
@@ -693,7 +708,7 @@ export function registerAccountantRoutes(app: Express) {
 
       await db
         .update(clients)
-        .set({ integrationHash: null })
+        .set(clearIntegrationToken())
         .where(eq(clients.id, clientId));
 
       await logAudit(req, "token.revoke", {

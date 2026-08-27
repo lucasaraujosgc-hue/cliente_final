@@ -1,9 +1,9 @@
 import { Express } from "express";
 import fs from "fs";
 import path from "path";
-import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { clients, documents } from "../schema";
+import { documents } from "../schema";
+import { findClientByIntegrationToken } from "../services/integrationToken";
 import {
   upload,
   UPLOADS_DIR,
@@ -40,16 +40,12 @@ export function registerWebhookRoutes(app: Express) {
       }
 
       // Find client
-      const clientList = await db
-        .select()
-        .from(clients)
-        .where(eq(clients.integrationHash, hash_empresa));
-      if (clientList.length === 0) {
+      const client = await findClientByIntegrationToken(hash_empresa);
+      if (!client) {
         return res
           .status(404)
           .json({ error: "Client not found using provided hash" });
       }
-      const client = clientList[0];
 
       // Save file
       let safeFilename = "";
@@ -178,17 +174,12 @@ export function registerWebhookRoutes(app: Express) {
             .json({ error: "O parâmetro companyHash é obrigatório" });
         }
 
-        const clientList = await db
-          .select()
-          .from(clients)
-          .where(eq(clients.integrationHash, companyHash));
-        if (clientList.length === 0) {
+        const targetClient = await findClientByIntegrationToken(companyHash);
+        if (!targetClient) {
           return res
             .status(404)
             .json({ error: "Empresa não encontrada para este hash" });
         }
-
-        const targetClient = clientList[0];
 
         let finalFileUrl = null;
         if (arquivoBase64) {

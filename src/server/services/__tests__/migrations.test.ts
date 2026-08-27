@@ -4,8 +4,24 @@ import path from "path";
 import { PGlite } from "@electric-sql/pglite";
 
 const DRIZZLE = path.join(process.cwd(), "drizzle");
-const baselineSql = fs.readFileSync(path.join(DRIZZLE, "0000_baseline.sql"), "utf8");
 const reconcileSql = fs.readFileSync(path.join(DRIZZLE, "reconcile-legacy.sql"), "utf8");
+
+// All numbered migrations in journal order (0000_baseline, 0001_*, ...).
+const journal = JSON.parse(
+  fs.readFileSync(path.join(DRIZZLE, "meta", "_journal.json"), "utf8"),
+);
+const migrationSqls: string[] = journal.entries.map((e: { tag: string }) =>
+  fs.readFileSync(path.join(DRIZZLE, `${e.tag}.sql`), "utf8"),
+);
+
+async function applyAllMigrations(db: PGlite) {
+  for (const sql of migrationSqls) await db.exec(sql);
+}
+
+// The legacy path: reconcile marks 0000_baseline as applied, so only 0001+ run.
+async function applyForwardMigrations(db: PGlite) {
+  for (const sql of migrationSqls.slice(1)) await db.exec(sql);
+}
 
 const EXPECTED_TABLES = [
   "clients", "documents", "billing_data", "messages", "subscriptions",
@@ -66,6 +82,10 @@ async function assertTargetSchema(db: PGlite) {
 
   expect(await constraintExists(db, "clients_cnpj_unique")).toBe(true);
   expect(await constraintExists(db, "clients_integration_hash_unique")).toBe(true);
+
+  // 0001: integration token digest column
+  expect(await columnType(db, "clients", "integration_hash_digest")).toBe("text");
+  expect(await constraintExists(db, "clients_integration_hash_digest_unique")).toBe(true);
 }
 
 // Approximates a database built by the pre-migrations src/server/db.ts:
@@ -159,13 +179,13 @@ CREATE TABLE "scheduled_notifications" (
 );
 `;
 
-// pglite (WASM Postgres) has a slow cold start.
-const T = 30_000;
+// pglite (WASM Postgres) has a slow cold start, worse under parallel workers.
+const T = 60_000;
 
-describe("drizzle/0000_baseline.sql (fresh database)", () => {
-  it("produces the target schema", async () => {
+describe("drizzle migrations (fresh database)", () => {
+  it("produce the target schema", async () => {
     const db = new PGlite();
-    await db.exec(baselineSql);
+    await applyAllMigrations(db);
     await assertTargetSchema(db);
     await db.close();
   }, T);
@@ -176,26 +196,29 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
     const db = new PGlite();
     await db.exec(LEGACY_SCHEMA);
 
-    // existing data, including an in-flight plaintext reset token
+    // existing data, incl. an in-flight plaintext reset token and an integration hash
     await db.exec(`
-      INSERT INTO clients (id, cnpj, name, password_hash, regularity_status, reset_token, reset_token_expires)
-      VALUES ('11111111-1111-1111-1111-111111111111', '12.345.678/0001-99', 'ACME', 'hash', 'green', '482913', '2026-01-01T00:00:00.000Z');
+      INSERT INTO clients (id, cnpj, name, password_hash, regularity_status, integration_hash, reset_token, reset_token_expires)
+      VALUES ('11111111-1111-1111-1111-111111111111', '12.345.678/0001-99', 'ACME', 'hash', 'green', 'legacy-plain-token', '482913', '2026-01-01T00:00:00.000Z');
       INSERT INTO documents (client_id, title, category, status, uploaded_by, extracted_data)
       VALUES ('11111111-1111-1111-1111-111111111111', 'Guia', 'taxes', 'new', 'accountant', '{"v":1}');
     `);
 
     await db.exec(reconcileSql);
+    await applyForwardMigrations(db);
     await assertTargetSchema(db);
 
     // data preserved
-    const c = await db.query<{ cnpj: string; reset_code_hash: string | null; reset_code_attempts: number }>(
-      `SELECT cnpj, reset_code_hash, reset_code_attempts FROM clients`,
+    const c = await db.query<{ cnpj: string; reset_code_hash: string | null; reset_code_attempts: number; integration_hash_digest: string | null }>(
+      `SELECT cnpj, reset_code_hash, reset_code_attempts, integration_hash_digest FROM clients`,
     );
     expect(c.rows).toHaveLength(1);
     expect(c.rows[0].cnpj).toBe("12.345.678/0001-99");
     // legacy plaintext token (6 chars) was cleared, not carried over as a "hash"
     expect(c.rows[0].reset_code_hash).toBeNull();
     expect(c.rows[0].reset_code_attempts).toBe(0);
+    // legacy integration_hash was backfilled to a sha256 digest by 0001
+    expect(c.rows[0].integration_hash_digest).toMatch(/^[0-9a-f]{64}$/);
 
     const d = await db.query(`SELECT extracted_data FROM documents`);
     expect(d.rows).toHaveLength(1);
@@ -209,6 +232,8 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
     await db.exec(LEGACY_SCHEMA);
     await db.exec(reconcileSql);
     await db.exec(reconcileSql); // must not throw
+    await applyForwardMigrations(db);
+    await applyForwardMigrations(db); // 0001+ must also be re-runnable
     await assertTargetSchema(db);
     await db.close();
   }, T);
@@ -223,6 +248,7 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
       VALUES ('22222222-2222-2222-2222-222222222222', 'D', 'taxes', 'new', 'accountant');
     `);
     await db.exec(reconcileSql);
+    await applyForwardMigrations(db);
     await db.query(`DELETE FROM clients WHERE id='22222222-2222-2222-2222-222222222222'`);
     const left = await db.query(`SELECT count(*)::int AS n FROM documents`);
     expect((left.rows[0] as any).n).toBe(0);

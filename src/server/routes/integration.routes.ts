@@ -4,6 +4,7 @@ import { db } from "../db";
 import { clients, documents } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
 import { getIntegrationClient } from "../types";
+import { clientIntegrationDTO } from "../dto/client";
 import { hashPassword } from "../services/password";
 import { upsertBilling } from "../services/billing";
 
@@ -75,7 +76,7 @@ export function registerIntegrationRoutes(app: Express) {
           .where(eq(clients.cnpj, cnpj))
           .returning();
       }
-      res.json({ success: true, client });
+      res.json({ success: true, client: clientIntegrationDTO(client) });
     },
   );
 

@@ -9,7 +9,10 @@ export const clients = pgTable('clients', {
   regularityStatus: text('regularity_status').notNull(), // green, warning, red
   email: text('email'),
   firstAccessDone: boolean('first_access_done').default(false),
+  // Legacy plaintext integration token — kept only for the transition window.
+  // New tokens live as a sha256 digest in integrationHashDigest.
   integrationHash: text('integration_hash').unique(),
+  integrationHashDigest: text('integration_hash_digest').unique(),
   accountantCategory: text('accountant_category'),
   notificationPreferences: json('notification_preferences').default({
     receives_all: true,

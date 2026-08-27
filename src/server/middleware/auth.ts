@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { eq } from "drizzle-orm";
-import { db } from "../db";
-import { clients } from "../schema";
+import { findClientByIntegrationToken } from "../services/integrationToken";
 import type { AuthPayload } from "../types";
 
 // In production, env.ts (validateEnv) refuses to boot without a real
@@ -22,16 +20,13 @@ export async function verifyIntegrationToken(
   }
   const token = authHeader.split(" ")[1];
 
-  const clientList = await db
-    .select()
-    .from(clients)
-    .where(eq(clients.integrationHash, token));
-  if (clientList.length === 0) {
+  const client = await findClientByIntegrationToken(token);
+  if (!client) {
     return res.status(403).json({ error: "Invalid integration token" });
   }
 
   // Attach client to request
-  req.integrationClient = clientList[0];
+  req.integrationClient = client;
   next();
 }
 
