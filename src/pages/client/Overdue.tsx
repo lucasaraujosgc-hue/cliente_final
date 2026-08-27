@@ -1,4 +1,4 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, documentFileUrl } from "../../lib/apiClient";
 import React, { useState, useEffect } from "react";
 import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
 import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign, Send } from "lucide-react";
@@ -89,15 +89,6 @@ export function ClientOverdue() {
     } catch (err) {
       console.error("Error setting doc as paid", err);
     }
-  };
-
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
   };
 
   const getDaysOverdue = (dueDateStr: string) => {
@@ -227,7 +218,7 @@ export function ClientOverdue() {
                       <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
                         {doc.fileUrl && (
                           <button
-                            onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'download', doc.title || 'documento')}
+                            onClick={() => handleFileAction(documentFileUrl(doc.id, { download: true }), 'download', doc.title || 'documento')}
                             className="flex-1 sm:flex-none h-8 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -236,7 +227,7 @@ export function ClientOverdue() {
                         )}
                         {doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
                           <div className="flex-1 sm:flex-none">
-                            <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                            <PixScannerButton docId={doc.id} />
                           </div>
                         )}
                         {doc.status !== "paid" ? (

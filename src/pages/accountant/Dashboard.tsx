@@ -13,6 +13,7 @@ import {
   History,
 } from "lucide-react";
 import { Skeleton } from "../../components/Skeleton";
+import { documentFileUrl } from "../../lib/apiClient";
 
 interface Overview {
   clients: number;
@@ -136,7 +137,7 @@ export function AccountantDashboard() {
                 <div className="flex items-center gap-3">
                   {doc.fileUrl && (
                     <a
-                      href={doc.fileUrl}
+                      href={documentFileUrl(doc.id, { download: true, as: "accountant" })}
                       target="_blank"
                       rel="noreferrer"
                       className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"

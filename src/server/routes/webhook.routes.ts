@@ -4,7 +4,13 @@ import path from "path";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients, documents } from "../schema";
-import { upload, UPLOADS_DIR, sanitizeFilename } from "../services/upload";
+import {
+  upload,
+  UPLOADS_DIR,
+  sanitizeFilename,
+  isAllowedUploadName,
+  MAX_UPLOAD_BYTES,
+} from "../services/upload";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { webhookLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
@@ -51,6 +57,13 @@ export function registerWebhookRoutes(app: Express) {
       let extractedValue = null;
       if (arquivo_base64) {
         const buffer = Buffer.from(arquivo_base64, "base64");
+        if (buffer.length > MAX_UPLOAD_BYTES) {
+          return res.status(413).json({ error: "Arquivo excede o limite de 10 MB." });
+        }
+        // Only enforce the extension allow-list when the caller gave a name.
+        if (nome_arquivo && !isAllowedUploadName(nome_arquivo)) {
+          return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+        }
         safeFilename = `${Date.now()}_${sanitizeFilename(nome_arquivo || "documento")}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
         fs.writeFileSync(filePath, buffer);
@@ -182,6 +195,12 @@ export function registerWebhookRoutes(app: Express) {
            const match = arquivoBase64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
            if (match) {
               const buffer = Buffer.from(match[2], 'base64');
+              if (buffer.length > MAX_UPLOAD_BYTES) {
+                return res.status(413).json({ error: "Arquivo excede o limite de 10 MB." });
+              }
+              if (nomeArquivo && !isAllowedUploadName(nomeArquivo)) {
+                return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+              }
               const safeFilename = `${Date.now()}_${sanitizeFilename(nomeArquivo || "documento.pdf")}`;
               const filePath = path.join(UPLOADS_DIR, safeFilename);
               fs.writeFileSync(filePath, buffer);

@@ -13,7 +13,13 @@ import {
   guiasGeradas,
 } from "../schema";
 import { transporter } from "../services/mailer";
-import { upload } from "../services/upload";
+import { upload, GUIAS_PDF_DIR } from "../services/upload";
+import {
+  resolveGuiaPdfPath,
+  sendDiskFile,
+  sendDataUri,
+  isReadableFile,
+} from "../services/files";
 import { getSerproToken, serproPost, isUuid } from "../services/serpro";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
@@ -382,13 +388,10 @@ export function registerClientRoutes(app: Express) {
           realFileUrl = `/api/pendencies/guia/${guiaId}/pdf`;
 
           // Salva PDF em disco de forma assíncrona
-          const pdfDir = process.env.DATA_PATH 
-            ? path.join(process.env.DATA_PATH, "guias_pdfs") 
-            : path.join(process.cwd(), "data", "guias_pdfs");
-          await fs.promises.mkdir(pdfDir, { recursive: true });
-          
+          await fs.promises.mkdir(GUIAS_PDF_DIR, { recursive: true });
+
           const pdfFile = `guia_${tipoGuia}_${clientId}_${competencia}_${guiaId}.pdf`;
-          const pdfPath = path.join(pdfDir, pdfFile);
+          const pdfPath = path.join(GUIAS_PDF_DIR, pdfFile);
           await fs.promises.writeFile(pdfPath, pdfBuffer);
           
           await tx
@@ -452,35 +455,22 @@ export function registerClientRoutes(app: Express) {
       }
 
       const pdfData = guia[0].pdfPath;
-      if (pdfData.startsWith("data:application/pdf;base64,")) {
-        const base64Data = pdfData.replace("data:application/pdf;base64,", "");
-        const buffer = Buffer.from(base64Data, "base64");
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename=guia_${guiaId}.pdf`,
-        );
-        return res.send(buffer);
+      const opts = {
+        disposition: "inline" as const,
+        downloadName: `guia_${guiaId}.pdf`,
+      };
+
+      if (pdfData.startsWith("data:")) {
+        return sendDataUri(res, pdfData, opts);
       }
-      
-      // Valida assincronamente a existência do arquivo no disco
-      try {
-        await fs.promises.access(pdfData);
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename=${path.basename(pdfData)}`,
-        );
-        const stream = fs.createReadStream(pdfData);
-        stream.pipe(res);
-      } catch {
-        // Redireciona apenas se for uma URL HTTP válida
-        if (pdfData.startsWith("http://") || pdfData.startsWith("https://")) {
-          res.redirect(pdfData);
-        } else {
-          res.status(404).send("PDF não encontrado no disco.");
-        }
+
+      // Resolve strictly within the guias PDF directory — never redirect to an
+      // arbitrary URL, never read a path from outside our control.
+      const abs = resolveGuiaPdfPath(pdfData);
+      if (!abs || !(await isReadableFile(abs))) {
+        return res.status(404).send("PDF da guia não encontrado.");
       }
+      return sendDiskFile(res, abs, opts);
     } catch (e: any) {
       console.error(e);
       res.status(500).send("Erro ao baixar PDF");

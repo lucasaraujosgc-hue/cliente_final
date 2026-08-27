@@ -79,6 +79,7 @@ src/
       index.ts               setupRoutes() mounts everything
       auth.routes.ts         login, forgot/reset password
       client.routes.ts       /api/client/*  + /api/pendencies/guia/* (SERPRO)
+      files.routes.ts        /api/documents/:id/file  (authenticated document download)
       accountant.routes.ts   /api/accountant/*  (client CRUD, files, billing, SERPRO config)
       integration.routes.ts  /api/integration/*  (integrationHash auth)
       webhook.routes.ts      /api/webhook/*  (external doc push, hash-authed)
@@ -88,7 +89,9 @@ src/
       billing.ts             upsertBilling() — the one place billing rows are written
       audit.ts               logAudit(req, action, {...}) — call on sensitive accountant actions
       password.ts            hashPassword / verifyPassword (bcrypt + legacy-plaintext upgrade)
-      mailer.ts, push.ts, serpro.ts, upload.ts (multer + sanitizeFilename), notificationSweeper.ts
+      upload.ts              multer config, sanitizeFilename, extension allow-list, dir constants
+      files.ts               resolveUploadPath / resolveGuiaPdfPath (traversal-safe) + streamers
+      mailer.ts, push.ts, serpro.ts, notificationSweeper.ts
 drizzle/                     generated migrations (scaffolded; initDb still the active path)
 scripts/                     migrate.ts, migrate-passwords.ts
 ```
@@ -116,7 +119,16 @@ scripts/                     migrate.ts, migrate-passwords.ts
 - **Env**: prod refuses to start without real `JWT_SECRET`, `ADMIN`, `PASSWORD`,
   `DATABASE_URL` (`src/server/env.ts`). `CORS_ORIGINS` is required in prod too.
 - **Admin login** is env-based (`ADMIN`/`PASSWORD`), not a DB row.
-- **File uploads**: 10 MB cap, names run through `sanitizeFilename()`.
+- **File uploads**: 10 MB cap, one file, extension allow-list
+  (`ALLOWED_UPLOAD_EXTENSIONS`), random stored name (no overwrite), names run
+  through `sanitizeFilename()`.
+- **Serving documents**: `/uploads` is NOT public. Client documents are
+  downloaded only via `GET /api/documents/:id/file` (auth + per-document
+  authorization; client sees only its own, accountant sees all). The path is
+  resolved server-side from `documents.file_url` — never from the request.
+  Frontend builds the URL with `documentFileUrl(doc.id, { download?, as? })`
+  from `lib/apiClient.ts`. SERPRO guia PDFs also stream through
+  `GET /api/pendencies/guia/:guiaId/pdf` (same auth model).
 - Tests are **server-only**; there is no frontend test setup.
 
 ## Domain vocabulary

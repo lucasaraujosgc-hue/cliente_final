@@ -7,6 +7,32 @@ export const getApiUrl = (endpoint: string) => {
   return `${baseUrl}${endpoint}`;
 };
 
+/**
+ * Absolute URL for the authenticated document endpoint. Safe to use as an
+ * <a href>, <img src> or pdf.js source: the JWT rides in the query string
+ * because those contexts can't set an Authorization header. The server sends
+ * `Cache-Control: private, no-store` + `Referrer-Policy: no-referrer` back.
+ *
+ * `as` picks which stored token to attach ("client" is the default; pass
+ * "accountant" from the admin panel).
+ */
+export const documentFileUrl = (
+  docId: string,
+  opts: { download?: boolean; as?: "client" | "accountant" } = {},
+): string => {
+  const as = opts.as ?? "client";
+  const token =
+    as === "accountant"
+      ? localStorage.getItem("accountantToken")
+      : localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+
+  const qs = new URLSearchParams();
+  if (token) qs.set("token", token);
+  if (opts.download) qs.set("download", "1");
+  const query = qs.toString();
+  return getApiUrl(`/api/documents/${docId}/file`) + (query ? `?${query}` : "");
+};
+
 export const apiFetch = async (
   endpoint: string,
   options: RequestInit = {},

@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle, Copy, Calendar, Clock, Check, Eye, Send, Doll
 import { PixScannerButton } from "../../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../../components/GuiaAtualizarButton";
 import { handleFileAction } from "../../../lib/utils";
+import { documentFileUrl } from "../../../lib/apiClient";
 
 export interface DocDueStatus {
   label: string;
@@ -18,7 +19,6 @@ interface DueDatesCardProps {
   clientId: string;
   copiedId: string | null;
   getDocDueStatus: (doc: any) => DocDueStatus;
-  getAuthenticatedFileUrl: (url: string | null) => string | undefined;
   onCopyCode: (docId: string, textToCopy: string) => void;
   onMarkAsPaid: (docId: string) => void;
   onReloadData: () => void;
@@ -30,7 +30,6 @@ export function DueDatesCard({
   clientId,
   copiedId,
   getDocDueStatus,
-  getAuthenticatedFileUrl,
   onCopyCode,
   onMarkAsPaid,
   onReloadData,
@@ -137,14 +136,14 @@ export function DueDatesCard({
                         {doc.fileUrl && (
                           <>
                             <button
-                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'view', doc.title || 'documento')}
+                              onClick={() => handleFileAction(documentFileUrl(doc.id), 'view', doc.title || 'documento')}
                               className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Visualizar documento"
                             >
                               <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
                             </button>
                             <button
-                              onClick={() => handleFileAction(getAuthenticatedFileUrl(doc.fileUrl), 'download', doc.title || 'documento')}
+                              onClick={() => handleFileAction(documentFileUrl(doc.id, { download: true }), 'download', doc.title || 'documento')}
                               className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Baixar Arquivo"
                             >
@@ -171,7 +170,7 @@ export function DueDatesCard({
                         ) : (
                           doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
                             <div className="flex-1 sm:flex-none">
-                              <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                              <PixScannerButton docId={doc.id} />
                             </div>
                           )
                         )}

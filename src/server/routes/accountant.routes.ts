@@ -1,6 +1,5 @@
 import { Express } from "express";
 import fs from "fs";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { eq, desc, inArray, or } from "drizzle-orm";
 import { db } from "../db";
@@ -16,6 +15,7 @@ import {
   auditLog,
 } from "../schema";
 import { upload, uploadCert } from "../services/upload";
+import { resolveUploadPath } from "../services/files";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { upsertBilling } from "../services/billing";
@@ -31,6 +31,23 @@ import {
   billingUpdateSchema,
   billingBulkSchema,
 } from "../schemas/validation";
+
+// Best-effort on-disk / inline size of a stored document, for the gallery
+// totals. Never throws, never touches a path outside the uploads dir.
+function fileSizeFor(fileUrl: string | null): number {
+  if (!fileUrl) return 0;
+  if (fileUrl.startsWith("data:")) {
+    const b64 = fileUrl.split(",")[1];
+    return b64 ? Math.floor((b64.length * 3) / 4) : 0;
+  }
+  const abs = resolveUploadPath(fileUrl);
+  if (!abs) return 0;
+  try {
+    return fs.statSync(abs).size;
+  } catch {
+    return 0;
+  }
+}
 
 // Routes used by the accountant-facing admin panel: client CRUD, file
 // management, inbox/messages, billing, and SERPRO integration settings.
@@ -359,22 +376,7 @@ export function registerAccountantRoutes(app: Express) {
         const allDocs = await db.select().from(documents);
         let totalSize = 0;
         for (const doc of allDocs) {
-          if (doc.fileUrl) {
-            if (doc.fileUrl.startsWith("data:")) {
-              const base64str = doc.fileUrl.split(",")[1];
-              if (base64str) {
-                totalSize += Math.floor((base64str.length * 3) / 4);
-              }
-            } else if (doc.fileUrl.startsWith("/uploads/")) {
-              const filePath = path.join(process.cwd(), doc.fileUrl);
-              try {
-                if (fs.existsSync(filePath)) {
-                  const stat = fs.statSync(filePath);
-                  totalSize += stat.size;
-                }
-              } catch (e) {}
-            }
-          }
+          totalSize += fileSizeFor(doc.fileUrl);
         }
         res.json({ totalSize });
       } catch (e: any) {
@@ -393,24 +395,7 @@ export function registerAccountantRoutes(app: Express) {
 
       const filesWithMetadata = allDocs.map((doc) => {
         const cl = allClients.find((c) => c.id === doc.clientId);
-        let size = 0;
-
-        if (doc.fileUrl) {
-          if (doc.fileUrl.startsWith("data:")) {
-            const base64str = doc.fileUrl.split(",")[1];
-            if (base64str) {
-              size = Math.floor((base64str.length * 3) / 4);
-            }
-          } else if (doc.fileUrl.startsWith("/uploads/")) {
-            const filePath = path.join(process.cwd(), doc.fileUrl);
-            try {
-              if (fs.existsSync(filePath)) {
-                const stat = fs.statSync(filePath);
-                size = stat.size;
-              }
-            } catch (e) {}
-          }
-        }
+        const size = fileSizeFor(doc.fileUrl);
 
         return {
           id: doc.id,
@@ -448,12 +433,10 @@ export function registerAccountantRoutes(app: Express) {
           .where(inArray(documents.id, fileIds));
 
         for (const doc of docsToDelete) {
-          if (doc.fileUrl && doc.fileUrl.startsWith("/uploads/")) {
-            const filePath = path.join(process.cwd(), doc.fileUrl);
+          const abs = resolveUploadPath(doc.fileUrl);
+          if (abs) {
             try {
-              if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-              }
+              fs.unlinkSync(abs);
             } catch (e) {}
           }
         }

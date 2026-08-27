@@ -1,4 +1,4 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, documentFileUrl } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
@@ -110,14 +110,6 @@ export function ClientDetail() {
     }
   };
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
 
 
   const handleDeleteDoc = async (docId: string) => {
@@ -662,7 +654,7 @@ export function ClientDetail() {
                         <Edit3 className="w-4 h-4" />
                      </button>
                      {doc.fileUrl && (
-                        <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+                        <a href={documentFileUrl(doc.id, { download: true, as: "accountant" })} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
                            <Download className="w-4 h-4" />
                         </a>
                      )}

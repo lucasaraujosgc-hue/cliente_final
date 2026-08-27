@@ -4,6 +4,7 @@ import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
+import { documentFileUrl } from "../lib/apiClient";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const pdfLoadOptions = {
@@ -11,11 +12,13 @@ const pdfLoadOptions = {
 };
 
 interface PixScannerButtonProps {
-  docId: number;
-  fileUrl: string;
+  docId: string;
 }
 
-export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
+export function PixScannerButton({ docId }: PixScannerButtonProps) {
+  // Authenticated document URL — pdf.js fetches it with the token in the query
+  // string (it can't set an Authorization header).
+  const fileUrl = documentFileUrl(docId);
   const [pixCode, setPixCode] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanned, setScanned] = useState(false);

@@ -1,4 +1,4 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, documentFileUrl } from "../../lib/apiClient";
 import { useState, useEffect, FormEvent } from "react";
 import { UploadCloud, Folder, FileIcon, Eye, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -96,8 +96,8 @@ export function ClientUploads() {
                 
                 <div className="flex items-center gap-2 self-end sm:self-center">
                   {doc.fileUrl && (
-                    <button 
-                      onClick={() => handleFileAction(doc.fileUrl, 'download', doc.title || 'documento')}
+                    <button
+                      onClick={() => handleFileAction(documentFileUrl(doc.id, { download: true }), 'download', doc.title || 'documento')}
                       className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors cursor-pointer"
                       title="Baixar Arquivo"
                     >

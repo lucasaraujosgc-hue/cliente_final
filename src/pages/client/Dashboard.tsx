@@ -149,15 +149,6 @@ export function ClientDashboard() {
     }
   }, [selectedCompetence]);
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
-
   const subscribeToPush = async () => {
     try {
       const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
@@ -627,7 +618,6 @@ export function ClientDashboard() {
             clientId={data.client.id}
             copiedId={copiedId}
             getDocDueStatus={getDocDueStatus}
-            getAuthenticatedFileUrl={getAuthenticatedFileUrl}
             onCopyCode={handleCopyCode}
             onMarkAsPaid={handleMarkAsPaid}
             onReloadData={loadData}

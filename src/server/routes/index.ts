@@ -5,6 +5,7 @@ import { registerIntegrationRoutes } from "./integration.routes";
 import { registerClientRoutes } from "./client.routes";
 import { registerAccountantRoutes } from "./accountant.routes";
 import { registerNotificationRoutes } from "./notifications.routes";
+import { registerFileRoutes } from "./files.routes";
 
 // Re-exported so existing imports of `triggerDebouncedDocumentNotification`
 // from "./routes" keep working after the split.
@@ -19,4 +20,5 @@ export function setupRoutes(app: Express) {
   registerClientRoutes(app);
   registerAccountantRoutes(app);
   registerNotificationRoutes(app);
+  registerFileRoutes(app);
 }

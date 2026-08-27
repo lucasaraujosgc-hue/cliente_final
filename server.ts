@@ -77,7 +77,12 @@ async function startServer() {
   // limit can't be tiny, but 50mb per request was an easy memory-exhaustion
   // lever. 12mb comfortably covers the 10mb multipart file cap.
   app.use(express.json({ limit: "12mb" }));
-  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+  // NOTE: /uploads is deliberately NOT served statically. Client documents are
+  // private — they're only reachable through the authenticated + authorized
+  // endpoint GET /api/documents/:id/file (src/server/routes/files.routes.ts).
+  app.use("/uploads", (_req, res) => {
+    res.status(404).json({ error: "Recurso indisponível. Use a área autenticada." });
+  });
   app.use("/api", apiLimiter);
 
   app.get("/api/health", (req, res) => {
