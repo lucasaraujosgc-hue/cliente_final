@@ -244,8 +244,15 @@ export function ClientDashboard() {
 
   useEffect(() => {
     loadData();
-    subscribeToPush();
-    
+
+    // Only refresh the push subscription automatically when the user has
+    // already granted permission — never prompt on mount. The "Ativar
+    // Notificações" button handles the opt-in flow explicitly.
+    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+    if (!isCapacitor && "Notification" in window && Notification.permission === "granted") {
+      subscribeToPush();
+    }
+
     const checkPushState = async () => {
       const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
       setIsCapacitorApp(isCapacitor);

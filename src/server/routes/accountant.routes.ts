@@ -17,6 +17,7 @@ import {
 import { upload, uploadCert } from "../services/upload";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
+import { upsertBilling } from "../services/billing";
 import { verifyAccountantAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import {
@@ -627,45 +628,8 @@ export function registerAccountantRoutes(app: Express) {
     verifyAccountantAuth,
     validateBody(billingUpdateSchema),
     async (req, res) => {
-      const clientId = req.params.id;
-      const {
-        month,
-        servicesRevenue,
-        salesRevenue,
-        totalIncomes,
-        servicesTaken,
-      } = req.body;
-
       try {
-        const existing = await db
-          .select()
-          .from(billingData)
-          .where(eq(billingData.clientId, clientId));
-        const target = existing.find((b) => b.month === month);
-
-        const updatePayload = {
-          servicesRevenue: servicesRevenue || 0,
-          salesRevenue: salesRevenue || 0,
-          totalIncomes: totalIncomes || 0,
-          servicesTaken: servicesTaken || 0,
-          // Legacy fallback
-          revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-          expenses: servicesTaken || 0,
-          payroll: 0,
-        };
-
-        if (target) {
-          await db
-            .update(billingData)
-            .set(updatePayload)
-            .where(eq(billingData.id, target.id));
-        } else {
-          await db.insert(billingData).values({
-            ...updatePayload,
-            clientId,
-            month,
-          });
-        }
+        await upsertBilling(req.params.id, req.body);
         res.json({ success: true });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -679,47 +643,9 @@ export function registerAccountantRoutes(app: Express) {
     verifyAccountantAuth,
     validateBody(billingBulkSchema),
     async (req, res) => {
-      const clientId = req.params.id;
-      const { data } = req.body; // Array of items
-
       try {
-        for (const item of data) {
-          const {
-            month,
-            servicesRevenue,
-            salesRevenue,
-            totalIncomes,
-            servicesTaken,
-          } = item;
-          const existing = await db
-            .select()
-            .from(billingData)
-            .where(eq(billingData.clientId, clientId));
-          const target = existing.find((b) => b.month === month);
-
-          const updatePayload = {
-            servicesRevenue: servicesRevenue || 0,
-            salesRevenue: salesRevenue || 0,
-            totalIncomes: totalIncomes || 0,
-            servicesTaken: servicesTaken || 0,
-            // Legacy fallback
-            revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-            expenses: servicesTaken || 0,
-            payroll: 0,
-          };
-
-          if (target) {
-            await db
-              .update(billingData)
-              .set(updatePayload)
-              .where(eq(billingData.id, target.id));
-          } else {
-            await db.insert(billingData).values({
-              ...updatePayload,
-              clientId,
-              month,
-            });
-          }
+        for (const item of req.body.data) {
+          await upsertBilling(req.params.id, item);
         }
         res.json({ success: true });
       } catch (e: any) {

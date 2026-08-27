@@ -45,10 +45,6 @@ export function ClientLayout() {
     };
   }, []);
 
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-
   useEffect(() => {
     const handleUnauthorized = () => {
       handleLogout();
@@ -58,6 +54,13 @@ export function ClientLayout() {
       window.removeEventListener("unauthorized", handleUnauthorized);
     };
   }, []);
+
+  // All hooks must run before this early return — bailing out earlier
+  // changed the hook call order between renders and violated the rules of
+  // hooks (React would warn / misbehave on logout).
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
 
   const handleLogout = () => {
     localStorage.removeItem("clientToken");
@@ -311,16 +314,13 @@ export function AccountantLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [totalSize, setTotalSize] = useState<number | null>(null);
 
-  if (!token) {
-    return <Navigate to="/admin/login" replace />;
-  }
-
   useEffect(() => {
+    if (!token) return;
     const handleUnauthorized = () => {
       handleLogout();
     };
     window.addEventListener("unauthorized", handleUnauthorized);
-    
+
     // Fetch stats
     const fetchStats = async () => {
       try {
@@ -339,6 +339,11 @@ export function AccountantLayout() {
       window.removeEventListener("unauthorized", handleUnauthorized);
     };
   }, []);
+
+  // All hooks must run before this early return (rules of hooks).
+  if (!token) {
+    return <Navigate to="/admin/login" replace />;
+  }
 
   const handleLogout = () => {
     localStorage.removeItem("accountantToken");

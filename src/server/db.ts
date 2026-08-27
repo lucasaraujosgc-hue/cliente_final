@@ -10,124 +10,131 @@ export const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
+// Every CREATE TABLE runs before any ALTER TABLE: an ALTER against a table
+// that doesn't exist yet (fresh database) throws, and because the whole
+// routine shares one try/catch that would abort the rest of the setup.
+const CREATE_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS "clients" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "cnpj" text NOT NULL UNIQUE,
+    "name" text NOT NULL,
+    "password_hash" text NOT NULL,
+    "regularity_status" text NOT NULL,
+    "email" text,
+    "first_access_done" boolean DEFAULT false,
+    "integration_hash" text UNIQUE
+  )`,
+  `CREATE TABLE IF NOT EXISTS "documents" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+    "title" text NOT NULL,
+    "category" text NOT NULL,
+    "due_date" text,
+    "status" text NOT NULL,
+    "uploaded_by" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "file_url" text
+  )`,
+  `CREATE TABLE IF NOT EXISTS "billing_data" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+    "month" text NOT NULL,
+    "revenue" integer DEFAULT 0 NOT NULL,
+    "expenses" integer DEFAULT 0 NOT NULL,
+    "payroll" integer DEFAULT 0 NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS "messages" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+    "content" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "read" boolean DEFAULT false NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS "subscriptions" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "client_id" uuid NOT NULL REFERENCES "clients"("id"),
+    "subscription_object" jsonb,
+    "fcm_token" text,
+    "device_name" text,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS "serpro_config" (
+    "id" serial PRIMARY KEY,
+    "usuario_id" integer NOT NULL DEFAULT 1,
+    "consumer_key" text,
+    "consumer_secret" text,
+    "cert_path" text,
+    "cert_senha" text,
+    "cnpj_contratante" text,
+    "ambiente" text DEFAULT 'trial',
+    "updated_at" timestamp DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS "guias_geradas" (
+    "id" serial PRIMARY KEY,
+    "client_id" uuid NOT NULL REFERENCES "clients"("id"),
+    "usuario_id" integer NOT NULL DEFAULT 1,
+    "tipo_guia" text NOT NULL,
+    "competencia" text NOT NULL,
+    "status" text DEFAULT 'PENDENTE',
+    "pdf_path" text,
+    "data_vencimento" text,
+    "valor_total" real,
+    "numero_documento" text,
+    "erro_msg" text,
+    "created_at" timestamp DEFAULT now(),
+    "concluido_at" timestamp
+  )`,
+  `CREATE TABLE IF NOT EXISTS "scheduled_notifications" (
+    "id" serial PRIMARY KEY,
+    "client_id" uuid REFERENCES "clients"("id") ON DELETE CASCADE,
+    "type" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text NOT NULL,
+    "schedule_day" integer,
+    "schedule_time" text,
+    "last_sent" timestamp,
+    "active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+];
+
+const ALTER_STATEMENTS = [
+  `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "accountant_category" text`,
+  `ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_revenue" integer DEFAULT 0 NOT NULL`,
+  `ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "sales_revenue" integer DEFAULT 0 NOT NULL`,
+  `ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "total_incomes" integer DEFAULT 0 NOT NULL`,
+  `ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_taken" integer DEFAULT 0 NOT NULL`,
+  `ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text`,
+  `ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "pix_code" text`,
+  `ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "extracted_data" jsonb`,
+  `ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "direction" text DEFAULT 'accountant_to_client' NOT NULL`,
+  `ALTER TABLE "scheduled_notifications" ADD COLUMN IF NOT EXISTS "schedule_time" text`,
+  `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "notification_preferences" json DEFAULT '{"receives_all":true,"recurrent":true,"before_due":true,"on_due":true,"on_new_file":true}'::json`,
+  `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token" text`,
+  `ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token_expires" text`,
+  `ALTER TABLE "serpro_config" ADD COLUMN IF NOT EXISTS "whatsapp_support" text`,
+  `ALTER TABLE "serpro_config" ADD COLUMN IF NOT EXISTS "multiple_files_text" text`,
+  `ALTER TABLE "subscriptions" ALTER COLUMN "subscription_object" DROP NOT NULL`,
+  `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "fcm_token" text`,
+];
+
 export async function initDb() {
   let client;
   try {
     client = await pool.connect();
-    // Basic automatic table creation for quick testing if they don't exist
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS "clients" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "cnpj" text NOT NULL UNIQUE,
-        "name" text NOT NULL,
-        "password_hash" text NOT NULL,
-        "regularity_status" text NOT NULL,
-        "email" text,
-        "first_access_done" boolean DEFAULT false,
-        "integration_hash" text UNIQUE
-      );
 
-      CREATE TABLE IF NOT EXISTS "documents" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
-        "title" text NOT NULL,
-        "category" text NOT NULL,
-        "due_date" text,
-        "status" text NOT NULL,
-        "uploaded_by" text NOT NULL,
-        "created_at" timestamp DEFAULT now() NOT NULL,
-        "file_url" text
-      );
-
-      CREATE TABLE IF NOT EXISTS "billing_data" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
-        "month" text NOT NULL,
-        "revenue" integer NOT NULL,
-        "expenses" integer NOT NULL,
-        "payroll" integer NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS "messages" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
-        "content" text NOT NULL,
-        "created_at" timestamp DEFAULT now() NOT NULL,
-        "read" boolean DEFAULT false NOT NULL
-      );
-    `);
-
-    // Schema updates
-    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "accountant_category" text;`);
-    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_revenue" integer DEFAULT 0 NOT NULL;`);
-    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "sales_revenue" integer DEFAULT 0 NOT NULL;`);
-    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "total_incomes" integer DEFAULT 0 NOT NULL;`);
-    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_taken" integer DEFAULT 0 NOT NULL;`);
-    await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text;`);
-    await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "pix_code" text;`);
-    await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "extracted_data" jsonb;`);
-    await client.query(`ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "direction" text DEFAULT 'accountant_to_client' NOT NULL;`);
-    await client.query(`ALTER TABLE "scheduled_notifications" ADD COLUMN IF NOT EXISTS "schedule_time" text;`);
-    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "notification_preferences" json DEFAULT '{"receives_all":true,"recurrent":true,"before_due":true,"on_due":true,"on_new_file":true}'::json;`);
-
-    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token" text;`);
-    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token_expires" text;`);
-    await client.query(`ALTER TABLE "serpro_config" ADD COLUMN IF NOT EXISTS "whatsapp_support" text;`);
-    await client.query(`ALTER TABLE "serpro_config" ADD COLUMN IF NOT EXISTS "multiple_files_text" text;`);
-    await client.query(`ALTER TABLE "subscriptions" ALTER COLUMN "subscription_object" DROP NOT NULL;`);
-    await client.query(`ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "fcm_token" text;`);
-    
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS "subscriptions" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "client_id" uuid NOT NULL REFERENCES "clients"("id"),
-        "subscription_object" jsonb,
-        "fcm_token" text,
-        "device_name" text,
-        "created_at" timestamp DEFAULT now() NOT NULL
-      );
-      
-      CREATE TABLE IF NOT EXISTS "serpro_config" (
-        "id" serial PRIMARY KEY,
-        "usuario_id" integer NOT NULL DEFAULT 1,
-        "consumer_key" text,
-        "consumer_secret" text,
-        "cert_path" text,
-        "cert_senha" text,
-        "cnpj_contratante" text,
-        "ambiente" text DEFAULT 'trial',
-        "updated_at" timestamp DEFAULT now()
-      );
-
-      CREATE TABLE IF NOT EXISTS "guias_geradas" (
-        "id" serial PRIMARY KEY,
-        "client_id" uuid NOT NULL REFERENCES "clients"("id"),
-        "usuario_id" integer NOT NULL DEFAULT 1,
-        "tipo_guia" text NOT NULL,
-        "competencia" text NOT NULL,
-        "status" text DEFAULT 'PENDENTE',
-        "pdf_path" text,
-        "data_vencimento" text,
-        "valor_total" real,
-        "numero_documento" text,
-        "erro_msg" text,
-        "created_at" timestamp DEFAULT now(),
-        "concluido_at" timestamp
-      );
-
-      CREATE TABLE IF NOT EXISTS "scheduled_notifications" (
-        "id" serial PRIMARY KEY,
-        "client_id" uuid REFERENCES "clients"("id") ON DELETE CASCADE,
-        "type" text NOT NULL,
-        "title" text NOT NULL,
-        "body" text NOT NULL,
-        "schedule_day" integer,
-        "schedule_time" text,
-        "last_sent" timestamp,
-        "active" boolean DEFAULT true NOT NULL,
-        "created_at" timestamp DEFAULT now() NOT NULL
-      );
-    `);
+    for (const stmt of CREATE_STATEMENTS) {
+      await client.query(stmt);
+    }
+    // ALTERs are idempotent but run individually so one failure (e.g. a
+    // column that already exists with a different type) doesn't skip the rest.
+    for (const stmt of ALTER_STATEMENTS) {
+      try {
+        await client.query(stmt);
+      } catch (err) {
+        console.error("initDb: ALTER failed (continuing):", stmt, err);
+      }
+    }
 
     // Remove test companies
     await client.query(`DELETE FROM "clients" WHERE cnpj IN ('12.345.678/0001-99', '98.765.432/0001-11');`);

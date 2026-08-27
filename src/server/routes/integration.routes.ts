@@ -1,9 +1,10 @@
 import { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { clients, documents, billingData } from "../schema";
+import { clients, documents } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
 import { hashPassword } from "../services/password";
+import { upsertBilling } from "../services/billing";
 
 // External-facing integration API, authenticated via each client's
 // integration hash token (not JWT).
@@ -82,38 +83,20 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integration/update-billing",
     verifyIntegrationToken,
     async (req, res) => {
-      const { clientId, month, revenue, expenses, payroll } = req.body;
+      const { clientId, month } = req.body;
       const integrationClient = (req as any).integrationClient;
 
       // Segurança: O token de integração de um cliente só pode alterar o faturamento dele mesmo!
       if (clientId !== integrationClient.id) {
         return res.status(403).json({ error: "Acesso negado. Token não autorizado para este clientId." });
       }
-
-      const existing = await db
-        .select()
-        .from(billingData)
-        .where(eq(billingData.clientId, clientId));
-      const target = existing.find((b) => b.month === month);
-
-      if (target) {
-        await db
-          .update(billingData)
-          .set({
-            revenue,
-            expenses,
-            payroll,
-          })
-          .where(eq(billingData.id, target.id));
-      } else {
-        await db.insert(billingData).values({
-          clientId,
-          month,
-          revenue,
-          expenses,
-          payroll,
-        });
+      if (!month) {
+        return res.status(400).json({ error: "month é obrigatório." });
       }
+
+      // Accepts either the current services model or the legacy
+      // revenue/expenses/payroll fields (see upsertBilling).
+      await upsertBilling(clientId, req.body);
       res.json({ success: true });
     },
   );
