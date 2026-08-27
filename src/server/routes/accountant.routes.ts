@@ -13,11 +13,13 @@ import {
   guiasGeradas,
   serproConfig,
   scheduledNotifications,
+  auditLog,
 } from "../schema";
 import { upload, uploadCert } from "../services/upload";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { upsertBilling } from "../services/billing";
+import { logAudit } from "../services/audit";
 import { verifyAccountantAuth } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import {
@@ -36,6 +38,67 @@ export function registerAccountantRoutes(app: Express) {
   app.get("/api/accountant/clients", verifyAccountantAuth, async (req, res) => {
     const allClients = await db.select().from(clients);
     res.json({ clients: allClients });
+  });
+
+  // High-level counters for the accountant home screen.
+  app.get("/api/accountant/overview", verifyAccountantAuth, async (req, res) => {
+    try {
+      const [allClients, allDocs] = await Promise.all([
+        db.select().from(clients),
+        db.select().from(documents),
+      ]);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const in7 = new Date(today);
+      in7.setDate(in7.getDate() + 7);
+
+      const parseDue = (s: string | null) => {
+        if (!s) return null;
+        const iso = s.includes("/")
+          ? s.split("/").reverse().join("-")
+          : s.split("T")[0];
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      let overdue = 0;
+      let dueSoon = 0;
+      for (const d of allDocs) {
+        if (d.status === "paid") continue;
+        const due = parseDue(d.dueDate);
+        if (!due) continue;
+        if (due < today) overdue++;
+        else if (due <= in7) dueSoon++;
+      }
+
+      res.json({
+        clients: allClients.length,
+        clientsIrregular: allClients.filter((c) => c.regularityStatus !== "green").length,
+        inbox: allDocs.filter(
+          (d) => d.uploadedBy === "client" || d.status === "waiting_accountant",
+        ).length,
+        waitingRecalc: allDocs.filter((d) => d.status === "waiting_accountant").length,
+        overdue,
+        dueSoon,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/accountant/audit", verifyAccountantAuth, async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(limit);
+      res.json({ entries: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get("/api/accountant/solicitacoes", verifyAccountantAuth, async (req, res) => {
@@ -140,6 +203,11 @@ export function registerAccountantRoutes(app: Express) {
             accountantCategory: accountantCategory || null,
           })
           .returning();
+        await logAudit(req, "client.create", {
+          targetType: "client",
+          targetId: newClient.id,
+          summary: `Criou o cliente ${newClient.name} (${newClient.cnpj})`,
+        });
         res.json({ success: true, client: newClient });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -168,7 +236,12 @@ export function registerAccountantRoutes(app: Express) {
              firstAccessDone: false
           })
           .where(eq(clients.id, id));
-          
+
+        await logAudit(req, "client.reset_password", {
+          targetType: "client",
+          targetId: id,
+          summary: `Redefiniu a senha de ${client.name} para o CNPJ`,
+        });
         res.json({ success: true });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -194,6 +267,12 @@ export function registerAccountantRoutes(app: Express) {
           })
           .where(eq(clients.id, req.params.id))
           .returning();
+        await logAudit(req, "client.update", {
+          targetType: "client",
+          targetId: req.params.id,
+          summary: `Atualizou o cliente ${updated?.name ?? req.params.id}`,
+          metadata: { regularityStatus, accountantCategory },
+        });
         res.json({ success: true, client: updated });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -207,6 +286,7 @@ export function registerAccountantRoutes(app: Express) {
     async (req, res) => {
       try {
         const clientId = req.params.id;
+        const [victim] = await db.select().from(clients).where(eq(clients.id, clientId));
         // Delete dependencies
         await db.delete(guiasGeradas).where(eq(guiasGeradas.clientId, clientId));
         await db.delete(scheduledNotifications).where(eq(scheduledNotifications.clientId, clientId));
@@ -217,6 +297,11 @@ export function registerAccountantRoutes(app: Express) {
 
         // Delete client
         await db.delete(clients).where(eq(clients.id, clientId));
+        await logAudit(req, "client.delete", {
+          targetType: "client",
+          targetId: clientId,
+          summary: `Excluiu o cliente ${victim?.name ?? clientId} e todos os seus dados`,
+        });
         res.json({ success: true });
       } catch (e: any) {
         console.error(e);
@@ -374,6 +459,11 @@ export function registerAccountantRoutes(app: Express) {
         }
 
         await db.delete(documents).where(inArray(documents.id, fileIds));
+        await logAudit(req, "files.bulk_delete", {
+          targetType: "document",
+          summary: `Excluiu ${docsToDelete.length} arquivo(s)`,
+          metadata: { fileIds },
+        });
         res.json({ success: true });
       } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -597,6 +687,11 @@ export function registerAccountantRoutes(app: Express) {
         .set({ integrationHash: newToken })
         .where(eq(clients.id, clientId));
 
+      await logAudit(req, "token.generate", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Gerou um token de integração para ${clientList[0].name}`,
+      });
       res.json({ token: newToken });
     },
   );
@@ -618,6 +713,11 @@ export function registerAccountantRoutes(app: Express) {
         .set({ integrationHash: null })
         .where(eq(clients.id, clientId));
 
+      await logAudit(req, "token.revoke", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Revogou o token de integração de ${clientList[0].name}`,
+      });
       res.json({ success: true });
     },
   );

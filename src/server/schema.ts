@@ -140,6 +140,17 @@ export const scheduledNotifications = pgTable('scheduled_notifications', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const auditLog = pgTable('audit_log', {
+  id: serial('id').primaryKey(),
+  actor: text('actor').notNull(), // 'accountant' | 'client:<id>' | 'integration:<id>'
+  action: text('action').notNull(), // e.g. 'client.create', 'client.delete', 'token.revoke'
+  targetType: text('target_type'), // 'client', 'document', ...
+  targetId: text('target_id'),
+  summary: text('summary'),
+  metadata: json('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const scheduledNotificationsRelations = relations(scheduledNotifications, ({ one }) => ({
 	client: one(clients, {
 		fields: [scheduledNotifications.clientId],

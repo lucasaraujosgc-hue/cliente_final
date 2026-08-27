@@ -20,6 +20,7 @@ import { KpiCards } from "./dashboard/KpiCards";
 import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
 import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
+import { ClientDashboardSkeleton } from "../../components/Skeleton";
 
 export function ClientDashboard() {
   const location = useLocation();
@@ -413,12 +414,7 @@ export function ClientDashboard() {
   };
 
   if (!data) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <RefreshCw className="w-8 h-8 text-virgula-green animate-spin" />
-        <p className="text-slate-500 text-sm font-medium animate-pulse">Carregando painel contábil...</p>
-      </div>
-    );
+    return <ClientDashboardSkeleton />;
   }
 
   // Parse Brazilian Date String (DD/MM/YYYY) or ISO (YYYY-MM-DD) to standard Date object
@@ -647,7 +643,8 @@ export function ClientDashboard() {
             totalOverdueValue={totalOverdueValue}
           />
 
-      {/* SECURITY / PASSWORD RESET NOTIFICATION BOX */}
+      {/* SECURITY / PASSWORD RESET NOTIFICATION BOX — only until first access is done */}
+      {!data.client?.firstAccessDone && (
       <div className="bg-gradient-to-r from-slate-50 to-indigo-50 dark:from-slate-800/30 dark:to-slate-800/10 border border-slate-200/50 dark:border-slate-700/50 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
         <div className="flex items-start sm:items-center">
           <div className="p-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl mr-3 shrink-0">
@@ -667,6 +664,7 @@ export function ClientDashboard() {
           Alterar Senha de Acesso
         </button>
       </div>
+      )}
 
       {/* MAIN LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
