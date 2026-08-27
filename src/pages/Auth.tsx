@@ -1,6 +1,6 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calculator } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { apiFetch } from "../lib/apiClient";
 
 export function Login() {
@@ -131,14 +131,8 @@ export function Login() {
         <div className="w-full max-w-md bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-white dark:border-slate-700 p-8">
           <div className="text-center mb-8 flex flex-col items-center">
             
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
-                 <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-              </div>
-              <div className="flex flex-col justify-center text-left">
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                  <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-              </div>
+            <div className="mb-6">
+              <Logo size="lg" />
             </div>
 
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Portal do Cliente</h1>
@@ -345,14 +339,8 @@ export function AccountantLogin() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900 z-0"></div>
       <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10 p-8 z-10 mx-4">
         <div className="text-center mb-8 flex flex-col items-center">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
-               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-            </div>
-            <div className="flex flex-col justify-center text-left">
-                <span className="text-3xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-            </div>
+          <div className="mb-6">
+            <Logo size="lg" onDark />
           </div>
           <h1 className="text-xl font-bold text-white tracking-tight mt-2">Área do Contador</h1>
         </div>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X, Bell, AlertCircle, Smartphone } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
+import { Logo } from "./Logo";
 
 export function ClientLayout() {
   const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
@@ -126,15 +127,7 @@ export function ClientLayout() {
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
       <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex items-center space-x-3">
-           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
-           </div>
-           <div className="flex flex-col justify-center">
-              <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-           </div>
-        </div>
+        <Logo />
         {/* Mobile close button */}
         <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
           <X className="w-5 h-5" />
@@ -374,15 +367,7 @@ export function AccountantLayout() {
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-slate-900 dark:bg-slate-950 text-slate-100">
       <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
-        <div className="flex items-center space-x-3">
-           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
-           </div>
-           <div className="flex flex-col justify-center">
-              <span className="text-2xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-           </div>
-        </div>
+        <Logo onDark />
         {/* Mobile close button */}
         <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-200 rounded-lg">
           <X className="w-5 h-5" />

@@ -1,10 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
   --color-virgula-green: #10b981;
   --color-virgula-card: #1f2937;
+  /* Brand wordmark palette (see src/components/Logo.tsx) */
+  --color-virgula-primary: oklch(0.36 0.06 165);
+  --color-virgula-accent: oklch(0.72 0.14 55);
+  --color-virgula-muted: oklch(0.48 0.02 160);
 }
 
 body {
