@@ -13,7 +13,7 @@ import {
   guiasGeradas,
 } from "../schema";
 import { transporter } from "../services/mailer";
-import { upload, GUIAS_PDF_DIR } from "../services/upload";
+import { upload, GUIAS_PDF_DIR, validateUploadedFileContent } from "../services/upload";
 import {
   resolveGuiaPdfPath,
   sendDiskFile,
@@ -515,6 +515,7 @@ export function registerClientRoutes(app: Express) {
     "/api/client/upload",
     verifyClientAuth,
     upload.single("file"),
+    validateUploadedFileContent,
     async (req, res) => {
       const clientId = getClientId(req);
       const { title, category, competence } = req.body;

@@ -9,8 +9,10 @@ import {
   UPLOADS_DIR,
   sanitizeFilename,
   isAllowedUploadName,
+  validateUploadedFileContent,
   MAX_UPLOAD_BYTES,
 } from "../services/upload";
+import { contentMatchesExtension } from "../services/fileType";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { webhookLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
@@ -59,6 +61,9 @@ export function registerWebhookRoutes(app: Express) {
         // Only enforce the extension allow-list when the caller gave a name.
         if (nome_arquivo && !isAllowedUploadName(nome_arquivo)) {
           return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+        }
+        if (nome_arquivo && !contentMatchesExtension(buffer, nome_arquivo)) {
+          return res.status(415).json({ error: "O conteúdo do arquivo não corresponde à sua extensão." });
         }
         safeFilename = `${Date.now()}_${sanitizeFilename(nome_arquivo || "documento")}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
@@ -139,36 +144,27 @@ export function registerWebhookRoutes(app: Express) {
     "/api/webhook/documentos",
     webhookLimiter,
     upload.single("arquivo"),
+    validateUploadedFileContent,
     async (req, res) => {
       try {
-        let companyHash, categoria, nomeArquivo, dataVencimento;
-        let arquivoBase64 = null;
+        const companyHash = req.body.companyHash;
+        const categoria = req.body.categoria || "Outros";
+        const dataVencimento = req.body.dataVencimento;
+        // multer diskStorage populates req.file.path/.filename (not .buffer).
+        const nomeArquivo =
+          req.body.nomeArquivo ||
+          (req.file ? req.file.originalname : "Documento Integrado");
 
-        if (req.file) {
-          // multipart/form-data
-          companyHash = req.body.companyHash;
-          categoria = req.body.categoria || "Outros";
-          nomeArquivo = req.body.nomeArquivo || req.file.originalname;
-          dataVencimento = req.body.dataVencimento;
-          arquivoBase64 =
-            "data:" +
-            req.file.mimetype +
-            ";base64," +
-            req.file.buffer.toString("base64");
-        } else {
-          // JSON
-          companyHash = req.body.companyHash;
-          categoria = req.body.categoria || "Outros";
-          nomeArquivo = req.body.nomeArquivo || "Documento Integrado";
-          dataVencimento = req.body.dataVencimento;
-          if (req.body.arquivo) {
-            arquivoBase64 = String(req.body.arquivo).startsWith("data:")
-              ? req.body.arquivo
-              : "data:application/pdf;base64," + req.body.arquivo;
-          }
+        let arquivoBase64: string | null = null;
+        if (!req.file && req.body.arquivo) {
+          arquivoBase64 = String(req.body.arquivo).startsWith("data:")
+            ? req.body.arquivo
+            : "data:application/pdf;base64," + req.body.arquivo;
         }
 
         if (!companyHash) {
+          // A rejected multipart upload already wrote a temp file — clean it.
+          if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
           return res
             .status(400)
             .json({ error: "O parâmetro companyHash é obrigatório" });
@@ -176,12 +172,15 @@ export function registerWebhookRoutes(app: Express) {
 
         const targetClient = await findClientByIntegrationToken(companyHash);
         if (!targetClient) {
+          if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
           return res
             .status(404)
             .json({ error: "Empresa não encontrada para este hash" });
         }
 
-        let finalFileUrl = null;
+        // multipart: multer already saved it and validateUploadedFileContent
+        // verified the magic bytes.
+        let finalFileUrl: string | null = req.file ? `/uploads/${req.file.filename}` : null;
         if (arquivoBase64) {
            const match = arquivoBase64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
            if (match) {
@@ -191,6 +190,9 @@ export function registerWebhookRoutes(app: Express) {
               }
               if (nomeArquivo && !isAllowedUploadName(nomeArquivo)) {
                 return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+              }
+              if (nomeArquivo && !contentMatchesExtension(buffer, nomeArquivo)) {
+                return res.status(415).json({ error: "O conteúdo do arquivo não corresponde à sua extensão." });
               }
               const safeFilename = `${Date.now()}_${sanitizeFilename(nomeArquivo || "documento.pdf")}`;
               const filePath = path.join(UPLOADS_DIR, safeFilename);

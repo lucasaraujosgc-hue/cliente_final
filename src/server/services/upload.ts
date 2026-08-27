@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import multer from "multer";
+import type { Request, Response, NextFunction } from "express";
+import { contentMatchesExtension } from "./fileType";
 
 export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -42,6 +44,35 @@ export function sanitizeFilename(name: string | undefined | null): string {
 // extension on the allow-list?
 export function isAllowedUploadName(name: string | undefined | null): boolean {
   return ALLOWED_UPLOAD_EXTENSIONS.has(path.extname(String(name || "")).toLowerCase());
+}
+
+// Runs AFTER multer.single(...): reads the file's magic bytes and rejects it
+// (deleting the temp file) if the real content doesn't match the extension.
+// Extensions we can't sniff (xml/ofx/csv/txt/p7s) pass through — the allow-list
+// already handled them.
+export async function validateUploadedFileContent(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) return next();
+  try {
+    const fd = await fs.promises.open(file.path, "r");
+    const buf = Buffer.alloc(4100);
+    const { bytesRead } = await fd.read(buf, 0, 4100, 0);
+    await fd.close();
+    if (!contentMatchesExtension(buf.subarray(0, bytesRead), file.originalname)) {
+      await fs.promises.unlink(file.path).catch(() => {});
+      return res
+        .status(415)
+        .json({ error: "O conteúdo do arquivo não corresponde à sua extensão." });
+    }
+  } catch {
+    await fs.promises.unlink(file.path).catch(() => {});
+    return res.status(400).json({ error: "Falha ao validar o arquivo enviado." });
+  }
+  next();
 }
 
 function uploadFileFilter(

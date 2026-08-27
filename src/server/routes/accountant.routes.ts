@@ -13,7 +13,7 @@ import {
   scheduledNotifications,
   auditLog,
 } from "../schema";
-import { upload, uploadCert } from "../services/upload";
+import { upload, uploadCert, validateUploadedFileContent } from "../services/upload";
 import { resolveUploadPath } from "../services/files";
 import { encryptSecret, encryptBytes } from "../services/secretbox";
 import { hashPassword } from "../services/password";
@@ -151,6 +151,7 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/solicitacoes/:id",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -489,6 +490,7 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/upload-doc",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
     async (req, res) => {
       const { clientId, title, category, dueDate, competence } = req.body;
 
@@ -520,6 +522,7 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/document/:id",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
     async (req, res) => {
       try {
         const docId = req.params.id;
