@@ -1,4 +1,4 @@
-import { apiFetch, documentFileUrl } from "../../lib/apiClient";
+import { apiFetch, openDocument } from "../../lib/apiClient";
 import React, { useState, useEffect, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -110,12 +110,9 @@ export function FileGallery() {
   };
 
   const downloadFile = (fileId: string, title: string) => {
-    const link = document.createElement('a');
-    link.href = documentFileUrl(fileId, { download: true, as: "accountant" });
-    link.download = title;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    openDocument(fileId, "download", { as: "accountant", filename: title }).catch((e) =>
+      alert("Erro ao baixar o arquivo: " + e.message),
+    );
   };
 
   const handleBulkDownload = async () => {

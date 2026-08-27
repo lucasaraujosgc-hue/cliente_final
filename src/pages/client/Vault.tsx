@@ -1,9 +1,8 @@
-import { apiFetch, documentFileUrl } from "../../lib/apiClient";
+import { apiFetch, openDocument } from "../../lib/apiClient";
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { handleFileAction } from "../../lib/utils";
 
 export function ClientVault() {
   const [docs, setDocs] = useState<any[]>([]);
@@ -269,7 +268,7 @@ export function ClientVault() {
                       
                       {doc.fileUrl && (
                         <button
-                          onClick={() => handleFileAction(documentFileUrl(doc.id), 'view', doc.title || 'documento')}
+                          onClick={() => openDocument(doc.id, 'view', { filename: doc.title })}
                           className="h-9 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
                           title="Visualizar documento"
                         >
@@ -279,7 +278,7 @@ export function ClientVault() {
                       
                       {doc.fileUrl && (
                         <button
-                          onClick={() => handleFileAction(documentFileUrl(doc.id, { download: true }), 'download', doc.title || 'documento')}
+                          onClick={() => openDocument(doc.id, 'download', { filename: doc.title })}
                           className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer"
                           title="Baixar Arquivo"
                         >

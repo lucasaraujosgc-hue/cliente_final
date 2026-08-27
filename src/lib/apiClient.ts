@@ -7,30 +7,63 @@ export const getApiUrl = (endpoint: string) => {
   return `${baseUrl}${endpoint}`;
 };
 
+type UserType = "client" | "accountant";
+
+const storedToken = (as: UserType): string | null =>
+  as === "accountant"
+    ? localStorage.getItem("accountantToken")
+    : localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+
 /**
- * Absolute URL for the authenticated document endpoint. Safe to use as an
- * <a href>, <img src> or pdf.js source: the JWT rides in the query string
- * because those contexts can't set an Authorization header. The server sends
- * `Cache-Control: private, no-store` + `Referrer-Policy: no-referrer` back.
- *
- * `as` picks which stored token to attach ("client" is the default; pass
- * "accountant" from the admin panel).
+ * Plain (token-less) URL of the authenticated document endpoint. The JWT is
+ * NEVER put in the query string — callers must send it in the Authorization
+ * header (apiFetch / openDocument do this; pdf.js takes documentAuthHeaders()).
  */
 export const documentFileUrl = (
   docId: string,
-  opts: { download?: boolean; as?: "client" | "accountant" } = {},
-): string => {
-  const as = opts.as ?? "client";
-  const token =
-    as === "accountant"
-      ? localStorage.getItem("accountantToken")
-      : localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+  opts: { download?: boolean } = {},
+): string =>
+  getApiUrl(`/api/documents/${docId}/file`) + (opts.download ? "?download=1" : "");
 
-  const qs = new URLSearchParams();
-  if (token) qs.set("token", token);
-  if (opts.download) qs.set("download", "1");
-  const query = qs.toString();
-  return getApiUrl(`/api/documents/${docId}/file`) + (query ? `?${query}` : "");
+/** Authorization header for contexts that fetch a URL directly (pdf.js). */
+export const documentAuthHeaders = (as: UserType = "client"): Record<string, string> => {
+  const token = storedToken(as);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+/**
+ * Fetches a document through the authenticated endpoint and either opens it in
+ * a new tab ("view") or triggers a download. Replaces the old
+ * `?token=`-in-URL + <a href> approach.
+ */
+export const openDocument = async (
+  docId: string,
+  action: "view" | "download",
+  opts: { as?: UserType; filename?: string } = {},
+): Promise<void> => {
+  const res = await apiFetch(
+    `/api/documents/${docId}/file${action === "download" ? "?download=1" : ""}`,
+    {},
+    opts.as ?? "client",
+  );
+  if (!res.ok) throw new Error(`Falha ao obter o documento (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    if (action === "view") {
+      const w = window.open(url, "_blank");
+      if (!w) window.location.href = url;
+    } else {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = opts.filename || "documento";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 };
 
 export const apiFetch = async (

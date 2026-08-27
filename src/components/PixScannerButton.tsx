@@ -4,7 +4,7 @@ import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
-import { documentFileUrl } from "../lib/apiClient";
+import { documentFileUrl, documentAuthHeaders } from "../lib/apiClient";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const pdfLoadOptions = {
@@ -16,8 +16,8 @@ interface PixScannerButtonProps {
 }
 
 export function PixScannerButton({ docId }: PixScannerButtonProps) {
-  // Authenticated document URL — pdf.js fetches it with the token in the query
-  // string (it can't set an Authorization header).
+  // pdf.js fetches this URL itself, so it gets the JWT via httpHeaders (below),
+  // never in the query string.
   const fileUrl = documentFileUrl(docId);
   const [pixCode, setPixCode] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -30,7 +30,7 @@ export function PixScannerButton({ docId }: PixScannerButtonProps) {
 
     const preScan = async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, ...pdfLoadOptions });
+        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, httpHeaders: documentAuthHeaders(), ...pdfLoadOptions });
         const pdf = await loadingTask.promise;
 
         let foundCode: string | null = null;

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { RefreshCw, FileText, Send, Copy, Check, Download, AlertCircle } from "lucide-react";
-import { apiFetch, documentFileUrl } from "../lib/apiClient";
+import { apiFetch, openDocument } from "../lib/apiClient";
 
 interface Guia {
   id: string; // O ID do documento
@@ -177,14 +177,12 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
             {/* Ações interativas premium */}
             <div className="flex gap-2 w-full">
               {pdfPath && (
-                <a
-                  href={documentFileUrl(guia.id)}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  onClick={() => openDocument(guia.id, "view").catch((e) => setErro(e.message))}
                   className="flex-1 flex items-center justify-center gap-1.5 h-9 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-extrabold rounded-xl transition-colors shadow-xs"
                 >
                   <Download className="w-3.5 h-3.5" /> PDF Guia
-                </a>
+                </button>
               )}
               {pixCode && (
                 <button

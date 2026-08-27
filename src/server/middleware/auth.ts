@@ -31,7 +31,7 @@ export async function verifyIntegrationToken(
 }
 
 export function verifyClientAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
+  const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
 
   try {
@@ -47,7 +47,7 @@ export function verifyClientAuth(req: Request, res: Response, next: NextFunction
 }
 
 export function verifyAccountantAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
+  const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
 
   try {
@@ -61,7 +61,7 @@ export function verifyAccountantAuth(req: Request, res: Response, next: NextFunc
 }
 
 export function verifyAnyAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
+  const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
 
   try {

@@ -15,7 +15,8 @@ import {
 
 // Authenticated document download / view. Replaces the old public
 // `express.static("/uploads")` mount — a contábil document must never be
-// reachable just by knowing its URL.
+// reachable just by knowing its URL. The JWT is required in the Authorization
+// header (no ?token= query param); the frontend uses openDocument().
 export function registerFileRoutes(app: Express) {
   app.get("/api/documents/:id/file", verifyAnyAuth, async (req, res) => {
     const { id } = req.params;

@@ -1,8 +1,7 @@
 import { AlertCircle, CheckCircle, Copy, Calendar, Clock, Check, Eye, Send, DollarSign, Download } from "lucide-react";
 import { PixScannerButton } from "../../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../../components/GuiaAtualizarButton";
-import { handleFileAction } from "../../../lib/utils";
-import { documentFileUrl } from "../../../lib/apiClient";
+import { openDocument } from "../../../lib/apiClient";
 
 export interface DocDueStatus {
   label: string;
@@ -136,14 +135,14 @@ export function DueDatesCard({
                         {doc.fileUrl && (
                           <>
                             <button
-                              onClick={() => handleFileAction(documentFileUrl(doc.id), 'view', doc.title || 'documento')}
+                              onClick={() => openDocument(doc.id, 'view', { filename: doc.title })}
                               className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Visualizar documento"
                             >
                               <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
                             </button>
                             <button
-                              onClick={() => handleFileAction(documentFileUrl(doc.id, { download: true }), 'download', doc.title || 'documento')}
+                              onClick={() => openDocument(doc.id, 'download', { filename: doc.title })}
                               className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
                               title="Baixar Arquivo"
                             >

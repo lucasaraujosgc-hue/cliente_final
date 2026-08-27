@@ -13,7 +13,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
-import { handleFileAction } from "../../lib/utils";
 import { PwaBanner } from "./dashboard/PwaBanner";
 import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
 import { KpiCards } from "./dashboard/KpiCards";

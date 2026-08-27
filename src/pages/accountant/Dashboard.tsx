@@ -13,7 +13,7 @@ import {
   History,
 } from "lucide-react";
 import { Skeleton } from "../../components/Skeleton";
-import { documentFileUrl } from "../../lib/apiClient";
+import { openDocument } from "../../lib/apiClient";
 
 interface Overview {
   clients: number;
@@ -136,14 +136,12 @@ export function AccountantDashboard() {
                 </div>
                 <div className="flex items-center gap-3">
                   {doc.fileUrl && (
-                    <a
-                      href={documentFileUrl(doc.id, { download: true, as: "accountant" })}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      onClick={() => openDocument(doc.id, "download", { as: "accountant", filename: doc.title })}
                       className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
                     >
                       Baixar Arquivo
-                    </a>
+                    </button>
                   )}
                   <Link
                     to={`/admin/client/${doc.clientId}`}
