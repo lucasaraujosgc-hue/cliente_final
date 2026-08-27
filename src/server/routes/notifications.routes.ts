@@ -8,7 +8,11 @@ import { vapidKeys, webpush } from "../services/push";
 import { verifyClientAuth, verifyAccountantAuth } from "../middleware/auth";
 import { getClientId } from "../types";
 import { validateBody } from "../middleware/validate";
-import { scheduledNotificationSchema } from "../schemas/validation";
+import {
+  scheduledNotificationSchema,
+  notificationSubscribeSchema,
+  adminNotificationSendSchema,
+} from "../schemas/validation";
 
 // Web-push / FCM subscription management and scheduled-notification rules.
 export function registerNotificationRoutes(app: Express) {
@@ -19,6 +23,7 @@ export function registerNotificationRoutes(app: Express) {
   app.post(
     "/api/notifications/subscribe",
     verifyClientAuth,
+    validateBody(notificationSubscribeSchema),
     async (req, res) => {
       try {
         const clientId = getClientId(req);
@@ -68,6 +73,7 @@ export function registerNotificationRoutes(app: Express) {
   app.post(
     "/api/admin/notifications/send",
     verifyAccountantAuth,
+    validateBody(adminNotificationSendSchema),
     async (req, res) => {
       try {
         const { userIds, title, body } = req.body;

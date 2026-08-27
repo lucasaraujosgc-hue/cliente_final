@@ -27,7 +27,16 @@ import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 import { getClientId } from "../types";
 import { clientSelfDTO } from "../dto/client";
 import { validateBody } from "../middleware/validate";
-import { billingUpdateSchema, billingBulkSchema } from "../schemas/validation";
+import {
+  billingUpdateSchema,
+  billingBulkSchema,
+  clientSetupProfileSchema,
+  clientMessageSchema,
+  clientUploadSchema,
+  clientPreferencesSchema,
+  clientGuiaSchema,
+  docStatusSchema,
+} from "../schemas/validation";
 import { upsertBilling } from "../services/billing";
 
 // Routes used by the client-facing portal: dashboard, profile, billing,
@@ -76,7 +85,7 @@ export function registerClientRoutes(app: Express) {
     });
   });
 
-  app.post("/api/client/setup-profile", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/setup-profile", verifyClientAuth, validateBody(clientSetupProfileSchema), async (req, res) => {
     const clientId = getClientId(req);
     const { email, password } = req.body;
 
@@ -160,6 +169,7 @@ export function registerClientRoutes(app: Express) {
   app.post(
     "/api/pendencies/guia/:clienteId",
     verifyAnyAuth,
+    validateBody(clientGuiaSchema),
     async (req, res) => {
       try {
         const clientId = req.params.clienteId;
@@ -516,6 +526,7 @@ export function registerClientRoutes(app: Express) {
     verifyClientAuth,
     upload.single("file"),
     validateUploadedFileContent,
+    validateBody(clientUploadSchema),
     async (req, res) => {
       const clientId = getClientId(req);
       const { title, category, competence } = req.body;
@@ -540,7 +551,7 @@ export function registerClientRoutes(app: Express) {
     },
   );
 
-  app.post("/api/client/mark-doc/:id", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/mark-doc/:id", verifyClientAuth, validateBody(docStatusSchema), async (req, res) => {
     const clientId = getClientId(req);
     const docId = req.params.id;
     const { status } = req.body;
@@ -557,7 +568,7 @@ export function registerClientRoutes(app: Express) {
     }
   });
 
-  app.post("/api/client/message", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/message", verifyClientAuth, validateBody(clientMessageSchema), async (req, res) => {
     try {
       const clientId = getClientId(req);
       const { content } = req.body;
@@ -581,7 +592,7 @@ export function registerClientRoutes(app: Express) {
     }
   });
 
-  app.put("/api/client/preferences", verifyClientAuth, async (req, res) => {
+  app.put("/api/client/preferences", verifyClientAuth, validateBody(clientPreferencesSchema), async (req, res) => {
     try {
       const clientId = getClientId(req);
       const { notificationPreferences } = req.body;

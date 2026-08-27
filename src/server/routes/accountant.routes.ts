@@ -34,6 +34,11 @@ import {
   accountantMessageSchema,
   accountantBulkMessageSchema,
   accountantEditMessageSchema,
+  accountantUploadDocSchema,
+  accountantUpdateDocSchema,
+  accountantResolveSolicitacaoSchema,
+  docStatusSchema,
+  serproConfigSchema,
   billingUpdateSchema,
   billingBulkSchema,
 } from "../schemas/validation";
@@ -152,6 +157,7 @@ export function registerAccountantRoutes(app: Express) {
     verifyAccountantAuth,
     upload.single("file"),
     validateUploadedFileContent,
+    validateBody(accountantResolveSolicitacaoSchema),
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -491,6 +497,7 @@ export function registerAccountantRoutes(app: Express) {
     verifyAccountantAuth,
     upload.single("file"),
     validateUploadedFileContent,
+    validateBody(accountantUploadDocSchema),
     async (req, res) => {
       const { clientId, title, category, dueDate, competence } = req.body;
 
@@ -523,6 +530,7 @@ export function registerAccountantRoutes(app: Express) {
     verifyAccountantAuth,
     upload.single("file"),
     validateUploadedFileContent,
+    validateBody(accountantUpdateDocSchema),
     async (req, res) => {
       try {
         const docId = req.params.id;
@@ -621,6 +629,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/document/:id/status",
     verifyAccountantAuth,
+    validateBody(docStatusSchema),
     async (req, res) => {
       try {
         const { status } = req.body;
@@ -806,6 +815,7 @@ export function registerAccountantRoutes(app: Express) {
     "/api/pendencies/sitfis/config",
     verifyAccountantAuth,
     uploadCert.single("cert"),
+    validateBody(serproConfigSchema),
     async (req, res) => {
       try {
         const {
@@ -817,10 +827,6 @@ export function registerAccountantRoutes(app: Express) {
           whatsappSupport,
           multipleFilesText,
         } = req.body;
-
-        if (ambiente && !["trial", "producao"].includes(String(ambiente))) {
-          return res.status(400).json({ error: "ambiente inválido." });
-        }
 
         const updateData: Record<string, unknown> = {
           cnpjContratante,

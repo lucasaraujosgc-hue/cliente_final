@@ -7,6 +7,12 @@ import { getIntegrationClient } from "../types";
 import { clientIntegrationDTO } from "../dto/client";
 import { hashPassword } from "../services/password";
 import { upsertBilling } from "../services/billing";
+import { validateBody } from "../middleware/validate";
+import {
+  integrationUploadDocSchema,
+  integrationSyncClientSchema,
+  integrationUpdateBillingSchema,
+} from "../schemas/validation";
 
 // External-facing integration API, authenticated via each client's
 // integration hash token (not JWT).
@@ -14,6 +20,7 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/upload-doc",
     verifyIntegrationToken,
+    validateBody(integrationUploadDocSchema),
     async (req, res) => {
       const client = getIntegrationClient(req);
       const { title, category, dueDate } = req.body;
@@ -41,6 +48,7 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/sync-client",
     verifyIntegrationToken,
+    validateBody(integrationSyncClientSchema),
     async (req, res) => {
       const { cnpj, name, regularityStatus } = req.body;
       const integrationClient = getIntegrationClient(req);
@@ -84,6 +92,7 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/update-billing",
     verifyIntegrationToken,
+    validateBody(integrationUpdateBillingSchema),
     async (req, res) => {
       const { clientId, month } = req.body;
       const integrationClient = getIntegrationClient(req);

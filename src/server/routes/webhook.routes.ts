@@ -16,7 +16,7 @@ import { contentMatchesExtension } from "../services/fileType";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { webhookLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
-import { webhookReceitasSchema } from "../schemas/validation";
+import { webhookReceitasSchema, webhookDocumentosSchema } from "../schemas/validation";
 
 // Routes used by external systems (accounting software, file providers, etc.)
 // to push documents into the platform.
@@ -145,6 +145,7 @@ export function registerWebhookRoutes(app: Express) {
     webhookLimiter,
     upload.single("arquivo"),
     validateUploadedFileContent,
+    validateBody(webhookDocumentosSchema),
     async (req, res) => {
       try {
         const companyHash = req.body.companyHash;

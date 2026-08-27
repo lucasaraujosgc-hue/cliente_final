@@ -5,6 +5,12 @@ import {
   clientResetPasswordSchema,
   accountantLoginSchema,
   webhookReceitasSchema,
+  clientSetupProfileSchema,
+  clientMessageSchema,
+  clientPreferencesSchema,
+  integrationSyncClientSchema,
+  serproConfigSchema,
+  docStatusSchema,
 } from "../validation";
 
 describe("validation schemas", () => {
@@ -63,5 +69,41 @@ describe("validation schemas", () => {
   it("webhookReceitasSchema requires hash_empresa but allows optional fields to be absent", () => {
     expect(webhookReceitasSchema.safeParse({ hash_empresa: "abc" }).success).toBe(true);
     expect(webhookReceitasSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("clientSetupProfileSchema requires a valid email and a >=8 char password (or blank)", () => {
+    expect(clientSetupProfileSchema.safeParse({ email: "a@b.com" }).success).toBe(true);
+    expect(clientSetupProfileSchema.safeParse({ email: "a@b.com", password: "" }).success).toBe(true);
+    expect(clientSetupProfileSchema.safeParse({ email: "a@b.com", password: "longenough" }).success).toBe(true);
+    expect(clientSetupProfileSchema.safeParse({ email: "nope", password: "longenough" }).success).toBe(false);
+    expect(clientSetupProfileSchema.safeParse({ email: "a@b.com", password: "short" }).success).toBe(false);
+  });
+
+  it("clientMessageSchema / docStatusSchema reject empty and overlong input", () => {
+    expect(clientMessageSchema.safeParse({ content: "oi" }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ content: "" }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ content: "x".repeat(6000) }).success).toBe(false);
+    expect(docStatusSchema.safeParse({ status: "paid" }).success).toBe(true);
+    expect(docStatusSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("clientPreferencesSchema requires an object of booleans", () => {
+    expect(clientPreferencesSchema.safeParse({ notificationPreferences: { on_due: true } }).success).toBe(true);
+    expect(clientPreferencesSchema.safeParse({ notificationPreferences: { on_due: "yes" } }).success).toBe(false);
+    expect(clientPreferencesSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("integrationSyncClientSchema validates cnpj + name and rejects junk regularity", () => {
+    expect(integrationSyncClientSchema.safeParse({ cnpj: "12345678000199", name: "ACME" }).success).toBe(true);
+    expect(integrationSyncClientSchema.safeParse({ cnpj: "123", name: "ACME" }).success).toBe(false);
+    expect(
+      integrationSyncClientSchema.safeParse({ cnpj: "12345678000199", name: "ACME", regularityStatus: "purple" }).success,
+    ).toBe(false);
+  });
+
+  it("serproConfigSchema pins ambiente to trial/producao", () => {
+    expect(serproConfigSchema.safeParse({ ambiente: "producao" }).success).toBe(true);
+    expect(serproConfigSchema.safeParse({ ambiente: "" }).success).toBe(true);
+    expect(serproConfigSchema.safeParse({ ambiente: "prod" }).success).toBe(false);
   });
 });

@@ -80,7 +80,121 @@ export const scheduledNotificationSchema = z.object({
   scheduleTime: z.string().nullish(),
 });
 
+// Multipart text fields arrive as strings; "" means "not provided".
+const optStr = (max = 300) => z.string().max(max).optional();
+
+export const accountantUploadDocSchema = z.object({
+  clientId: uuid,
+  title: z.string().min(1, "Título é obrigatório.").max(300),
+  category: z.string().min(1, "Categoria é obrigatória.").max(80),
+  dueDate: optStr(30),
+  competence: optStr(10),
+});
+
+export const accountantUpdateDocSchema = z.object({
+  title: optStr(300),
+  category: optStr(80),
+  dueDate: optStr(30),
+  competence: optStr(10),
+  status: optStr(40),
+  valor: optStr(30),
+});
+
+export const accountantResolveSolicitacaoSchema = z.object({
+  dueDate: optStr(30),
+  valor: optStr(30),
+});
+
+export const docStatusSchema = z.object({
+  status: z.string().min(1, "Status é obrigatório.").max(40),
+});
+
+export const serproConfigSchema = z.object({
+  consumerKey: optStr(200),
+  consumerSecret: optStr(400),
+  certSenha: optStr(200),
+  cnpjContratante: optStr(20),
+  ambiente: z.enum(["trial", "producao"]).optional().or(z.literal("")),
+  whatsappSupport: optStr(30),
+  multipleFilesText: optStr(500),
+});
+
+// --- Client portal ----------------------------------------------------
+
+export const clientSetupProfileSchema = z.object({
+  email: z.string().email("E-mail inválido.").max(200),
+  password: z.string().min(8, "A senha precisa ter ao menos 8 caracteres.").max(200).optional().or(z.literal("")),
+});
+
+export const clientMessageSchema = z.object({
+  content: z.string().min(1, "Mensagem vazia.").max(5000),
+});
+
+export const clientUploadSchema = z.object({
+  title: optStr(300),
+  category: z.string().min(1, "Categoria é obrigatória.").max(80),
+  competence: optStr(10),
+});
+
+export const clientPreferencesSchema = z.object({
+  notificationPreferences: z.record(z.string().max(40), z.boolean()),
+});
+
+export const clientGuiaSchema = z.object({
+  tipoGuia: z.string().min(1).max(40),
+  competencia: z.string().min(1).max(10),
+  documentId: z.string().uuid().optional().or(z.literal("")),
+});
+
+// --- Integration API --------------------------------------------------
+
+export const integrationUploadDocSchema = z.object({
+  title: z.string().min(1).max(300),
+  category: z.string().min(1).max(80),
+  dueDate: z.string().max(30).nullish(),
+});
+
+export const integrationSyncClientSchema = z.object({
+  cnpj: z.string().min(11, "CNPJ inválido.").max(20),
+  name: z.string().min(1, "Nome é obrigatório.").max(300),
+  regularityStatus: regularity.optional(),
+});
+
+export const integrationUpdateBillingSchema = z.object({
+  clientId: uuid,
+  month: z.string().min(1).max(10),
+  servicesRevenue: z.number().nonnegative().optional(),
+  salesRevenue: z.number().nonnegative().optional(),
+  totalIncomes: z.number().nonnegative().optional(),
+  servicesTaken: z.number().nonnegative().optional(),
+  revenue: z.number().nonnegative().optional(),
+  expenses: z.number().nonnegative().optional(),
+  payroll: z.number().nonnegative().optional(),
+});
+
+// --- Notifications ---------------------------------------------------
+
+export const notificationSubscribeSchema = z.object({
+  subscriptionObject: z.any().optional().nullable(),
+  fcmToken: z.string().max(4096).optional().nullable(),
+  deviceName: z.string().max(300).optional().nullable(),
+});
+
+export const adminNotificationSendSchema = z.object({
+  userIds: z.array(uuid).optional(),
+  title: z.string().min(1).max(200),
+  body: z.string().min(1).max(2000),
+});
+
 // --- Webhooks -------------------------------------------------------------
+
+export const webhookDocumentosSchema = z.object({
+  companyHash: z.string().min(1, "companyHash é obrigatório.").max(200),
+  categoria: optStr(80),
+  nomeArquivo: optStr(300),
+  dataVencimento: optStr(30),
+  arquivo: z.string().optional().nullable(),
+});
 
 export const webhookReceitasSchema = z.object({
   hash_empresa: z.string().min(1, "hash_empresa é obrigatório."),
