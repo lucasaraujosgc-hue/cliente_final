@@ -15,6 +15,7 @@ import {
 } from "../schema";
 import { upload, uploadCert } from "../services/upload";
 import { resolveUploadPath } from "../services/files";
+import { encryptSecret, encryptBytes } from "../services/secretbox";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { upsertBilling } from "../services/billing";
@@ -38,8 +39,9 @@ import {
 } from "../schemas/validation";
 
 // Best-effort on-disk / inline size of a stored document, for the gallery
-// totals. Never throws, never touches a path outside the uploads dir.
-function fileSizeFor(fileUrl: string | null): number {
+// totals. Never throws, never touches a path outside the uploads dir, never
+// blocks the event loop.
+async function fileSizeFor(fileUrl: string | null): Promise<number> {
   if (!fileUrl) return 0;
   if (fileUrl.startsWith("data:")) {
     const b64 = fileUrl.split(",")[1];
@@ -48,7 +50,7 @@ function fileSizeFor(fileUrl: string | null): number {
   const abs = resolveUploadPath(fileUrl);
   if (!abs) return 0;
   try {
-    return fs.statSync(abs).size;
+    return (await fs.promises.stat(abs)).size;
   } catch {
     return 0;
   }
@@ -388,11 +390,8 @@ export function registerAccountantRoutes(app: Express) {
     async (req, res) => {
       try {
         const allDocs = await db.select().from(documents);
-        let totalSize = 0;
-        for (const doc of allDocs) {
-          totalSize += fileSizeFor(doc.fileUrl);
-        }
-        res.json({ totalSize });
+        const sizes = await Promise.all(allDocs.map((doc) => fileSizeFor(doc.fileUrl)));
+        res.json({ totalSize: sizes.reduce((a, b) => a + b, 0) });
       } catch (e: any) {
         res.status(500).json({ error: e.message });
       }
@@ -407,23 +406,23 @@ export function registerAccountantRoutes(app: Express) {
         .orderBy(desc(documents.createdAt));
       const allClients = await db.select().from(clients);
 
-      const filesWithMetadata = allDocs.map((doc) => {
-        const cl = allClients.find((c) => c.id === doc.clientId);
-        const size = fileSizeFor(doc.fileUrl);
-
-        return {
-          id: doc.id,
-          title: doc.title,
-          category: doc.category,
-          status: doc.status,
-          createdAt: doc.createdAt.toISOString(),
-          fileUrl: doc.fileUrl,
-          size,
-          clientName: cl?.name || "Desconhecido",
-          clientId: doc.clientId,
-          uploadedBy: doc.uploadedBy,
-        };
-      });
+      const filesWithMetadata = await Promise.all(
+        allDocs.map(async (doc) => {
+          const cl = allClients.find((c) => c.id === doc.clientId);
+          return {
+            id: doc.id,
+            title: doc.title,
+            category: doc.category,
+            status: doc.status,
+            createdAt: doc.createdAt.toISOString(),
+            fileUrl: doc.fileUrl,
+            size: await fileSizeFor(doc.fileUrl),
+            clientName: cl?.name || "Desconhecido",
+            clientId: doc.clientId,
+            uploadedBy: doc.uploadedBy,
+          };
+        }),
+      );
 
       res.json({ files: filesWithMetadata });
     } catch (e: any) {
@@ -446,14 +445,12 @@ export function registerAccountantRoutes(app: Express) {
           .from(documents)
           .where(inArray(documents.id, fileIds));
 
-        for (const doc of docsToDelete) {
-          const abs = resolveUploadPath(doc.fileUrl);
-          if (abs) {
-            try {
-              fs.unlinkSync(abs);
-            } catch (e) {}
-          }
-        }
+        await Promise.all(
+          docsToDelete.map(async (doc) => {
+            const abs = resolveUploadPath(doc.fileUrl);
+            if (abs) await fs.promises.unlink(abs).catch(() => {});
+          }),
+        );
 
         await db.delete(documents).where(inArray(documents.id, fileIds));
         await logAudit(req, "files.bulk_delete", {
@@ -779,16 +776,16 @@ export function registerAccountantRoutes(app: Express) {
           }
         }
         
-        // Sanitiza dados confidenciais antes de retornar
+        // Never return any credential to the browser — only whether each is set.
         const sanitizedConfig = {
           id: config[0].id,
           usuarioId: config[0].usuarioId,
-          consumerKey: config[0].consumerKey,
           cnpjContratante: config[0].cnpjContratante,
           ambiente: config[0].ambiente,
           whatsappSupport: config[0].whatsappSupport,
           multipleFilesText: config[0].multipleFilesText,
           updatedAt: config[0].updatedAt,
+          hasKey: !!config[0].consumerKey,
           hasSecret: !!config[0].consumerSecret,
           hasCert: certExists,
           certMissing: !!certPath && !certExists,
@@ -818,17 +815,27 @@ export function registerAccountantRoutes(app: Express) {
           multipleFilesText,
         } = req.body;
 
-        const updateData: any = {
-          consumerKey,
-          consumerSecret,
+        if (ambiente && !["trial", "producao"].includes(String(ambiente))) {
+          return res.status(400).json({ error: "ambiente inválido." });
+        }
+
+        const updateData: Record<string, unknown> = {
           cnpjContratante,
           ambiente,
           whatsappSupport,
           multipleFilesText,
         };
-
-        if (certSenha) updateData.certSenha = certSenha;
-        if (req.file) updateData.certPath = req.file.path;
+        // Credentials are write-only: only touched when a non-empty value is
+        // sent ("leave blank to keep"). Secrets are stored encrypted at rest.
+        if (typeof consumerKey === "string" && consumerKey.trim()) {
+          updateData.consumerKey = consumerKey.trim();
+        }
+        if (typeof consumerSecret === "string" && consumerSecret.trim()) {
+          updateData.consumerSecret = encryptSecret(consumerSecret.trim());
+        }
+        if (typeof certSenha === "string" && certSenha.trim()) {
+          updateData.certSenha = encryptSecret(certSenha.trim());
+        }
 
         let config = await db
           .select()
@@ -836,11 +843,22 @@ export function registerAccountantRoutes(app: Express) {
           .where(eq(serproConfig.usuarioId, 1))
           .limit(1);
 
+        if (req.file) {
+          // multer wrote the raw .pfx to disk — replace it with an encrypted
+          // copy at the same path.
+          try {
+            const raw = await fs.promises.readFile(req.file.path);
+            await fs.promises.writeFile(req.file.path, encryptBytes(raw));
+          } catch (err) {
+            console.error("Falha ao cifrar o certificado:", err);
+          }
+          updateData.certPath = req.file.path;
+        }
+
         // Se houver certificado anterior no banco e um novo arquivo foi enviado, exclui o anterior
-        if (config.length > 0 && config[0].certPath && req.file) {
+        if (config.length > 0 && config[0].certPath && req.file && config[0].certPath !== req.file.path) {
           try {
             await fs.promises.unlink(config[0].certPath);
-            console.log("Certificado anterior excluído com sucesso:", config[0].certPath);
           } catch (err) {
             console.error("Falha ao excluir certificado anterior:", err);
           }

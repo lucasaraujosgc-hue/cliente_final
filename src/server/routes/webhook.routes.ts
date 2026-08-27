@@ -62,7 +62,7 @@ export function registerWebhookRoutes(app: Express) {
         }
         safeFilename = `${Date.now()}_${sanitizeFilename(nome_arquivo || "documento")}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
-        fs.writeFileSync(filePath, buffer);
+        await fs.promises.writeFile(filePath, buffer);
 
         // Extract Pix Code and Value if it's a PDF
         if (safeFilename.toLowerCase().endsWith(".pdf")) {
@@ -194,7 +194,7 @@ export function registerWebhookRoutes(app: Express) {
               }
               const safeFilename = `${Date.now()}_${sanitizeFilename(nomeArquivo || "documento.pdf")}`;
               const filePath = path.join(UPLOADS_DIR, safeFilename);
-              fs.writeFileSync(filePath, buffer);
+              await fs.promises.writeFile(filePath, buffer);
               finalFileUrl = `/uploads/${safeFilename}`;
            }
         }

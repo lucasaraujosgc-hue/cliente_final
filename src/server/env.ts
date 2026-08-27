@@ -17,7 +17,12 @@ const INSECURE_VALUES = new Set([
 ]);
 
 const REQUIRED_SECRETS = ["JWT_SECRET", "ADMIN", "PASSWORD"] as const;
-const RECOMMENDED = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "CORS_ORIGINS"] as const;
+const RECOMMENDED = [
+  "VAPID_PUBLIC_KEY",
+  "VAPID_PRIVATE_KEY",
+  "CORS_ORIGINS",
+  "SECRETS_KEY",
+] as const;
 
 export interface EnvReport {
   problems: string[];
@@ -73,3 +78,21 @@ export function corsOrigins(): string[] {
 }
 
 export const PORT = Number(process.env.PORT) || 3000;
+
+// How many reverse-proxy hops to trust for X-Forwarded-For (rate limiting +
+// req.ip depend on this). EasyPanel/Traefik and Cloud Run put exactly ONE
+// proxy in front, so 1 is the correct, safe default — it trusts only the hop
+// the proxy itself adds and ignores any client-supplied X-Forwarded-For.
+// Never set this to `true`: that would let clients spoof their IP and dodge
+// the rate limiters. Override with TRUST_PROXY only if your infra genuinely
+// has more hops (e.g. Cloudflare -> Traefik -> app => 2).
+export function trustProxy(): number {
+  const raw = process.env.TRUST_PROXY;
+  if (raw === undefined || raw === "") return 1;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    console.warn(`[env] TRUST_PROXY=${raw} is not a non-negative number — using 1`);
+    return 1;
+  }
+  return Math.floor(n);
+}

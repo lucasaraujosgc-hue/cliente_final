@@ -4,7 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 dotenv.config();
-import { validateEnv, corsOrigins, PORT } from "./src/server/env";
+import { validateEnv, corsOrigins, PORT, trustProxy } from "./src/server/env";
 // Patches Express so rejected promises in async route handlers are forwarded
 // to the error-handling middleware below, instead of becoming unhandled
 // rejections that crash the whole process. Must be imported before routes
@@ -39,7 +39,8 @@ async function startServer() {
 
   const app = express();
 
-  app.set("trust proxy", 1);
+  // Trust N reverse-proxy hops for X-Forwarded-For (see env.trustProxy).
+  app.set("trust proxy", trustProxy());
   app.use(
     helmet({
       // Opt-in CSP (CSP_ENABLED=true). The built SPA loads its own JS/CSS from
@@ -73,10 +74,15 @@ async function startServer() {
       credentials: true,
     }),
   );
-  // Base64-encoded uploads still flow through some webhook payloads, so the
-  // limit can't be tiny, but 50mb per request was an easy memory-exhaustion
-  // lever. 12mb comfortably covers the 10mb multipart file cap.
-  app.use(express.json({ limit: "12mb" }));
+  // Two webhook endpoints accept a base64-encoded file in a JSON body; base64
+  // inflates ~33%, so a 10mb file needs ~14mb of JSON. Give ONLY those routes
+  // the larger limit (registered before the global parser so it wins), and
+  // keep every other endpoint on a tight 2mb limit. The routes still reject
+  // decoded files over MAX_UPLOAD_BYTES with a 413.
+  const webhookJson = express.json({ limit: "16mb" });
+  app.post("/api/webhook/receitas", webhookJson);
+  app.post("/api/webhook/documentos", webhookJson);
+  app.use(express.json({ limit: "2mb" }));
   // NOTE: /uploads is deliberately NOT served statically. Client documents are
   // private — they're only reachable through the authenticated + authorized
   // endpoint GET /api/documents/:id/file (src/server/routes/files.routes.ts).

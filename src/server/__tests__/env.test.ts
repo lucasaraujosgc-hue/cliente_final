@@ -9,6 +9,7 @@ const good = {
   VAPID_PUBLIC_KEY: "x",
   VAPID_PRIVATE_KEY: "y",
   CORS_ORIGINS: "https://app.example.com",
+  SECRETS_KEY: "a-dedicated-secrets-key",
 } as NodeJS.ProcessEnv;
 
 describe("collectEnvIssues", () => {

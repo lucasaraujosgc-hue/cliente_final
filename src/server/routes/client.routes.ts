@@ -20,6 +20,7 @@ import {
   sendDataUri,
   isReadableFile,
 } from "../services/files";
+import { decryptSecret, decryptBytes } from "../services/secretbox";
 import { getSerproToken, serproPost, isUuid } from "../services/serpro";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
@@ -216,7 +217,12 @@ export function registerClientRoutes(app: Express) {
         if (serproList.length === 0 || !serproList[0].consumerKey) {
            return res.status(400).json({ error: "Integra Contador não configurado. Acesse as configurações." });
         }
-        const config = serproList[0];
+        // Secrets are stored encrypted at rest — decrypt only in memory, here.
+        const config = {
+          ...serproList[0],
+          consumerSecret: decryptSecret(serproList[0].consumerSecret),
+          certSenha: decryptSecret(serproList[0].certSenha),
+        };
         const cnpjContrato = config.cnpjContratante
             ? config.cnpjContratante.replace(/\D/g, "")
             : "00000000000100";
@@ -267,7 +273,7 @@ export function registerClientRoutes(app: Express) {
           }
 
           try {
-            const pfx = await fs.promises.readFile(config.certPath);
+            const pfx = decryptBytes(await fs.promises.readFile(config.certPath));
             certAgent = new https.Agent({
               pfx,
               passphrase: config.certSenha || "",
