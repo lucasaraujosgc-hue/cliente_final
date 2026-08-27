@@ -85,16 +85,21 @@ src/
       integration.routes.ts  /api/integration/*  (integrationHash auth)
       webhook.routes.ts      /api/webhook/*  (external doc push, hash-authed)
       notifications.routes.ts push subscribe + scheduled-notification rules
-    schemas/validation.ts    zod request schemas
+    schemas/validation.ts    zod request schemas — EVERY write endpoint has one
+    dto/client.ts            clientSelfDTO / clientAdminDTO / clientIntegrationDTO — never return a raw client row
     services/
       billing.ts             upsertBilling() — the one place billing rows are written
       audit.ts               logAudit(req, action, {...}) — call on sensitive accountant actions
       password.ts            hashPassword / verifyPassword (bcrypt + legacy-plaintext upgrade)
       resetCode.ts           password-recovery one-time code (CSPRNG, sha256+pepper, attempt cap)
-      upload.ts              multer config, sanitizeFilename, extension allow-list, dir constants
+      integrationToken.ts    generate/hash/lookup integration tokens (digest at rest, plaintext fallback)
+      secretbox.ts           encryptSecret/decryptSecret (AES-256-GCM, SECRETS_KEY) for SERPRO creds
+      upload.ts              multer config, sanitizeFilename, extension allow-list, validateUploadedFileContent
+      fileType.ts            magic-byte sniffing (contentMatchesExtension)
       files.ts               resolveUploadPath / resolveGuiaPdfPath (traversal-safe) + streamers
       mailer.ts, push.ts, serpro.ts, notificationSweeper.ts
-drizzle/                     migrations — SINGLE SOURCE OF TRUTH. 0000_baseline + reconcile-legacy.sql
+  lib/cnpj.ts                normalizeCnpj / formatCnpj / cnpjMatches (shared client+server)
+drizzle/                     migrations — SINGLE SOURCE OF TRUTH. 0000_baseline + 0001+ + reconcile-legacy.sql
 scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate-passwords.ts
 ```
 
@@ -103,16 +108,25 @@ scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate
 - **API calls from the frontend go through `apiFetch(endpoint, opts, "client"|"accountant")`.**
   It injects the right JWT and redirects to the login on 401. Don't hand-roll
   `fetch` with an `Authorization` header.
+- **Auth is header-only** — `Authorization: Bearer <jwt>`. The `?token=` query
+  param was removed everywhere. Documents open via `openDocument(docId, ...)`
+  (authenticated fetch → blob); pdf.js gets `documentAuthHeaders()`.
+- **Never return a raw `clients` / `serpro_config` row** to the browser. Use a
+  DTO (`dto/client.ts`) or a sanitized object — password hash, integration
+  token (digest), reset-code hash, SERPRO secrets must never leave the server.
 - **Server route handlers**: guard with `verify*Auth`, validate bodies with
-  `validateBody(zodSchema)`, read identity via `getClientId(req)` /
-  `getIntegrationClient(req)` / `getAuth(req)` (typed; no `(req as any)`).
+  `validateBody(zodSchema)` (there's a schema for every write endpoint), read
+  identity via `getClientId(req)` / `getIntegrationClient(req)` / `getAuth(req)`
+  (typed; no `(req as any)`).
+- **Uploads**: `upload.single(...)`, then `validateUploadedFileContent`
+  (magic-byte check), then `validateBody(...)`, then the handler.
 - **Schema changes**: edit `src/server/schema.ts`, then `npm run db:generate`,
   review the generated `drizzle/NNNN_*.sql`, commit both. `npm run db:migrate`
   applies them (auto-run by the `predev`/`prestart` hooks). The server does NOT
   touch the schema at boot. See `MIGRATIONS.md`.
-- **CNPJ** is stored *formatted* (`12.345.678/0001-99`). Look clients up with a
-  normalized-in-SQL query (`regexp_replace(cnpj,'[^0-9]','','g')`), never by
-  loading the whole table.
+- **CNPJ** is stored *digits-only* (`12345678000199`). `normalizeCnpj()` before
+  insert/lookup, `formatCnpj()` for display (`src/lib/cnpj.ts`). Client lookups
+  still go through `findClientsByCnpj` (normalized-in-SQL), never a full scan.
 - **billing_data** has the current "services" model
   (`servicesRevenue/salesRevenue/totalIncomes/servicesTaken`) plus legacy
   `revenue/expenses/payroll` kept in sync — always write via `upsertBilling()`.
@@ -122,7 +136,9 @@ scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate
   the code work happens after the response. `reset-password` gives one generic
   error for every rejection and burns the code after `RESET_CODE_MAX_ATTEMPTS`.
 - **Env**: prod refuses to start without real `JWT_SECRET`, `ADMIN`, `PASSWORD`,
-  `DATABASE_URL` (`src/server/env.ts`). `CORS_ORIGINS` is required in prod too.
+  `DATABASE_URL` (`src/server/env.ts`). `CORS_ORIGINS` required in prod.
+  Recommended: `SECRETS_KEY` (encrypts SERPRO creds at rest — dedicated key,
+  NOT `JWT_SECRET`), `VAPID_*`. `TRUST_PROXY` defaults to `1` (never `true`).
   `PASSWORD_RESET_PEPPER` optional (falls back to `JWT_SECRET`).
 - **Admin login** is env-based (`ADMIN`/`PASSWORD`), not a DB row.
 - **File uploads**: 10 MB cap, one file, extension allow-list

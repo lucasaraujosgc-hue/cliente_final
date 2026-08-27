@@ -184,7 +184,7 @@ CREATE TABLE "scheduled_notifications" (
 `;
 
 // pglite (WASM Postgres) has a slow cold start, worse under parallel workers.
-const T = 60_000;
+const T = 120_000;
 
 describe("drizzle migrations (fresh database)", () => {
   it("produce the target schema", async () => {

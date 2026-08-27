@@ -56,17 +56,28 @@ against a real Postgres engine (pglite), including a data-preservation check.
 > against a **copy** of the production database and confirm
 > `[migrate] schema verified` with no warnings.
 
+## Migrations after the baseline
+
+| # | What | Notes |
+|---|------|-------|
+| `0001_integration_hash_digest` | adds `clients.integration_hash_digest`, backfills the sha256 of the existing plaintext `integration_hash` | **Transition**: both columns stay; `findClientByIntegrationToken` matches either so no webhook integration breaks. Once every integration has re-saved / re-generated its token, a later migration can drop `integration_hash`. |
+| `0002_normalize_cnpj` | `clients.cnpj` → digits-only (14) | Aborts (no half-apply) if stripping punctuation would collide two rows. Formatting is now a display concern (`src/lib/cnpj.ts`). |
+
 ## Schema facts worth knowing
 
 - FKs: every `client_id` → `clients.id` is `ON DELETE CASCADE`. `audit_log`
   deliberately has **no** FK so the trail survives client deletion.
-- Unique: `clients.cnpj`, `clients.integration_hash`.
+- Unique: `clients.cnpj` (digits-only), `clients.integration_hash`,
+  `clients.integration_hash_digest`.
 - `json` vs `jsonb`: `documents.extracted_data` and
   `subscriptions.subscription_object` are `jsonb`;
   `clients.notification_preferences` and `audit_log.metadata` are `json`.
 - Defaults: `billing_data.*` money columns default `0`;
   `clients.reset_code_attempts` defaults `0`;
   `clients.notification_preferences` has a JSON default.
+- Secrets: `serpro_config.consumer_secret` / `cert_senha` are stored
+  AES-256-GCM-encrypted when `SECRETS_KEY` is set (transparent to the schema —
+  they're still `text`, just `enc:v1:…`).
 
 ## Seeding (dev only)
 
