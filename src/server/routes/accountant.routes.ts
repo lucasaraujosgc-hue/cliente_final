@@ -25,6 +25,10 @@ import {
   setIntegrationToken,
   clearIntegrationToken,
 } from "../services/integrationToken";
+import {
+  revokeAllSessionsForSubject,
+  deleteSessionsForSubject,
+} from "../services/session";
 import { clientAdminDTO } from "../dto/client";
 import { normalizeCnpj } from "../../lib/cnpj";
 import { verifyAccountantAuth } from "../middleware/auth";
@@ -269,11 +273,13 @@ export function registerAccountantRoutes(app: Express) {
         const cleanCnpj = client.cnpj.replace(/\D/g, "");
         
         await db.update(clients)
-          .set({ 
+          .set({
              passwordHash: await hashPassword(cleanCnpj),
              firstAccessDone: false
           })
           .where(eq(clients.id, id));
+        // Force the client out of every active session.
+        await revokeAllSessionsForSubject("client", id);
 
         await logAudit(req, "client.reset_password", {
           targetType: "client",
@@ -338,6 +344,7 @@ export function registerAccountantRoutes(app: Express) {
         await db.delete(documents).where(eq(documents.clientId, clientId));
         await db.delete(billingData).where(eq(billingData.clientId, clientId));
         await db.delete(messages).where(eq(messages.clientId, clientId));
+        await deleteSessionsForSubject("client", clientId);
 
         // Delete client
         await db.delete(clients).where(eq(clients.id, clientId));

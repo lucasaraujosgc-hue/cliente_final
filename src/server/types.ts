@@ -9,11 +9,13 @@ export type Document = InferSelectModel<typeof documents>;
 export type BillingRow = InferSelectModel<typeof billingData>;
 export type Message = InferSelectModel<typeof messages>;
 
-// JWT payload shape signed in auth.routes.ts.
+// Access-token JWT payload. Signed in services/session.ts.
 export interface AuthPayload {
   role: "client" | "accountant";
   name?: string;
   clientId?: string; // present for role === "client"
+  sid?: string;      // auth_sessions.id this access token belongs to
+  typ?: "access";
 }
 
 // Populated by the auth middleware. Augmenting Express.Request lets route
@@ -24,6 +26,8 @@ declare global {
     interface Request {
       user?: AuthPayload;
       integrationClient?: Client;
+      // Correlation id assigned by the requestLog middleware.
+      id?: string;
     }
   }
 }

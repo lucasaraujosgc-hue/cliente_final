@@ -29,6 +29,18 @@ export const passwordResetSubmitLimiter = rateLimit({
   message: { error: "Muitas tentativas. Tente novamente em alguns minutos." },
 });
 
+// Token refresh: legit clients hit this ~once per 15 min per session (plus a
+// small burst on app open). The opaque rotating refresh token is the real
+// gate; this just caps abuse. Per-IP, generous enough for several devices
+// behind one NAT.
+export const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas renovações de sessão. Tente novamente em instantes." },
+});
+
 // Looser limiter for the external webhook endpoints. These are called by
 // trusted integration partners, but a misbehaving client (or a leaked URL)
 // shouldn't be able to hammer the server or fill the disk with uploads.

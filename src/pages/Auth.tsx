@@ -1,7 +1,18 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, saveSession } from "../lib/apiClient";
+import { MfaCodeForm } from "../components/MfaCodeForm";
+
+function storeClientUser(user: unknown, remember: boolean) {
+  const json = JSON.stringify(user);
+  try {
+    (remember ? localStorage : sessionStorage).setItem("clientUser", json);
+    (remember ? sessionStorage : localStorage).removeItem("clientUser");
+  } catch {
+    /* private mode */
+  }
+}
 
 export function Login() {
   const [cnpj, setCnpj] = useState("");
@@ -16,6 +27,9 @@ export function Login() {
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetMsg, setResetMsg] = useState({ text: "", type: "" });
   const [isResetLoading, setIsResetLoading] = useState(false);
+
+  // Set when an admin signs in from this form and 2FA is required.
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -44,20 +58,30 @@ export function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        // Admin from the client form, 2FA on → go to the code step.
+        if (data.mfaRequired && data.challengeId) {
+          setMfaChallengeId(data.challengeId);
+          return;
+        }
         if (data.role === "accountant") {
-           localStorage.setItem("accountantToken", data.token);
+           saveSession({
+             kind: "accountant",
+             token: data.token,
+             refreshToken: data.refreshToken,
+             remember: true,
+           });
            navigate("/admin");
            return;
         }
 
-        if (rememberMe) {
-           localStorage.setItem("clientToken", data.token);
-           localStorage.setItem("clientUser", JSON.stringify(data.client));
-        } else {
-           sessionStorage.setItem("clientToken", data.token);
-           sessionStorage.setItem("clientUser", JSON.stringify(data.client));
-        }
-        
+        saveSession({
+          kind: "client",
+          token: data.token,
+          refreshToken: data.refreshToken,
+          remember: rememberMe,
+        });
+        storeClientUser(data.client, rememberMe);
+
         if (data.client.firstAccessDone !== true) {
            navigate("/setup-profile");
         } else {
@@ -153,6 +177,13 @@ export function Login() {
             </div>
           )}
 
+          {mfaChallengeId ? (
+            <MfaCodeForm
+              challengeId={mfaChallengeId}
+              onVerified={() => navigate("/admin")}
+              onCancel={() => setMfaChallengeId(null)}
+            />
+          ) : (
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">CPF ou CNPJ</label>
@@ -207,7 +238,7 @@ export function Login() {
             </button>
             
             <div className="mt-4 text-center">
-              <button 
+              <button
                 type="button"
                 onClick={() => navigate('/admin/login')}
                 className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -216,6 +247,7 @@ export function Login() {
               </button>
             </div>
           </form>
+          )}
         </div>
       </div>
 
@@ -325,10 +357,12 @@ export function AccountantLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     try {
       const res = await apiFetch("/api/auth/accountant/login", {
         method: "POST",
@@ -337,8 +371,19 @@ export function AccountantLogin() {
       });
       const data = await res.json();
       if (res.ok) {
-        localStorage.setItem("accountantToken", data.token);
-        navigate("/admin");
+        if (data.mfaRequired && data.challengeId) {
+          setMfaChallengeId(data.challengeId);
+          return;
+        }
+        if (data.token && data.refreshToken) {
+          saveSession({
+            kind: "accountant",
+            token: data.token,
+            refreshToken: data.refreshToken,
+            remember: true,
+          });
+          navigate("/admin");
+        }
       } else {
         setError(data.error);
       }
@@ -364,6 +409,13 @@ export function AccountantLogin() {
           </div>
         )}
 
+        {mfaChallengeId ? (
+          <MfaCodeForm
+            challengeId={mfaChallengeId}
+            onVerified={() => navigate("/admin")}
+            onCancel={() => setMfaChallengeId(null)}
+          />
+        ) : (
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-sm font-semibold text-slate-300 mb-1">Usuário</label>
@@ -393,7 +445,7 @@ export function AccountantLogin() {
           </button>
 
           <div className="mt-4 text-center">
-            <button 
+            <button
               type="button"
               onClick={() => navigate('/login')}
               className="text-xs text-slate-400 hover:text-slate-200"
@@ -402,6 +454,7 @@ export function AccountantLogin() {
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

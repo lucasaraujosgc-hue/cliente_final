@@ -103,6 +103,7 @@ const EXPECTED_TABLES = [
   "guias_geradas",
   "scheduled_notifications",
   "audit_log",
+  "auth_sessions",
 ];
 
 // Sanity check after migrating: every table exists, the password-reset

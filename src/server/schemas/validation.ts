@@ -25,6 +25,18 @@ export const accountantLoginSchema = z.object({
   password: z.string().min(1, "Senha é obrigatória."),
 });
 
+export const accountantMfaVerifySchema = z.object({
+  challengeId: z.string().min(1).max(80),
+  code: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().regex(/^\d{6}$/, "Código inválido.")),
+});
+
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1, "refreshToken é obrigatório.").max(200),
+});
+
 // --- Accountant panel ---------------------------------------------------
 
 const uuid = z.string().uuid("ID inválido.");

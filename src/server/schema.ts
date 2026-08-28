@@ -159,6 +159,25 @@ export const auditLog = pgTable('audit_log', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// One row per long-lived login session. The short-lived access JWT is
+// stateless; the refresh token lives here as a sha256 digest and is rotated on
+// every use. `previousRefreshHash` lets /api/auth/refresh detect reuse of an
+// already-rotated token (a theft signal) and kill the whole session.
+// No FK: the accountant has no clients row, and the trail should outlive a
+// client deletion (the delete handler clears client sessions explicitly).
+export const authSessions = pgTable('auth_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  subjectType: text('subject_type').notNull(), // 'client' | 'accountant'
+  subjectId: text('subject_id').notNull(),     // clients.id, or 'accountant'
+  refreshHash: text('refresh_hash').notNull().unique(),
+  previousRefreshHash: text('previous_refresh_hash'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
+
 export const scheduledNotificationsRelations = relations(scheduledNotifications, ({ one }) => ({
 	client: one(clients, {
 		fields: [scheduledNotifications.clientId],

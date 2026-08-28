@@ -16,6 +16,10 @@ export function SetupProfile() {
       setError("Você deve aceitar os termos de uso para continuar.");
       return;
     }
+    if (password && password.length < 8) {
+      setError("A nova senha precisa ter ao menos 8 caracteres (ou deixe em branco).");
+      return;
+    }
     try {
       const res = await apiFetch("/api/client/setup-profile", {
         method: "POST",
@@ -68,8 +72,10 @@ export function SetupProfile() {
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Nova Senha (Opcional)</label>
             <input
               type="password"
+              minLength={8}
+              autoComplete="new-password"
               className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-sm"
-              placeholder="Sua senha ou deixe em branco para manter"
+              placeholder="Mínimo de 8 caracteres, ou deixe em branco para manter"
               value={password}
               onChange={e => setPassword(e.target.value)}
             />

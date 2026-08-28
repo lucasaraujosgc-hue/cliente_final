@@ -26,6 +26,7 @@ async function applyForwardMigrations(db: PGlite) {
 const EXPECTED_TABLES = [
   "clients", "documents", "billing_data", "messages", "subscriptions",
   "serpro_config", "guias_geradas", "scheduled_notifications", "audit_log",
+  "auth_sessions",
 ];
 
 async function tables(db: PGlite): Promise<Set<string>> {
@@ -258,5 +259,5 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
     const left = await db.query(`SELECT count(*)::int AS n FROM documents`);
     expect((left.rows[0] as any).n).toBe(0);
     await db.close();
-  })
+  }, T)
 });

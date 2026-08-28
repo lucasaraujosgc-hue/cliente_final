@@ -13,14 +13,11 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-const originalFetch = window.fetch;
-window.fetch = async function (...args) {
-  const response = await originalFetch(...args);
-  if (response.status === 401 || response.status === 403) {
-    window.dispatchEvent(new Event('unauthorized'));
-  }
-  return response;
-};
+// Session handling lives in src/lib/apiClient.ts: apiFetch transparently
+// refreshes an expired access token and retries, and only dispatches the
+// 'unauthorized' event (which the layouts turn into a redirect to /login)
+// when the refresh token itself is gone/revoked. No global fetch patch — a
+// bare 401/403 from some other call must not log the user out on its own.
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

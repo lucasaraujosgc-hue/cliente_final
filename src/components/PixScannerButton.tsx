@@ -4,7 +4,7 @@ import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
-import { documentFileUrl, documentAuthHeaders } from "../lib/apiClient";
+import { documentFileUrl, documentAuthHeadersFresh } from "../lib/apiClient";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const pdfLoadOptions = {
@@ -30,7 +30,10 @@ export function PixScannerButton({ docId }: PixScannerButtonProps) {
 
     const preScan = async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, httpHeaders: documentAuthHeaders(), ...pdfLoadOptions });
+        // pdf.js does its own fetch and can't retry a 401, so make sure the
+        // access token is fresh before handing it over.
+        const httpHeaders = await documentAuthHeadersFresh("client");
+        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, httpHeaders, ...pdfLoadOptions });
         const pdf = await loadingTask.promise;
 
         let foundCode: string | null = null;
