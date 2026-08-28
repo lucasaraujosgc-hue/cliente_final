@@ -1,163 +1,193 @@
 # CLAUDE.md
 
-Read this first. It's the map of the system so you don't have to re-derive it
-every session.
+Map of the system. Read this first, then the deeper docs in `docs/` when you
+need detail:
 
-## What this is
+- `docs/PROJECT_CONTEXT.md` — what it is, who uses it, flows, current state
+- `docs/ARCHITECTURE.md` — real frontend/backend/DB structure
+- `docs/SECURITY.md` — auth, tokens, encryption, uploads, known pendências
+- `docs/MOBILE_APP.md` — navigation, Capacitor, PWA (what's real vs planned)
+- `docs/CHANGELOG.md` — recent significant changes
+- `MIGRATIONS.md` — how the DB schema evolves
 
-**Vírgula Contábil – Portal do Cliente**: a Brazilian accounting firm's portal.
-Two audiences in one app:
+> Current work is on branch **`improvements`** (segurança + migrations Drizzle +
+> esta doc; à frente de `main`, ainda não mergeada/deployada). CI roda em `main`.
 
-- **Cliente** (the accounting firm's customers): sees their fiscal documents /
-  tax slips ("guias"), due dates, a digital vault, uploads bank statements,
-  fills in monthly billing figures, talks to the accountant.
-- **Contador** (the firm, a single admin account): manages clients, pushes
-  documents, runs the inbox of client uploads, sends notifications, configures
-  the SERPRO integration.
+## Objetivo
 
-Goal: give clients a calm, mobile-first view of "what do I owe, when, and is my
-company regular?" and give the accountant one place to service them.
+**Vírgula Contábil – Portal do Cliente**: portal de um escritório de contabilidade
+brasileiro. Dois públicos no mesmo app:
+
+- **Cliente**: vê suas guias/impostos, vencimentos, cofre digital de documentos,
+  envia extratos bancários, preenche faturamento mensal, fala com o contador.
+- **Contador** (uma única conta admin): gerencia clientes, publica documentos,
+  processa a inbox de uploads dos clientes, envia notificações, configura a
+  integração SERPRO.
+
+Meta: dar ao cliente uma visão calma e **mobile-first** de "o que devo, quando,
+minha empresa está regular?" e ao contador um lugar só para atender todos.
 
 ## Stack
 
-| Layer | Choice |
-|-------|--------|
-| Frontend | React 19 SPA, Vite 6, react-router-dom 7, Tailwind v4 (`@theme` in `src/index.css`), lucide-react icons, Recharts, framer-motion (`motion`) |
-| Backend | Express 4, single process, `server.ts` at repo root |
+| Camada | Escolha |
+|--------|---------|
+| Frontend | React 19 SPA, Vite 6, react-router-dom 7, Tailwind v4 (`@theme` em `src/index.css`), lucide-react, Recharts, `motion` |
+| Backend | Express 4, processo único, `server.ts` na raiz |
 | DB | Postgres via Drizzle ORM (`drizzle-orm/node-postgres`) |
-| Auth | JWT (client + accountant); per-client `integrationHash` bearer token for machine callers |
-| Delivery | PWA (`public/sw.js`, `manifest.json`) + Capacitor Android/iOS wrapper |
-| Push | `web-push` (browsers) + Firebase Admin FCM (mobile) |
+| Auth | Access token JWT 15min + refresh token opaco 90d (rotação + detecção de reuso, tabela `auth_sessions`); header `Authorization: Bearer` apenas; 2FA por e-mail no login do contador; token de integração (digest) para chamadas máquina-a-máquina |
+| Entrega | PWA (`public/sw.js`, `public/manifest.json`); wrapper Capacitor Android/iOS **fora deste repo** (o SPA é "Capacitor-aware") |
+| Push | `web-push` (navegador) + Firebase Admin FCM (mobile) |
 | Email | Nodemailer (SMTP) + Resend |
-| External | SERPRO **Integra Contador** API for generating DAS / DCTFWEB guias |
+| Externo | SERPRO **Integra Contador** (gera guias DAS/DCTFWEB) |
 | Deploy | Docker → Cloud Run / EasyPanel |
 
-## Run / check
-
-```bash
-npm run dev        # db:migrate (predev hook) then tsx server.ts on :3000 (needs DATABASE_URL)
-npm run lint       # tsc --noEmit — always run before committing
-npm test           # vitest, server-only (src/server/**/*.test.ts); migrations.test.ts uses pglite
-npm run build      # vite build + esbuild -> dist/server.cjs + dist/migrate.cjs
-npm start          # db:migrate (prestart hook via dist/migrate.cjs) then node dist/server.cjs
-npm run db:generate / db:migrate / db:seed / db:studio   # Drizzle (see MIGRATIONS.md)
-```
-
-CI (`.github/workflows`) runs lint + test + build on push/PR to `main`.
-Local dev without a real DB: point `DATABASE_URL` at a throwaway Postgres
-(Neon/Supabase free tier work). `npm run db:migrate` builds the schema;
-`npm run db:seed` adds two demo clients (CNPJ `12.345.678/0001-99`,
-password = same CNPJ).
-
-## Layout
+## Arquitetura geral
 
 ```
-server.ts                     bootstrap: env validation, helmet, CORS, static, error handler
+Browser/App  →  Express (server.ts)  →  routes/*  →  services/*  →  Drizzle  →  Postgres
+                     │
+                     ├─ dev: middleware do Vite serve o SPA
+                     └─ prod: express.static(dist/) + SPA fallback
+```
+
+- Frontend: SPA. Cada página busca seus dados com `apiFetch()` (`src/lib/apiClient.ts`).
+  Sem Redux/Zustand — estado local por página + `localStorage`/`sessionStorage`
+  para o token/usuário + alguns `window` custom events.
+- Backend: `server.ts` monta helmet/CORS/rate-limit, e `setupRoutes()` registra
+  7 módulos de rota. Handlers: `verify*Auth` → `validateBody(zod)` → lógica →
+  `services/*` → `db`. Nunca devolvem row crua de `clients`/`serpro_config`
+  (usam DTO / objeto sanitizado).
+- DB: schema em `src/server/schema.ts` é a ÚNICA fonte de verdade. Evolução só
+  por migrations Drizzle (`npm run db:migrate`). O servidor **não** altera o
+  schema no boot.
+
+## Diretórios principais
+
+```
+server.ts                     bootstrap
 src/
-  App.tsx                     all routes
-  main.tsx
-  index.css                   Tailwind @theme tokens (colors, fonts)
+  App.tsx                     rotas (todas lazy + Suspense)
+  main.tsx                    registra SW + monkey-patch de fetch p/ evento "unauthorized"
+  index.css                   tokens Tailwind @theme + safe-area no <body>
   lib/
-    apiClient.ts              apiFetch() — ALWAYS use this for API calls (adds JWT, handles 401)
-    utils.ts                  cn(), handleFileAction()
+    apiClient.ts              apiFetch(), openDocument(), documentAuthHeaders() — SEMPRE usar
+    cnpj.ts                   normalizeCnpj / formatCnpj / cnpjMatches (compartilhado)
+    utils.ts                  cn()
   components/
-    Layouts.tsx               ClientLayout + AccountantLayout (route guards + chrome)
-    Logo.tsx                   brand wordmark — use instead of ad-hoc markup
-    Skeleton.tsx               loading placeholders
+    Layouts.tsx               ClientLayout + AccountantLayout (guarda de rota + chrome)
+    Logo.tsx, Skeleton.tsx, ThemeToggle.tsx
+    PixScannerButton.tsx      lê PIX de PDF com pdf.js (recebe documentAuthHeaders())
+    GuiaAtualizarButton.tsx   dispara recálculo de guia SERPRO
   pages/
-    Auth.tsx                  /login (client) + /admin/login (accountant)
+    Auth.tsx                  /login (cliente) + /admin/login (contador) + fluxo recuperar senha
     client/                   Dashboard, Overdue, Vault, MyUploads, SetupProfile
-      dashboard/*             Dashboard sub-components (Kpi, DueDates, Charts, ...)
-    accountant/              Dashboard, ClientsList, ClientDetail, Notifications,
-                             FileGallery, Devices, Settings, Audit
+      dashboard/*             sub-componentes do Dashboard do cliente
+    accountant/               Dashboard(Inbox), ClientsList, ClientDetail, Notifications,
+                              FileGallery, Devices, Settings, Audit
   server/
-    db.ts                    pg Pool + drizzle; initDb() only checks connectivity now
-    schema.ts                Drizzle schema — SINGLE SOURCE OF TRUTH for tables
-    env.ts                   validateEnv() (fail-fast in prod), corsOrigins(), PORT
-    types.ts                 Express.Request augmentation + getAuth/getClientId/getIntegrationClient
-    middleware/              auth.ts (verify*Auth), rateLimit.ts, validate.ts (zod)
-    routes/
-      index.ts               setupRoutes() mounts everything
-      auth.routes.ts         login, forgot/reset password
-      client.routes.ts       /api/client/*  + /api/pendencies/guia/* (SERPRO)
-      files.routes.ts        /api/documents/:id/file  (authenticated document download)
-      accountant.routes.ts   /api/accountant/*  (client CRUD, files, billing, SERPRO config)
-      integration.routes.ts  /api/integration/*  (integrationHash auth)
-      webhook.routes.ts      /api/webhook/*  (external doc push, hash-authed)
-      notifications.routes.ts push subscribe + scheduled-notification rules
-    schemas/validation.ts    zod request schemas — EVERY write endpoint has one
-    dto/client.ts            clientSelfDTO / clientAdminDTO / clientIntegrationDTO — never return a raw client row
-    services/
-      billing.ts             upsertBilling() — the one place billing rows are written
-      audit.ts               logAudit(req, action, {...}) — call on sensitive accountant actions
-      password.ts            hashPassword / verifyPassword (bcrypt + legacy-plaintext upgrade)
-      resetCode.ts           password-recovery one-time code (CSPRNG, sha256+pepper, attempt cap)
-      integrationToken.ts    generate/hash/lookup integration tokens (digest at rest, plaintext fallback)
-      secretbox.ts           encryptSecret/decryptSecret (AES-256-GCM, SECRETS_KEY) for SERPRO creds
-      upload.ts              multer config, sanitizeFilename, extension allow-list, validateUploadedFileContent
-      fileType.ts            magic-byte sniffing (contentMatchesExtension)
-      files.ts               resolveUploadPath / resolveGuiaPdfPath (traversal-safe) + streamers
-      mailer.ts, push.ts, serpro.ts, notificationSweeper.ts
-  lib/cnpj.ts                normalizeCnpj / formatCnpj / cnpjMatches (shared client+server)
-drizzle/                     migrations — SINGLE SOURCE OF TRUTH. 0000_baseline + 0001+ + reconcile-legacy.sql
+    db.ts                    pg Pool + drizzle; initDb() só testa conexão
+    schema.ts                schema Drizzle (10 tabelas)
+    env.ts                   validateEnv() (fail-fast em prod), corsOrigins(), trustProxy(), PORT
+    types.ts                 augment de Express.Request + getAuth/getClientId/getIntegrationClient
+    middleware/              auth.ts, rateLimit.ts, validate.ts
+    routes/                  index.ts + auth/client/accountant/integration/webhook/notifications/files
+    schemas/validation.ts    schemas zod — TODO endpoint de escrita tem um
+    dto/client.ts            clientSelfDTO / clientAdminDTO / clientIntegrationDTO
+    services/                billing, audit, password, resetCode, integrationToken, secretbox,
+                             upload, fileType, files, mailer, push, serpro, notificationSweeper
+    qrExtractor.ts           extrai PIX copia-e-cola do PDF de uma guia
+drizzle/                     migrations (fonte de verdade) + reconcile-legacy.sql
 scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate-passwords.ts
 ```
 
-## Conventions & gotchas
+## Comandos
 
-- **API calls from the frontend go through `apiFetch(endpoint, opts, "client"|"accountant")`.**
-  It injects the right JWT and redirects to the login on 401. Don't hand-roll
-  `fetch` with an `Authorization` header.
-- **Auth is header-only** — `Authorization: Bearer <jwt>`. The `?token=` query
-  param was removed everywhere. Documents open via `openDocument(docId, ...)`
-  (authenticated fetch → blob); pdf.js gets `documentAuthHeaders()`.
-- **Never return a raw `clients` / `serpro_config` row** to the browser. Use a
-  DTO (`dto/client.ts`) or a sanitized object — password hash, integration
-  token (digest), reset-code hash, SERPRO secrets must never leave the server.
-- **Server route handlers**: guard with `verify*Auth`, validate bodies with
-  `validateBody(zodSchema)` (there's a schema for every write endpoint), read
-  identity via `getClientId(req)` / `getIntegrationClient(req)` / `getAuth(req)`
-  (typed; no `(req as any)`).
-- **Uploads**: `upload.single(...)`, then `validateUploadedFileContent`
-  (magic-byte check), then `validateBody(...)`, then the handler.
-- **Schema changes**: edit `src/server/schema.ts`, then `npm run db:generate`,
-  review the generated `drizzle/NNNN_*.sql`, commit both. `npm run db:migrate`
-  applies them (auto-run by the `predev`/`prestart` hooks). The server does NOT
-  touch the schema at boot. See `MIGRATIONS.md`.
-- **CNPJ** is stored *digits-only* (`12345678000199`). `normalizeCnpj()` before
-  insert/lookup, `formatCnpj()` for display (`src/lib/cnpj.ts`). Client lookups
-  still go through `findClientsByCnpj` (normalized-in-SQL), never a full scan.
-- **billing_data** has the current "services" model
-  (`servicesRevenue/salesRevenue/totalIncomes/servicesTaken`) plus legacy
-  `revenue/expenses/payroll` kept in sync — always write via `upsertBilling()`.
-- **Two dashboards named `Dashboard.tsx`** — `pages/client/` vs `pages/accountant/`.
-- **Password recovery**: `POST /api/auth/client/forgot-password` returns an
-  identical 200 for every case (found / not found / no email) — no CNPJ oracle;
-  the code work happens after the response. `reset-password` gives one generic
-  error for every rejection and burns the code after `RESET_CODE_MAX_ATTEMPTS`.
-- **Env**: prod refuses to start without real `JWT_SECRET`, `ADMIN`, `PASSWORD`,
-  `DATABASE_URL` (`src/server/env.ts`). `CORS_ORIGINS` required in prod.
-  Recommended: `SECRETS_KEY` (encrypts SERPRO creds at rest — dedicated key,
-  NOT `JWT_SECRET`), `VAPID_*`. `TRUST_PROXY` defaults to `1` (never `true`).
-  `PASSWORD_RESET_PEPPER` optional (falls back to `JWT_SECRET`).
-- **Admin login** is env-based (`ADMIN`/`PASSWORD`), not a DB row.
-- **File uploads**: 10 MB cap, one file, extension allow-list
-  (`ALLOWED_UPLOAD_EXTENSIONS`), random stored name (no overwrite), names run
-  through `sanitizeFilename()`.
-- **Serving documents**: `/uploads` is NOT public. Client documents are
-  downloaded only via `GET /api/documents/:id/file` (auth + per-document
-  authorization; client sees only its own, accountant sees all). The path is
-  resolved server-side from `documents.file_url` — never from the request.
-  Frontend builds the URL with `documentFileUrl(doc.id, { download?, as? })`
-  from `lib/apiClient.ts`. SERPRO guia PDFs also stream through
-  `GET /api/pendencies/guia/:guiaId/pdf` (same auth model).
-- Tests are **server-only**; there is no frontend test setup.
+```bash
+npm run dev        # predev roda db:migrate; depois tsx server.ts em :3000 (precisa DATABASE_URL)
+npm run lint       # tsc --noEmit — rodar antes de commitar
+npm test           # vitest (src/server/**/*.test.ts + src/lib/**/*.test.ts); migrations.test.ts usa pglite
+npm run build      # vite build + esbuild → dist/server.cjs e dist/migrate.cjs
+npm start          # prestart roda dist/migrate.cjs; depois node dist/server.cjs
+npm run db:generate / db:migrate / db:seed / db:studio
+```
 
-## Domain vocabulary
+Dev sem DB real: aponte `DATABASE_URL` para um Postgres descartável (Neon/Supabase
+free). `npm run db:migrate` cria o schema; `npm run db:seed` insere 2 clientes
+demo (CNPJ `12345678000199`, senha = o mesmo CNPJ).
 
-- **guia** – a tax payment slip (DAS for Simples Nacional, DCTFWEB for INSS).
-  Generated via SERPRO Integra Contador; the PDF carries a PIX copia-e-cola.
-- **competência** – the reference month of an obligation, `MM/YYYY`.
-- **regularidade** – a client's compliance status: `green` / `warning` / `red`.
-- **SITFIS** – Receita Federal tax-situation report, arrives via webhook.
-- **pendência / solicitação** – a client asking the accountant to (re)calculate.
+## Regras de desenvolvimento
+
+1. **Primeiro entenda o código atual.** Antes de mexer numa API, `grep` por
+   todas as referências (frontend + backend + testes).
+2. **Não reescreva funcionalidade que já funciona** sem necessidade. Mudanças
+   incrementais.
+3. **Preserve compatibilidade** — especialmente webhooks e integrações. Se
+   precisar de transição, implemente o fallback e documente.
+4. **Rode `npm run lint` e `npm test` após qualquer alteração.**
+5. **Não invente funcionalidade.** Não documente/assuma como pronto o que não
+   está no código.
+6. **Não desative validações/testes** para fazer algo passar.
+7. Frontend chama API só via `apiFetch()`; documentos abrem só via
+   `openDocument()`.
+8. Schema muda só via `schema.ts` + `npm run db:generate` + revisar o `.sql`.
+   O servidor não toca o schema.
+9. `initDb()` **não cria tabelas** — só verifica conexão.
+
+## Regras de segurança (resumo — detalhe em `docs/SECURITY.md`)
+
+- Auth é **só header** `Authorization: Bearer`. Nada de `?token=`.
+- Sessão = access JWT 15min + refresh opaco (hasheado em `auth_sessions`,
+  rotacionado a cada `/api/auth/refresh`, reuso revoga a sessão). `apiFetch`
+  renova sozinho em 401. Login do contador tem 2FA por e-mail (`/verify`).
+- **Nunca** devolver row crua de `clients`/`serpro_config` ao browser — usar DTO.
+  Segredos (passwordHash, integration digest, resetCodeHash, secrets SERPRO)
+  nunca saem do servidor.
+- Todo POST/PUT tem `validateBody(zodSchema)`.
+- Uploads: `upload.single()` → `validateUploadedFileContent` (magic bytes) →
+  `validateBody()`. Whitelist de extensão + cap 10 MB + nome aleatório.
+- `/uploads` **não** é público. Download só por `GET /api/documents/:id/file`
+  (auth + autorização por documento; path resolvido do banco, nunca do request).
+- Segredos SERPRO cifrados em repouso via `SECRETS_KEY` (chave dedicada, nunca
+  `JWT_SECRET`).
+- `trust proxy` = `TRUST_PROXY` (default 1). Nunca `true`.
+- `logAudit()` nas ações sensíveis do contador.
+- Prod não sobe sem `JWT_SECRET`/`ADMIN`/`PASSWORD`/`DATABASE_URL`/`CORS_ORIGINS`.
+
+## Prioridade mobile / comportamento esperado
+
+O produto principal é o **cliente no celular** (via app Capacitor, mantido fora
+deste repo, ou PWA instalada). Ver `docs/MOBILE_APP.md`.
+
+- **Área do cliente** (`ClientLayout`): corte no breakpoint `lg` (1024px).
+  **< lg** (celular + tablet) = header compacto (nome + sair) + conteúdo +
+  **bottom nav** (Visão Geral / Atrasados / Cofre / Envios). **≥ lg** =
+  **sidebar** (rótulos completos + rodapé com Alterar senha / Notificações /
+  Sair). Engrenagem e sino ficam na tela "Visão Geral" no mobile.
+- **Área do contador** (`AccountantLayout`): desktop = sidebar fixa à esquerda;
+  mobile = botão hambúrguer → drawer deslizante. Header com toggle + tema.
+- Safe areas: `<body>` usa `env(safe-area-inset-*)`; `index.html` tem
+  `viewport-fit=cover`, `user-scalable=no`.
+- Botão voltar do Android: comportamento padrão do WebView/Capacitor — **sem
+  handler custom** `[PLANEJADO]`.
+- Gestos custom: nenhum `[PLANEJADO]`.
+
+## Não quebrar o que já funciona
+
+- Login do cliente aceita CNPJ com ou sem pontuação (há retry sem dígitos).
+- Webhooks (`/api/webhook/*`) e integração (`/api/integration/*`) autenticam por
+  token de integração; o `integration_hash` plaintext legado **ainda é aceito**
+  (fallback de transição) — não remova.
+- `documents.fileUrl` pode ser `/uploads/<nome>`, `data:...`, ou
+  `/api/pendencies/guia/<id>/pdf` — o endpoint de download trata os três.
+- `billing_data` tem o modelo "services" novo + colunas legadas
+  `revenue/expenses/payroll` mantidas em sincronia — escrever só via
+  `upsertBilling()`.
+
+## Vocabulário do domínio
+
+- **guia** – guia de pagamento de tributo (DAS p/ Simples, DCTFWEB p/ INSS).
+  Gerada via SERPRO; o PDF carrega um PIX copia-e-cola.
+- **competência** – mês de referência da obrigação (`MM/YYYY`).
+- **regularidade** – status de conformidade do cliente: `green` / `warning` / `red`.
+- **SITFIS** – relatório de situação fiscal da Receita, chega por webhook.
+- **pendência / solicitação** – cliente pedindo ao contador para (re)calcular.

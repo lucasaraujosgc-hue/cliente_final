@@ -62,6 +62,7 @@ against a real Postgres engine (pglite), including a data-preservation check.
 |---|------|-------|
 | `0001_integration_hash_digest` | adds `clients.integration_hash_digest`, backfills the sha256 of the existing plaintext `integration_hash` | **Transition**: both columns stay; `findClientByIntegrationToken` matches either so no webhook integration breaks. Once every integration has re-saved / re-generated its token, a later migration can drop `integration_hash`. |
 | `0002_normalize_cnpj` | `clients.cnpj` → digits-only (14) | Aborts (no half-apply) if stripping punctuation would collide two rows. Formatting is now a display concern (`src/lib/cnpj.ts`). |
+| `0003_auth_sessions` | creates `auth_sessions` (one row per login: hashed rotating refresh token, reuse-detection column, expiry, revocation) | New table, `CREATE TABLE IF NOT EXISTS` so it's re-runnable. No FK — the accountant has no `clients` row and the delete handler clears client sessions explicitly. See `docs/SECURITY.md`. |
 
 ## Schema facts worth knowing
 
