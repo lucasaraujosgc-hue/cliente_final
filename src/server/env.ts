@@ -20,7 +20,6 @@ const REQUIRED_SECRETS = ["JWT_SECRET", "ADMIN", "PASSWORD"] as const;
 const RECOMMENDED = [
   "VAPID_PUBLIC_KEY",
   "VAPID_PRIVATE_KEY",
-  "CORS_ORIGINS",
   "SECRETS_KEY",
 ] as const;
 
@@ -42,8 +41,33 @@ export function collectEnvIssues(env: NodeJS.ProcessEnv = process.env): EnvRepor
   }
   if (!env.DATABASE_URL) problems.push("DATABASE_URL is required.");
 
+  // CORS_ORIGINS: an explicit browser-origin allow-list is mandatory in
+  // production. Without it server.ts would fall back to reflecting any origin,
+  // so a hard failure at boot is safer than a silently permissive API.
+  const corsList = (env.CORS_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (corsList.length === 0) {
+    if (env.NODE_ENV === "production") {
+      problems.push("CORS_ORIGINS is required in production (comma-separated browser origin allow-list).");
+    } else {
+      warnings.push("CORS_ORIGINS is not set — the API will reflect any request origin (dev only).");
+    }
+  }
+
   for (const name of RECOMMENDED) {
     if (!env[name]) warnings.push(`${name} is not set — the related feature will be limited.`);
+  }
+
+  // Accountant 2FA is on unless ACCOUNTANT_2FA=off. Warn if it ends up off for
+  // lack of an address to email the code to.
+  const twoFaOff = String(env.ACCOUNTANT_2FA || "").toLowerCase() === "off";
+  const mfaEmail = env.ACCOUNTANT_MFA_EMAIL || env.EMAIL_USER || "";
+  if (!twoFaOff && !mfaEmail.includes("@")) {
+    warnings.push(
+      "Accountant 2FA is inactive — set ACCOUNTANT_MFA_EMAIL (or EMAIL_USER), or ACCOUNTANT_2FA=off to silence.",
+    );
   }
 
   return { problems, warnings };

@@ -11,6 +11,10 @@ interface TokenCache {
 }
 const serproTokenCache: { [key: string]: TokenCache } = {};
 
+// Upper bound on any single SERPRO HTTP call. Without it a hung SERPRO endpoint
+// keeps the Express request (and its DB work) pending indefinitely.
+const SERPRO_HTTP_TIMEOUT_MS = 30_000;
+
 // Helper HTTP nativo (evita problemas com node-fetch ESM)
 function httpsPost(
   urlStr: string,
@@ -27,6 +31,7 @@ function httpsPost(
       path: url.pathname + url.search,
       method: "POST",
       headers: { ...headers, "Content-Length": bodyBuf.byteLength },
+      timeout: SERPRO_HTTP_TIMEOUT_MS,
     };
     if (agent) opts.agent = agent;
 
@@ -44,6 +49,15 @@ function httpsPost(
       });
     });
     req.on("error", reject);
+    // 'timeout' fires on socket inactivity but does not abort — do it here so
+    // the promise rejects instead of hanging forever.
+    req.on("timeout", () => {
+      req.destroy(
+        new Error(
+          `Tempo limite de ${SERPRO_HTTP_TIMEOUT_MS / 1000}s excedido ao contatar ${url.hostname}`,
+        ),
+      );
+    });
     req.write(bodyBuf);
     req.end();
   });

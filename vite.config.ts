@@ -12,6 +12,14 @@ export default defineConfig(() => {
       },
     },
     build: {
+      // No inline module-preload polyfill: every target (modern browsers, the
+      // Capacitor WebViews, installed PWA) supports <link rel="modulepreload">
+      // natively. Dropping it keeps the built index.html free of inline
+      // scripts so a strict `script-src 'self'` CSP works with no hashes.
+      modulePreload: { polyfill: false },
+      // pdf/xlsx are genuinely large vendor libs, but they're lazy-loaded only
+      // on the pages that use them — the warning about their size is expected.
+      chunkSizeWarningLimit: 700,
       rollupOptions: {
         output: {
           // Split the big, rarely-changing libs out of the main bundle so a
@@ -22,6 +30,7 @@ export default defineConfig(() => {
             charts: ['recharts'],
             xlsx: ['xlsx'],
             pdf: ['pdfjs-dist', 'jsqr'],
+            datefns: ['date-fns'],
           },
         },
       },

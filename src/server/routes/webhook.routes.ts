@@ -133,8 +133,9 @@ export function registerWebhookRoutes(app: Express) {
 
       res.status(200).json({ success: true, documentId: newDoc[0].id });
     } catch (e: any) {
-      console.error("Webhook Error:", e);
-      res.status(500).json({ error: e.message });
+      // Log the detail server-side; never echo e.message to an external caller.
+      console.error("Webhook /receitas error:", e);
+      res.status(500).json({ error: "Erro ao processar o webhook." });
     }
   });
 
@@ -222,10 +223,11 @@ export function registerWebhookRoutes(app: Express) {
           documentId: newDoc.id,
         });
       } catch (e: any) {
-        console.error("Webhook Erro:", e);
+        // Log the detail server-side; never echo e.message to an external caller.
+        console.error("Webhook /documentos error:", e);
         return res
           .status(500)
-          .json({ error: "Erro interno no servidor webhook: " + e.message });
+          .json({ error: "Erro ao processar o webhook." });
       }
     },
   );

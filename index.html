@@ -19,16 +19,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The service worker is registered from src/main.tsx (not an inline
+         script here) so a strict `script-src 'self'` CSP has nothing to block. -->
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('Serviceworker registrado com sucesso:', reg.scope))
-            .catch(err => console.log('Falha ao registrar ServiceWorker:', err));
-        });
-      }
-    </script>
   </body>
 </html>
 

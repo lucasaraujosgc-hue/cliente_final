@@ -75,6 +75,13 @@ export async function validateUploadedFileContent(
   next();
 }
 
+// A rejected upload is an expected 4xx, not a server error. Tag the Error with
+// a status so the central error handler returns a clean 415 + this message
+// instead of a generic 500.
+function unsupportedTypeError(message: string): Error {
+  return Object.assign(new Error(message), { status: 415 });
+}
+
 function uploadFileFilter(
   _req: unknown,
   file: Express.Multer.File,
@@ -84,7 +91,7 @@ function uploadFileFilter(
   if (ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
     cb(null, true);
   } else {
-    cb(new Error(`Tipo de arquivo não permitido: ${ext || "sem extensão"}`));
+    cb(unsupportedTypeError(`Tipo de arquivo não permitido: ${ext || "sem extensão"}`));
   }
 }
 
@@ -128,7 +135,7 @@ export const uploadCert = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ext === ".pfx" || ext === ".p12") cb(null, true);
-    else cb(new Error("Apenas arquivos .pfx ou .p12 são aceitos."));
+    else cb(unsupportedTypeError("Apenas arquivos .pfx ou .p12 são aceitos."));
   },
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
