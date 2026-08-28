@@ -1,13 +1,14 @@
 import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef } from "react";
-import { 
-  Bell, 
-  Upload, 
-  FileCheck, 
-  Edit3, 
+import {
+  Bell,
+  Upload,
+  FileCheck,
+  Edit3,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Settings,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
@@ -528,7 +529,7 @@ export function ClientDashboard() {
   });
 
   return (
-    <div className="space-y-6 pb-24 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-7xl mx-auto">
+    <div className="space-y-6 pb-6 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-7xl mx-auto">
       
       {/* 📱 PWA SMART HELPER BANNER */}
       {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
@@ -584,7 +585,7 @@ export function ClientDashboard() {
             </button>
           </div>
 
-          <button 
+          <button
             disabled={isRefreshing}
             onClick={loadData}
             className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all text-xs flex items-center justify-center h-10 w-10 disabled:opacity-50"
@@ -592,6 +593,22 @@ export function ClientDashboard() {
             id="refresh-dashboard-btn"
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => setShowPrefsModal(true)}
+            className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all flex items-center justify-center h-10 w-10"
+            title="Notificações"
+          >
+            <Bell className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))}
+            className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all flex items-center justify-center h-10 w-10"
+            title="Alterar senha"
+          >
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </header>

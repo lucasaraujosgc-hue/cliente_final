@@ -2,12 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History } from "lucide-react";
 import { cn } from "../lib/utils";
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 
 export function ClientLayout() {
-  const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+  const token = hasSession("client");
   let user: any = {};
   try {
     user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
@@ -18,9 +18,6 @@ export function ClientLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  
   // Password Change Modal State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [emailForm, setEmailForm] = useState(user.email || "");
@@ -30,31 +27,34 @@ export function ClientLayout() {
   const [modalSuccess, setModalSuccess] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const handleLogout = () => {
+    void logout("client");
+    try {
+      localStorage.removeItem("clientUser");
+      sessionStorage.removeItem("clientUser");
+    } catch {
+      /* ignore */
+    }
+    navigate("/login");
+  };
+
   useEffect(() => {
-    // Keep email input in sync when user object charges
+    // Keep email input in sync when user object changes
     if (user.email && !emailForm) {
       setEmailForm(user.email);
     }
   }, [user.email]);
 
   useEffect(() => {
-    const handleOpenModal = () => {
-      setShowPasswordModal(true);
-    };
+    const handleOpenModal = () => setShowPasswordModal(true);
     window.addEventListener("open-password-change-modal", handleOpenModal);
-    return () => {
-      window.removeEventListener("open-password-change-modal", handleOpenModal);
-    };
+    return () => window.removeEventListener("open-password-change-modal", handleOpenModal);
   }, []);
 
   useEffect(() => {
-    const handleUnauthorized = () => {
-      handleLogout();
-    };
+    const handleUnauthorized = () => handleLogout();
     window.addEventListener("unauthorized", handleUnauthorized);
-    return () => {
-      window.removeEventListener("unauthorized", handleUnauthorized);
-    };
+    return () => window.removeEventListener("unauthorized", handleUnauthorized);
   }, []);
 
   // All hooks must run before this early return — bailing out earlier
@@ -64,19 +64,15 @@ export function ClientLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem("clientToken");
-    localStorage.removeItem("clientUser");
-    sessionStorage.removeItem("clientToken");
-    sessionStorage.removeItem("clientUser");
-    navigate("/login");
-  };
-
   const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError("");
     setModalSuccess("");
 
+    if (passwordForm && passwordForm.length < 8) {
+      setModalError("A nova senha precisa ter ao menos 8 caracteres.");
+      return;
+    }
     if (passwordForm && passwordForm !== confirmPassword) {
       setModalError("As senhas informadas não coincidem.");
       return;
@@ -117,139 +113,103 @@ export function ClientLayout() {
     }
   };
 
-  const menu = [
-    { name: "Painel Resumo", path: "/dashboard", icon: LayoutDashboard },
-    { name: "Atrasados", path: "/overdue", icon: AlertCircle },
-    { name: "Cofre Digital", path: "/vault", icon: Folder },
-    { name: "Meus Envios", path: "/uploads", icon: Upload },
+  // One nav model, two chrome shells: a left sidebar from `lg` up, a fixed
+  // bottom bar below it (phones + tablets). `short` labels keep the bottom bar
+  // readable on narrow screens.
+  const nav = [
+    { to: "/dashboard", label: "Visão Geral", short: "Visão Geral", Icon: LayoutDashboard },
+    { to: "/overdue", label: "Atrasados", short: "Atrasados", Icon: AlertCircle },
+    { to: "/vault", label: "Cofre Digital", short: "Cofre", Icon: Folder },
+    { to: "/uploads", label: "Meus Envios", short: "Envios", Icon: Upload },
   ];
-
-  const renderSidebarContent = () => (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
-      <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 dark:border-slate-800">
-        <Logo />
-        {/* Mobile close button */}
-        <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-        {menu.map((item) => {
-          const Icon = item.icon;
-          const active = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => setMobileSidebarOpen(false)}
-              className={cn(
-                "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50"
-              )}
-            >
-              <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-400")} />
-              {item.name}
-            </Link>
-          );
-        })}
-
-        {/* Password / Settings link */}
-        <button
-          onClick={() => {
-            setShowPasswordModal(true);
-            setMobileSidebarOpen(false);
-          }}
-          className="w-full flex items-center px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg text-sm font-medium transition-colors text-left"
-        >
-          <Settings className="w-5 h-5 mr-3 text-slate-400" />
-          Alterar Senha
-        </button>
-      </nav>
-
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-        <div className="flex items-center px-3 py-2">
-           <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold mr-3 shrink-0">
-             {user.name?.charAt(0) || "C"}
-           </div>
-           <div className="flex flex-col overflow-hidden">
-             <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.name}</span>
-             <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Cliente</span>
-           </div>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="mt-2 w-full flex items-center px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"
-        >
-          <LogOut className="w-5 h-5 mr-3" />
-          Sair
-        </button>
-      </div>
-    </div>
-  );
+  const isActive = (to: string) =>
+    location.pathname === to || (to === "/dashboard" && location.pathname === "/");
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
-      
-      {/* 3. Main Content Pane */}
+
+      {/* Sidebar — desktop / installed PWA (lg and up) */}
+      <aside className="hidden lg:flex lg:w-60 shrink-0 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+        <div className="h-16 flex items-center px-5 border-b border-slate-100 dark:border-slate-800">
+          <Logo />
+        </div>
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {nav.map(({ to, label, Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                isActive(to)
+                  ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60",
+              )}
+            >
+              <Icon className="w-5 h-5 shrink-0" />
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
+          <p className="px-3 pb-1 text-xs font-semibold text-slate-400 dark:text-slate-500 truncate">
+            {user.name || "Cliente"}
+          </p>
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
+          >
+            <Settings className="w-4 h-4 shrink-0" /> Alterar senha
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-notifications"))}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
+          >
+            <Bell className="w-4 h-4 shrink-0" /> Notificações
+          </button>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+          >
+            <LogOut className="w-4 h-4 shrink-0" /> Sair
+          </button>
+        </div>
+      </aside>
+
       <main className="flex-1 flex flex-col relative overflow-hidden">
-        
-        {/* Top bar */}
-        <header className="h-14 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 w-full z-10 shrink-0">
-          <div className="flex items-center space-x-3">
-             {/* Settings Gear replacing hamburger */}
-             <button onClick={() => setShowPasswordModal(true)} className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Alterar Senha">
-               <Settings className="w-5 h-5" />
-             </button>
-             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px] sm:max-w-none">
-                Empresa: <strong className="text-slate-800 dark:text-white">{user.name}</strong>
-             </span>
-          </div>
-          <div className="flex items-center space-x-4">
-             <button onClick={() => window.dispatchEvent(new CustomEvent('open-notifications'))} className="text-slate-500 hover:text-indigo-500 transition-colors" title="Notificações">
-               <Bell className="w-5 h-5" />
-             </button>
-             <button onClick={handleLogout} className="text-slate-500 hover:text-red-500 transition-colors" title="Sair">
-               <LogOut className="w-5 h-5" />
-             </button>
-          </div>
+
+        {/* Compact top bar — mobile / tablet only (gear + bell live on Visão Geral) */}
+        <header className="lg:hidden h-12 flex items-center justify-between px-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 shrink-0 z-10">
+          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <strong className="text-slate-800 dark:text-white">{user.name || "Portal do Cliente"}</strong>
+          </span>
+          <button onClick={handleLogout} className="p-1.5 -mr-1.5 text-slate-500 hover:text-red-500 transition-colors" title="Sair">
+            <LogOut className="w-5 h-5" />
+          </button>
         </header>
 
-        <div className="absolute inset-0 top-14 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
         <div className="flex-1 overflow-auto z-0 flex flex-col">
           <div className="max-w-7xl w-full mx-auto p-4 md:p-8 relative flex-1 flex flex-col">
-            
-            {/* Global Tabs */}
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
-              <Link
-                to="/dashboard"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Visão Geral
-              </Link>
-              <Link
-                to="/overdue"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/overdue' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Atrasados
-              </Link>
-              <Link
-                to="/vault"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/vault' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Cofre Digital
-              </Link>
-              <Link
-                to="/uploads"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/uploads' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Meus Envios
-              </Link>
-            </div>
-
             <Outlet />
           </div>
         </div>
+
+        {/* Bottom navigation — mobile + tablet (hidden from lg up) */}
+        <nav className="lg:hidden shrink-0 flex border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
+          {nav.map(({ to, short, Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-semibold tracking-tight transition-colors",
+                isActive(to) ? "text-virgula-green" : "text-slate-500 dark:text-slate-400",
+              )}
+            >
+              <Icon className="w-[18px] h-[18px]" />
+              {short}
+            </Link>
+          ))}
+        </nav>
       </main>
 
       {/* 4. Password Change Modal */}
@@ -280,7 +240,7 @@ export function ClientLayout() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nova Senha (deixe em branco se não quiser alterar)</label>
-                <input type="password" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+                <input type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Confirmar Nova Senha</label>
@@ -299,7 +259,7 @@ export function ClientLayout() {
 }
 
 export function AccountantLayout() {
-  const token = localStorage.getItem("accountantToken");
+  const token = hasSession("accountant");
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -337,7 +297,7 @@ export function AccountantLayout() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("accountantToken");
+    void logout("accountant");
     navigate("/admin/login");
   };
 
