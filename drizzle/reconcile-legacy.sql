@@ -152,22 +152,26 @@ ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_code_hash" text;
 ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_code_expires" timestamp;
 ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_code_attempts" integer DEFAULT 0 NOT NULL;
 
--- reset_code_expires used to be a text ISO string on legacy DBs.
+-- reset_code_expires used to be a free-form text column on legacy DBs (ISO
+-- string in some builds, epoch millis in others). Every value there belongs to
+-- a legacy plaintext reset token that is being invalidated regardless (see the
+-- UPDATE below and services/resetCode.ts), so drop them wholesale instead of
+-- parsing — `USING NULL` can never fail on unexpected text.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns
              WHERE table_schema='public' AND table_name='clients'
-               AND column_name='reset_code_expires' AND data_type='text') THEN
+               AND column_name='reset_code_expires' AND data_type <> 'timestamp without time zone') THEN
     ALTER TABLE "clients"
       ALTER COLUMN "reset_code_expires" TYPE timestamp
-      USING NULLIF("reset_code_expires", '')::timestamp;
+      USING NULL::timestamp;
   END IF;
 END $$;
 
--- Any legacy plaintext reset token is meaningless as a hash now — clear it.
+-- Any legacy plaintext reset token / stray code hash is meaningless now — clear it.
 UPDATE "clients"
    SET "reset_code_hash" = NULL, "reset_code_expires" = NULL, "reset_code_attempts" = 0
- WHERE "reset_code_hash" IS NOT NULL AND length("reset_code_hash") < 40;
+ WHERE "reset_code_hash" IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 3. Additive columns other tables gained over time (ALTER ... ADD COLUMN)

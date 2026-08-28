@@ -201,10 +201,14 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
     const db = new PGlite();
     await db.exec(LEGACY_SCHEMA);
 
-    // existing data, incl. an in-flight plaintext reset token and an integration hash
+    // existing data, incl. in-flight legacy reset tokens (one with an ISO
+    // expiry string, one with epoch millis — the conversion must not choke on
+    // either) and an integration hash.
     await db.exec(`
       INSERT INTO clients (id, cnpj, name, password_hash, regularity_status, integration_hash, reset_token, reset_token_expires)
       VALUES ('11111111-1111-1111-1111-111111111111', '12.345.678/0001-99', 'ACME', 'hash', 'green', 'legacy-plain-token', '482913', '2026-01-01T00:00:00.000Z');
+      INSERT INTO clients (id, cnpj, name, password_hash, regularity_status, reset_token, reset_token_expires)
+      VALUES ('33333333-3333-3333-3333-333333333333', '11.222.333/0001-44', 'BETA', 'hash', 'green', '901234', '1793491200000');
       INSERT INTO documents (client_id, title, category, status, uploaded_by, extracted_data)
       VALUES ('11111111-1111-1111-1111-111111111111', 'Guia', 'taxes', 'new', 'accountant', '{"v":1}');
     `);
@@ -215,13 +219,14 @@ describe("drizzle/reconcile-legacy.sql (database built by the old initDb)", () =
 
     // data preserved
     const c = await db.query<{ cnpj: string; reset_code_hash: string | null; reset_code_attempts: number; integration_hash_digest: string | null }>(
-      `SELECT cnpj, reset_code_hash, reset_code_attempts, integration_hash_digest FROM clients`,
+      `SELECT cnpj, reset_code_hash, reset_code_attempts, integration_hash_digest FROM clients ORDER BY name`,
     );
-    expect(c.rows).toHaveLength(1);
-    // 0002 normalised the CNPJ to digits-only, keeping the row
+    expect(c.rows).toHaveLength(2);
+    // 0002 normalised the CNPJ to digits-only, keeping the rows
     expect(c.rows[0].cnpj).toBe("12345678000199");
-    // legacy plaintext token (6 chars) was cleared, not carried over as a "hash"
+    // legacy plaintext tokens (both formats) were cleared, not carried over
     expect(c.rows[0].reset_code_hash).toBeNull();
+    expect(c.rows[1].reset_code_hash).toBeNull();
     expect(c.rows[0].reset_code_attempts).toBe(0);
     // legacy integration_hash was backfilled to a sha256 digest by 0001
     expect(c.rows[0].integration_hash_digest).toMatch(/^[0-9a-f]{64}$/);
