@@ -3,7 +3,8 @@ import { apiFetch, saveSession } from "../lib/apiClient";
 
 // Second step of the accountant login: enter the 6-digit code emailed after
 // username + password were accepted. On success it stores the session and calls
-// onVerified() (the caller navigates).
+// onVerified() (the caller navigates). Token-styled so it works on both the
+// client and the accountant login screens.
 export function MfaCodeForm({
   challengeId: initialChallengeId,
   onVerified,
@@ -74,20 +75,22 @@ export function MfaCodeForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <p className="text-sm text-slate-500 dark:text-slate-400">{info}</p>
+      <p className="text-sm text-muted">{info}</p>
       {error && (
-        <div className="p-3 bg-red-500/20 border border-red-500/50 text-red-200 text-sm rounded-lg">
+        <div className="rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">
           {error}
         </div>
       )}
       <div>
-        <label className="block text-sm font-semibold text-slate-300 mb-1">Código de Verificação</label>
+        <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5">
+          Código de verificação
+        </label>
         <input
           type="text"
           inputMode="numeric"
           autoComplete="one-time-code"
           maxLength={6}
-          className="w-full px-4 py-2 border border-slate-700 bg-slate-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest font-mono"
+          className="w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-center font-mono text-lg tracking-[0.4em] text-ink transition-colors focus:outline-none focus:border-brand focus:bg-surface"
           placeholder="000000"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -97,19 +100,19 @@ export function MfaCodeForm({
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/50 disabled:opacity-50"
+        className="w-full rounded-lg bg-brand py-3 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50"
       >
-        {loading ? "Verificando..." : "Confirmar e Entrar"}
+        {loading ? "Verificando..." : "Confirmar e entrar"}
       </button>
       <div className="flex items-center justify-between text-xs">
-        <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-200">
+        <button type="button" onClick={onCancel} className="font-medium text-faint hover:text-muted">
           Voltar
         </button>
         <button
           type="button"
           onClick={resend}
           disabled={resending}
-          className="text-slate-400 hover:text-slate-200 disabled:opacity-50"
+          className="font-medium text-brand hover:text-brand-strong disabled:opacity-50"
         >
           {resending ? "Reenviando..." : "Reenviar código"}
         </button>

@@ -9,16 +9,15 @@ interface LogoProps {
   className?: string;
 }
 
-const SIZES: Record<LogoSize, { word: string; sub: string }> = {
-  sm: { word: "text-xl", sub: "text-[9px]" },
-  md: { word: "text-2xl md:text-[28px]", sub: "text-[10px] md:text-[11px]" },
-  lg: { word: "text-3xl md:text-[34px]", sub: "text-[11px] md:text-[12px]" },
+const SIZES: Record<LogoSize, { word: string; sub: string; track: string }> = {
+  sm: { word: "text-lg", sub: "text-[8px]", track: "tracking-[0.34em]" },
+  md: { word: "text-[26px]", sub: "text-[10px]", track: "tracking-[0.36em]" },
+  lg: { word: "text-[34px]", sub: "text-[11px]", track: "tracking-[0.38em]" },
 };
 
 /**
- * "Vírgula," wordmark — the comma is the brand mark (vírgula = comma). Serif
- * (Fraunces) for the word, tracked uppercase sans for "Contábil". Replaces the
- * old lucide Calculator icon lockup.
+ * "Vírgula," wordmark — the comma is the brand mark (vírgula = comma). Fraunces
+ * at a calm weight for the word, tracked uppercase sans for "Contábil".
  */
 export function Logo({ onDark = false, size = "md", className }: LogoProps) {
   const s = SIZES[size];
@@ -30,22 +29,21 @@ export function Logo({ onDark = false, size = "md", className }: LogoProps) {
       <span className="flex items-baseline">
         <span
           className={cn(
-            "font-serif font-bold tracking-tight",
+            "font-serif font-medium",
             s.word,
-            onDark ? "text-white" : "text-virgula-primary dark:text-white",
+            onDark ? "text-white" : "text-virgula-primary",
           )}
         >
           Vírgula
         </span>
-        <span className={cn("font-serif font-bold leading-none text-virgula-accent", s.word)}>
-          ,
-        </span>
+        <span className={cn("font-serif font-medium leading-none text-gold", s.word)}>,</span>
       </span>
       <span
         className={cn(
-          "font-sans font-normal uppercase tracking-[0.3em] leading-none mt-0.5 ml-[0.2em]",
+          "font-sans font-semibold uppercase leading-none mt-1 ml-[0.15em]",
           s.sub,
-          onDark ? "text-slate-400" : "text-virgula-muted dark:text-slate-400",
+          s.track,
+          onDark ? "text-white/55" : "text-faint",
         )}
       >
         Contábil

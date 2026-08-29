@@ -1,28 +1,120 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
+
+/* next-themes toggles a `.dark` class on <html>; make `dark:` follow it
+   (Tailwind v4 defaults to prefers-color-scheme otherwise). */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces", ui-serif, Georgia, serif;
-  --color-virgula-green: #10b981;
-  --color-virgula-card: #1f2937;
-  /* Brand wordmark palette (see src/components/Logo.tsx) */
-  --color-virgula-primary: oklch(0.36 0.06 165);
-  --color-virgula-accent: oklch(0.72 0.14 55);
-  --color-virgula-muted: oklch(0.48 0.02 160);
+  --font-serif: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* ---- Surfaces & ink (light; dark overrides in @layer base) ------------ */
+  --color-ground: #f4f7f5;     /* app background — warm-cool near-white, faint green bias */
+  --color-surface: #ffffff;    /* cards, sheets */
+  --color-sunken: #eef2f0;     /* inputs, insets, table stripes */
+  --color-ink: #17211d;        /* primary text */
+  --color-muted: #566860;      /* secondary text */
+  --color-faint: #8a9b93;      /* tertiary / micro-labels */
+  --color-line: #e2e8e4;       /* hairlines, borders */
+
+  /* ---- Brand (one green, used everywhere the old indigo/emerald mix was) */
+  --color-brand: #0d7a51;
+  --color-brand-strong: #0a5c3d;
+  --color-brand-wash: #e5f2ea;
+  --color-brand-fg: #0a5c3d;   /* text/icon sitting on --color-brand-wash */
+
+  /* wordmark comma + rare warm highlight */
+  --color-gold: oklch(0.7 0.13 62);
+
+  /* ---- Semantic (separate from the brand accent) ---------------------- */
+  --color-ok: #0d7a51;
+  --color-ok-wash: #e5f2ea;
+  --color-warn: #a9741a;
+  --color-warn-wash: #f7ecd6;
+  --color-danger: #b0472c;
+  --color-danger-wash: #f7e3dc;
+
+  /* legacy aliases — existing components still reference these */
+  --color-virgula-green: #0d7a51;
+  --color-virgula-card: #151b18;
+  --color-virgula-primary: #16473a;
+  --color-virgula-accent: oklch(0.7 0.13 62);
+  --color-virgula-muted: #566860;
+
+  /* ---- Shape & depth ------------------------------------------------- */
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.125rem;   /* pulls the app's many rounded-3xl down from 24px */
+
+  --shadow-xs: 0 1px 2px rgba(20, 40, 32, 0.04);
+  --shadow-sm: 0 1px 2px rgba(20, 40, 32, 0.05), 0 1px 3px rgba(20, 40, 32, 0.04);
+  --shadow-md: 0 4px 12px -4px rgba(20, 40, 32, 0.10), 0 2px 6px -2px rgba(20, 40, 32, 0.06);
+  --shadow-lg: 0 12px 32px -12px rgba(20, 40, 32, 0.16), 0 4px 12px -6px rgba(20, 40, 32, 0.08);
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: #f8fafc;
-  color: #0f172a;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-}
+@layer base {
+  .dark {
+    --color-ground: #0c110f;
+    --color-surface: #141b18;
+    --color-sunken: #1b2420;
+    --color-ink: #e8efeb;
+    --color-muted: #a4b3ac;
+    --color-faint: #74847c;
+    --color-line: #27312c;
 
-.dark body {
-  background-color: #0f172a;
-  color: #f8fafc;
+    --color-brand: #23b483;
+    --color-brand-strong: #3ec99a;
+    --color-brand-wash: #12281e;
+    --color-brand-fg: #62d3a6;
+
+    --color-ok: #23b483;
+    --color-ok-wash: #12281e;
+    --color-warn: #d9a34a;
+    --color-warn-wash: #2c2411;
+    --color-danger: #dd8b6c;
+    --color-danger-wash: #2c1a13;
+
+    --color-virgula-green: #23b483;
+    --color-virgula-primary: #e8efeb;
+    --color-virgula-muted: #a4b3ac;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 16px 40px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Money, dates, KPI figures line up in columns. */
+  .tabular, [class*="tabular-nums"] { font-variant-numeric: tabular-nums; }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection { background: color-mix(in srgb, var(--color-brand) 22%, transparent); }
+
+  /* Fraunces display: default to a calm weight + optical tightening.
+     Components can still override with font-medium / font-semibold. */
+  .font-serif { letter-spacing: -0.012em; }
 }

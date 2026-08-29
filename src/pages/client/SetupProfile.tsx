@@ -3,6 +3,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../../components/Logo";
 
+const FIELD =
+  "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
+const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5";
+const PRIMARY_BTN =
+  "w-full rounded-lg bg-brand text-white font-semibold py-3 text-[15px] shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50";
+
 export function SetupProfile() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,69 +43,81 @@ export function SetupProfile() {
     }
   };
 
+  const field = FIELD;
+  const label = LABEL;
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] dark:bg-slate-900 flex flex-col items-center justify-center relative overflow-hidden transition-colors">
-      <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/10 via-white dark:via-slate-900 to-slate-100/50 dark:to-slate-800/50 -z-0"></div>
-      
-      <div className="w-full max-w-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-white dark:border-slate-700 p-8 z-10 mx-4">
-        <div className="text-center mb-8 flex flex-col items-center">
-          <div className="mb-6">
-            <Logo size="lg" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Bem-vindo(a)!</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Para garantir sua segurança, por favor cadastre seu e-mail e atualize sua senha de acesso inicial.</p>
-        </div>
+    <div className="flex min-h-screen flex-col justify-center bg-ground px-6 py-12 sm:px-10">
+      <div className="mx-auto w-full max-w-md">
+        <Logo size="md" />
+
+        <p className="mt-9 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
+          Primeiro acesso
+        </p>
+        <h1 className="mt-1.5 font-serif text-2xl font-normal text-ink">Bem-vindo(a) ao portal</h1>
+        <p className="mt-1.5 text-sm text-muted">
+          Cadastre um e-mail de contato e troque a senha inicial (o CNPJ) por uma sua.
+        </p>
 
         {error && (
-            <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm rounded-lg border border-red-100 dark:border-red-800">
-              {error}
-            </div>
+          <div className="mt-6 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">
+            {error}
+          </div>
         )}
 
-        <form onSubmit={handleSetup} className="space-y-5">
+        <form onSubmit={handleSetup} className="mt-7 space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">E-mail de Trabalho</label>
+            <label className={label}>E-mail de contato</label>
             <input
               type="email"
-              className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-sm"
+              className={field}
               placeholder="exemplo@suaempresa.com.br"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Nova Senha (Opcional)</label>
+            <label className={label}>Nova senha (opcional)</label>
             <input
               type="password"
               minLength={8}
               autoComplete="new-password"
-              className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-sm"
-              placeholder="Mínimo de 8 caracteres, ou deixe em branco para manter"
+              className={field}
+              placeholder="Mínimo de 8 caracteres — ou deixe em branco"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
-          <div className="flex items-start bg-slate-50 dark:bg-slate-700/30 p-3 rounded-xl border border-slate-200 dark:border-slate-600">
-            <input 
-              id="terms" 
-              type="checkbox" 
+          <label className="flex items-start gap-2.5 rounded-lg border border-line bg-sunken px-3.5 py-3 text-xs text-muted select-none">
+            <input
+              type="checkbox"
               required
               checked={acceptedTerms}
-              onChange={e => setAcceptedTerms(e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-virgula-green border-slate-300 rounded focus:ring-virgula-green"
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 rounded border-line text-brand focus:ring-brand/40"
             />
-            <label htmlFor="terms" className="ml-2 block text-xs text-slate-600 dark:text-slate-400">
-              Eu li e concordo com os <a href="#" className="text-virgula-green hover:underline font-semibold" onClick={(e) => { e.preventDefault(); alert("1. O uso da plataforma é de responsabilidade do cliente.\n2. Os dados trafegados são armazenados com segurança.\n3. O portal não substitui a orientação do seu contador.") }}>Termos de Uso</a> e Política de Privacidade do portal.
-            </label>
-          </div>
+            <span>
+              Li e concordo com os{" "}
+              <button
+                type="button"
+                className="font-semibold text-brand hover:underline"
+                onClick={() =>
+                  alert(
+                    "1. O uso da plataforma é de responsabilidade do cliente.\n2. Os dados trafegados são armazenados com segurança.\n3. O portal não substitui a orientação do seu contador.",
+                  )
+                }
+              >
+                Termos de Uso
+              </button>{" "}
+              e a Política de Privacidade.
+            </span>
+          </label>
 
-          <button
-            type="submit"
-            className="w-full bg-virgula-green text-white font-bold py-3 rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-900/30"
-          >
-            Confirmar e Acessar Portal
+          <button type="submit" className={PRIMARY_BTN}>
+            Confirmar e acessar
           </button>
         </form>
       </div>
