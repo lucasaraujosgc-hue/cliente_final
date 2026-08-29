@@ -6,6 +6,10 @@ import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 
+const CHROME_FIELD =
+  "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
+const CHROME_LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5";
+
 export function ClientLayout() {
   const token = hasSession("client");
   let user: any = {};
@@ -126,134 +130,131 @@ export function ClientLayout() {
     location.pathname === to || (to === "/dashboard" && location.pathname === "/");
 
   return (
-    <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
+    <div className="flex h-screen w-full overflow-hidden bg-ground text-ink">
 
       {/* Sidebar — desktop / installed PWA (lg and up) */}
-      <aside className="hidden lg:flex lg:w-60 shrink-0 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
-        <div className="h-16 flex items-center px-5 border-b border-slate-100 dark:border-slate-800">
-          <Logo />
+      <aside className="hidden shrink-0 flex-col border-r border-line bg-surface lg:flex lg:w-60">
+        <div className="flex h-16 items-center border-b border-line px-5">
+          <Logo size="sm" />
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
           {nav.map(({ to, label, Icon }) => (
             <Link
               key={to}
               to={to}
               className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive(to)
-                  ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60",
+                  ? "bg-brand-wash text-brand-fg"
+                  : "text-muted hover:bg-sunken hover:text-ink",
               )}
             >
-              <Icon className="w-5 h-5 shrink-0" />
+              <Icon className="size-[18px] shrink-0" strokeWidth={isActive(to) ? 2.2 : 1.8} />
               {label}
             </Link>
           ))}
         </nav>
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
-          <p className="px-3 pb-1 text-xs font-semibold text-slate-400 dark:text-slate-500 truncate">
+        <div className="space-y-0.5 border-t border-line p-3">
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint truncate">
             {user.name || "Cliente"}
           </p>
-          <button
-            onClick={() => setShowPasswordModal(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-          >
-            <Settings className="w-4 h-4 shrink-0" /> Alterar senha
-          </button>
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent("open-notifications"))}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-          >
-            <Bell className="w-4 h-4 shrink-0" /> Notificações
-          </button>
+          {[
+            { label: "Alterar senha", Icon: Settings, onClick: () => setShowPasswordModal(true) },
+            { label: "Notificações", Icon: Bell, onClick: () => window.dispatchEvent(new CustomEvent("open-notifications")) },
+          ].map(({ label, Icon, onClick }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-sunken hover:text-ink"
+            >
+              <Icon className="size-4 shrink-0" strokeWidth={1.8} /> {label}
+            </button>
+          ))}
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-danger-wash hover:text-danger"
           >
-            <LogOut className="w-4 h-4 shrink-0" /> Sair
+            <LogOut className="size-4 shrink-0" strokeWidth={1.8} /> Sair
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col relative overflow-hidden">
+      <main className="relative flex flex-1 flex-col overflow-hidden">
 
         {/* Compact top bar — mobile / tablet only (gear + bell live on Visão Geral) */}
-        <header className="lg:hidden h-12 flex items-center justify-between px-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 shrink-0 z-10">
-          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate">
-            <strong className="text-slate-800 dark:text-white">{user.name || "Portal do Cliente"}</strong>
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-line bg-surface/85 px-4 backdrop-blur lg:hidden">
+          <span className="truncate text-sm font-semibold text-ink">
+            {user.name || "Portal do Cliente"}
           </span>
-          <button onClick={handleLogout} className="p-1.5 -mr-1.5 text-slate-500 hover:text-red-500 transition-colors" title="Sair">
-            <LogOut className="w-5 h-5" />
+          <button onClick={handleLogout} className="-mr-1.5 p-1.5 text-muted transition-colors hover:text-danger" title="Sair">
+            <LogOut className="size-5" strokeWidth={1.8} />
           </button>
         </header>
 
-        <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
-        <div className="flex-1 overflow-auto z-0 flex flex-col">
-          <div className="max-w-7xl w-full mx-auto p-4 md:p-8 relative flex-1 flex flex-col">
+        <div className="z-0 flex flex-1 flex-col overflow-auto">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 md:px-8 md:py-9">
             <Outlet />
           </div>
         </div>
 
         {/* Bottom navigation — mobile + tablet (hidden from lg up) */}
-        <nav className="lg:hidden shrink-0 flex border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-          {nav.map(({ to, short, Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className={cn(
-                "flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-semibold tracking-tight transition-colors",
-                isActive(to) ? "text-virgula-green" : "text-slate-500 dark:text-slate-400",
-              )}
-            >
-              <Icon className="w-[18px] h-[18px]" />
-              {short}
-            </Link>
-          ))}
+        <nav className="flex shrink-0 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+          {nav.map(({ to, short, Icon }) => {
+            const active = isActive(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold tracking-tight transition-colors",
+                  active ? "text-brand" : "text-faint",
+                )}
+              >
+                <Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} />
+                {short}
+              </Link>
+            );
+          })}
         </nav>
       </main>
 
-      {/* 4. Password Change Modal */}
+      {/* Password Change Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 p-6 w-full max-w-md relative">
-            <button onClick={() => setShowPasswordModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-               <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-lg">
+            <button onClick={() => setShowPasswordModal(false)} className="absolute right-4 top-4 text-faint transition-colors hover:text-muted" aria-label="Fechar">
+              <X className="size-5" />
             </button>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Alterar Senha de Acesso</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Mantenha seus dados e credenciais de acesso atualizados com segurança.</p>
+            <h2 className="font-serif text-xl font-normal text-ink">Alterar dados de acesso</h2>
+            <p className="mt-1.5 text-sm text-muted">E-mail de contato e senha do portal.</p>
 
             {modalError && (
-              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs rounded-lg border border-red-100 dark:border-red-800">
-                {modalError}
-              </div>
+              <div className="mt-4 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">{modalError}</div>
             )}
             {modalSuccess && (
-              <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-xs rounded-lg border border-emerald-100 dark:border-emerald-800">
-                {modalSuccess}
-              </div>
+              <div className="mt-4 rounded-lg border border-ok/25 bg-ok-wash px-3.5 py-3 text-sm text-brand-fg">{modalSuccess}</div>
             )}
 
-            <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+            <form onSubmit={handlePasswordChangeSubmit} className="mt-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">E-mail Cadastrado</label>
-                <input required type="email" value={emailForm} onChange={(e) => setEmailForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" placeholder="exemplo@empresa.com" />
+                <label className={CHROME_LABEL}>E-mail de contato</label>
+                <input required type="email" value={emailForm} onChange={(e) => setEmailForm(e.target.value)} className={CHROME_FIELD} placeholder="exemplo@empresa.com" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nova Senha (deixe em branco se não quiser alterar)</label>
-                <input type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+                <label className={CHROME_LABEL}>Nova senha (deixe em branco para manter)</label>
+                <input type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className={CHROME_FIELD} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Confirmar Nova Senha</label>
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+                <label className={CHROME_LABEL}>Confirmar nova senha</label>
+                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={CHROME_FIELD} />
               </div>
-              <button disabled={isSaving} type="submit" className="w-full py-2.5 bg-slate-900 dark:bg-virgula-green text-white rounded-xl text-sm font-bold shadow-md hover:opacity-90 transition-opacity">
-                {isSaving ? "Salvando..." : "Confirmar Alterações"}
+              <button disabled={isSaving} type="submit" className="w-full rounded-lg bg-brand py-2.5 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50">
+                {isSaving ? "Salvando..." : "Confirmar alterações"}
               </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }

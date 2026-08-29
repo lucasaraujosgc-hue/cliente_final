@@ -3,17 +3,11 @@ import { cn } from "../lib/utils";
 
 // Neutral shimmer block. Compose these to mirror the real layout so the page
 // doesn't jump when data arrives.
-export function Skeleton({
-  className,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+export function Skeleton({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       {...rest}
-      className={cn(
-        "animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-700/40",
-        className,
-      )}
+      className={cn("animate-pulse rounded-lg bg-sunken", className)}
     />
   );
 }
@@ -21,25 +15,26 @@ export function Skeleton({
 // Loading state for the client dashboard — roughly the shape of the real one.
 export function ClientDashboardSkeleton() {
   return (
-    <div className="space-y-6 pb-24 px-4 sm:px-6 max-w-7xl mx-auto" aria-busy="true">
-      <div className="flex items-center justify-between pt-3">
+    <div className="space-y-5" aria-busy="true">
+      <div className="flex items-start justify-between">
         <div className="space-y-2">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-7 w-56" />
+          <Skeleton className="h-7 w-52" />
+          <Skeleton className="h-4 w-64" />
         </div>
-        <Skeleton className="h-10 w-[200px]" />
+        <Skeleton className="h-9 w-40" />
       </div>
-      <Skeleton className="h-28 w-full" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-40 w-full rounded-2xl" />
+      <Skeleton className="h-64 w-full rounded-2xl" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Skeleton className="h-64 lg:col-span-2" />
-        <Skeleton className="h-64" />
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <Skeleton className="h-64 rounded-2xl" />
+        <Skeleton className="h-64 rounded-2xl" />
       </div>
-      <Skeleton className="h-80 w-full" />
     </div>
   );
 }

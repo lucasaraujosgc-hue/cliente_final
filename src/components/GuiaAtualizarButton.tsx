@@ -110,97 +110,70 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
 
   return (
     <>
-      {/* MODAL DE CARREGAMENTO PREMIUM COM BACKDROP BLUR E GRADIENT PULSE */}
       {loading && isSupported && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-md transition-all duration-300">
-           <div className="bg-white/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800/80 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-5 max-w-sm mx-4 text-center animate-in zoom-in-95 duration-200">
-               <div className="relative w-16 h-16 flex items-center justify-center">
-                   {/* Anel de carregamento gradiente */}
-                   <div className="absolute inset-0 rounded-full border-4 border-slate-100 dark:border-slate-800"></div>
-                   <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-600 dark:border-t-indigo-400 animate-spin"></div>
-                   <RefreshCw className="w-6 h-6 text-indigo-600 dark:text-indigo-400 animate-pulse" />
-               </div>
-               <div className="space-y-1.5">
-                   <h3 className="font-extrabold text-lg text-slate-950 dark:text-white tracking-tight">Recalculando Guia</h3>
-                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                       Acessando os servidores do <strong className="text-indigo-600 dark:text-indigo-400">Integra Contador</strong> para calcular multas, encargos e gerar o novo PIX.
-                   </p>
-               </div>
-           </div>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-line bg-surface p-8 text-center shadow-lg">
+            <RefreshCw className="size-7 animate-spin text-brand" strokeWidth={1.6} />
+            <div>
+              <h3 className="font-serif text-lg font-normal text-ink">Recalculando a guia</h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                Consultando o Integra Contador para calcular multa, juros e gerar o novo PIX.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="flex flex-col gap-2.5 w-full mt-2">
+      <div className="mt-1 flex w-full flex-col gap-2">
         {isOverdue && !atualizada && !mensagemEnviada && (
           <button
             onClick={handleAtualizar}
             disabled={loading}
-            className="group relative flex items-center justify-center gap-2 h-10 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.97] text-white text-xs font-black rounded-xl shadow-md shadow-indigo-200 dark:shadow-none hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none w-full"
+            className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3.5 text-xs font-semibold text-ink shadow-xs transition-colors hover:bg-sunken disabled:opacity-50"
             title={`Recalcular ${tipoLabel}`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500 ${loading ? "animate-spin" : ""}`} />
-            {loading ? (isSupported ? "Calculando..." : "Solicitando...") : `Recalcular Guia em Atraso`}
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.9} />
+            {loading ? (isSupported ? "Calculando..." : "Solicitando...") : "Recalcular guia em atraso"}
           </button>
         )}
 
-        {/* CARTÃO DE SUCESSO PREMIUM PÓS-RECÁLCULO */}
         {atualizada && novaDataVencimento && (
-          <div className="bg-gradient-to-br from-emerald-50/80 to-teal-50/40 dark:from-emerald-950/20 dark:to-teal-950/10 border border-emerald-200/60 dark:border-emerald-900/40 rounded-2xl p-4 shadow-xs flex flex-col gap-3.5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="flex items-start gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                <Check className="w-3.5 h-3.5 font-bold" />
-              </div>
-              <div className="space-y-0.5">
-                <p className="text-xs font-black text-emerald-900 dark:text-emerald-300">Guia Atualizada com Sucesso!</p>
-                <p className="text-[10px] text-emerald-600/90 dark:text-emerald-400/80 leading-relaxed">
-                  Encargos e multas calculados até a nova data de vencimento.
-                </p>
-              </div>
+          <div className="flex flex-col gap-3 rounded-xl border border-brand/25 bg-brand-wash p-4">
+            <div className="flex items-start gap-2">
+              <Check className="mt-0.5 size-4 shrink-0 text-brand" strokeWidth={2.2} />
+              <p className="text-xs font-semibold text-brand-fg">
+                Guia recalculada — multa e juros até o novo vencimento.
+              </p>
             </div>
-
-            {/* Metadados da guia recalculada */}
-            <div className="grid grid-cols-2 gap-2 bg-white/65 dark:bg-slate-900/40 border border-emerald-100/50 dark:border-emerald-900/20 rounded-xl p-2.5 text-center">
-              <div className="border-r border-emerald-100/40 dark:border-emerald-900/20">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Novo Vencimento</p>
-                <p className="text-xs font-black text-slate-800 dark:text-emerald-200 mt-0.5">
-                  {novaDataVencimento.split("-").reverse().join("/")}
-                </p>
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Valor Total</p>
-                <p className="text-xs font-black text-slate-800 dark:text-emerald-200 mt-0.5">
-                  {novoValor ? novoValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "N/D"}
-                </p>
-              </div>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line text-center">
+              {[
+                { l: "Novo vencimento", v: novaDataVencimento.split("-").reverse().join("/") },
+                { l: "Valor total", v: novoValor ? brl(novoValor) : "—" },
+              ].map(({ l, v }) => (
+                <div key={l} className="bg-surface px-2 py-2">
+                  <p className="text-[9px] font-semibold uppercase tracking-wide text-faint">{l}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-ink tabular-nums">{v}</p>
+                </div>
+              ))}
             </div>
-
-            {/* Ações interativas premium */}
-            <div className="flex gap-2 w-full">
+            <div className="flex gap-2">
               {pdfPath && (
                 <button
                   onClick={() => openDocument(guia.id, "view").catch((e) => setErro(e.message))}
-                  className="flex-1 flex items-center justify-center gap-1.5 h-9 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-extrabold rounded-xl transition-colors shadow-xs"
+                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface text-[11px] font-semibold text-ink transition-colors hover:bg-sunken"
                 >
-                  <Download className="w-3.5 h-3.5" /> PDF Guia
+                  <Download className="size-3.5" strokeWidth={1.9} /> PDF
                 </button>
               )}
               {pixCode && (
                 <button
                   onClick={handleCopyPix}
-                  className={`flex-1 flex items-center justify-center gap-1.5 h-9 text-[11px] font-extrabold rounded-xl transition-all duration-200 active:scale-[0.97] shadow-sm ${
-                    copied 
-                      ? "bg-emerald-600 text-white" 
-                      : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 dark:shadow-none"
-                  }`}
+                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand text-[11px] font-semibold text-white transition-colors hover:bg-brand-strong"
                 >
                   {copied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 animate-in zoom-in duration-200" /> PIX Copiado!
-                    </>
+                    <><Check className="size-3.5" strokeWidth={2.2} /> Copiado</>
                   ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" /> Copiar PIX
-                    </>
+                    <><Copy className="size-3.5" strokeWidth={1.9} /> Copiar PIX</>
                   )}
                 </button>
               )}
@@ -208,27 +181,25 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
           </div>
         )}
 
-        {/* STATUS AGUARDANDO CONTADOR */}
         {mensagemEnviada && (
-          <div className="flex items-start gap-2.5 p-3.5 bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl animate-in fade-in duration-300">
-              <Send className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-              <div className="space-y-0.5">
-                  <p className="text-xs font-black text-blue-950 dark:text-blue-350">Solicitação Enviada</p>
-                  <p className="text-[10px] text-blue-600 dark:text-blue-400 leading-relaxed">
-                      Como esta guia não suporta recálculo automático via API, enviamos uma notificação direta ao seu contador para que ele realize o cálculo manualmente e nos envie.
-                  </p>
-              </div>
+          <div className="flex items-start gap-2.5 rounded-xl border border-line bg-sunken px-3.5 py-3">
+            <Send className="mt-0.5 size-4 shrink-0 text-muted" strokeWidth={1.9} />
+            <p className="text-xs leading-relaxed text-muted">
+              <span className="font-semibold text-ink">Solicitação enviada.</span> Esta guia não
+              recalcula sozinha — o contador vai calcular e reenviar.
+            </p>
           </div>
         )}
 
-        {/* ALERTA DE ERRO INTEGRADO */}
         {erro && (
-          <div className="flex items-center gap-2 p-2.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-xl animate-in shake duration-300">
-            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-extrabold leading-tight">{erro}</span>
+          <div className="flex items-center gap-2 rounded-lg border border-danger/25 bg-danger-wash px-3 py-2">
+            <AlertCircle className="size-4 shrink-0 text-danger" strokeWidth={1.9} />
+            <span className="text-xs font-medium leading-tight text-danger">{erro}</span>
           </div>
         )}
       </div>
     </>
   );
 }
+
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# local scratch / tooling
+tmp-preview.cjs
+.claude/settings.local.json

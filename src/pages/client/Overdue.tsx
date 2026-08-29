@@ -1,9 +1,25 @@
 import { apiFetch, openDocument } from "../../lib/apiClient";
-import React, { useState, useEffect } from "react";
-import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
-import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign, Send } from "lucide-react";
+import { useState, useEffect } from "react";
+import { isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
+import { Download, CheckCircle, RotateCw, Send } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
+import { Skeleton } from "../../components/Skeleton";
+
+const brl = (n: number) =>
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const ghostBtn =
+  "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-semibold text-ink transition-colors hover:bg-sunken";
+
+function fmtDate(d?: string | null) {
+  if (!d) return "—";
+  if (d.includes("-")) {
+    const [y, m, day] = d.split("T")[0].split("-");
+    return `${day}/${m}/${y}`;
+  }
+  return d;
+}
 
 export function ClientOverdue() {
   const [loading, setLoading] = useState(true);
@@ -12,52 +28,51 @@ export function ClientOverdue() {
 
   const loadData = async () => {
     setIsRefreshing(true);
-    const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      const response = await apiFetch("/api/client/dashboard", {
-        
-      });
+      const response = await apiFetch("/api/client/dashboard", {});
       const data = await response.json();
-      
+
       const today = startOfDay(new Date());
-      
+
       // Filtra documentos enviados pelo contador que estão pendentes e com prazo expirado
-      const overdue = data.documents.filter((doc: any) => {
-        if (doc.status === "paid" || doc.status === "ok") return false;
-        if (!doc.dueDate) return false;
-        
-        try {
-          let dueDateObj;
-          if (doc.dueDate.includes("/")) {
-            const [day, month, year] = doc.dueDate.split("/").map(Number);
-            dueDateObj = new Date(year, month - 1, day);
-          } else if (doc.dueDate.includes("-")) {
-            const parts = doc.dueDate.split("T")[0].split("-");
-            dueDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-          } else {
-            dueDateObj = parseISO(doc.dueDate);
+      const overdue = data.documents
+        .filter((doc: any) => {
+          if (doc.status === "paid" || doc.status === "ok") return false;
+          if (!doc.dueDate) return false;
+
+          try {
+            let dueDateObj;
+            if (doc.dueDate.includes("/")) {
+              const [day, month, year] = doc.dueDate.split("/").map(Number);
+              dueDateObj = new Date(year, month - 1, day);
+            } else if (doc.dueDate.includes("-")) {
+              const parts = doc.dueDate.split("T")[0].split("-");
+              dueDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            } else {
+              dueDateObj = parseISO(doc.dueDate);
+            }
+            if (isNaN(dueDateObj.getTime())) return false;
+
+            return isBefore(startOfDay(dueDateObj), startOfDay(today));
+          } catch (e) {
+            return false;
           }
-          if (isNaN(dueDateObj.getTime())) return false;
-          
-          return isBefore(startOfDay(dueDateObj), startOfDay(today));
-        } catch (e) {
-          return false;
-        }
-      }).sort((a: any, b: any) => {
-        const parseDate = (d: string) => {
-          if (!d) return 0;
-          if (d.includes("/")) {
-            const [day, month, year] = d.split("/").map(Number);
-            return new Date(year, month - 1, day).getTime();
-          } else if (d.includes("-")) {
-            const parts = d.split("T")[0].split("-");
-            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-          }
-          return parseISO(d).getTime();
-        };
-        return parseDate(a.dueDate) - parseDate(b.dueDate);
-      });
-      
+        })
+        .sort((a: any, b: any) => {
+          const parseDate = (d: string) => {
+            if (!d) return 0;
+            if (d.includes("/")) {
+              const [day, month, year] = d.split("/").map(Number);
+              return new Date(year, month - 1, day).getTime();
+            } else if (d.includes("-")) {
+              const parts = d.split("T")[0].split("-");
+              return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+            }
+            return parseISO(d).getTime();
+          };
+          return parseDate(a.dueDate) - parseDate(b.dueDate);
+        });
+
       setOverdueDocs(overdue);
     } catch (e) {
       console.error(e);
@@ -72,15 +87,11 @@ export function ClientOverdue() {
   }, []);
 
   const handleMarkAsPaid = async (docId: string) => {
-    const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
       const res = await apiFetch(`/api/client/mark-doc/${docId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          
-        },
-        body: JSON.stringify({ status: "paid" })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
       });
       if (res.ok) {
         loadData();
@@ -110,162 +121,159 @@ export function ClientOverdue() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col justify-center items-center h-96 space-y-4">
-        <RotateCw className="w-8 h-8 text-indigo-600 animate-spin" />
-        <span className="text-sm text-slate-500 font-medium animate-pulse">Buscando guias em atraso...</span>
-      </div>
-    );
-  }
+  const totalOverdue = overdueDocs.reduce((sum, doc) => {
+    const val = doc.extractedData?.extractedValue;
+    return sum + (typeof val === "number" && doc.status !== "paid" ? val : 0);
+  }, 0);
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto px-4 sm:px-6 pb-16 animate-in fade-in slide-in-from-bottom-3 duration-550">
-      
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-          <AlertCircle className="w-7 h-7 text-rose-500 shrink-0" />
-          Guias em Atraso
-        </h1>
+    <div className="space-y-5">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="font-serif text-[1.75rem] font-normal leading-tight text-ink">
+            Guias em atraso
+          </h1>
+          {!loading && (
+            <p className="mt-1 text-sm text-muted tabular-nums">
+              {overdueDocs.length === 0
+                ? "Sua empresa está regular."
+                : `${overdueDocs.length} ${overdueDocs.length === 1 ? "guia vencida" : "guias vencidas"}${
+                    totalOverdue > 0 ? ` · ${brl(totalOverdue)} no total` : ""
+                  }`}
+            </p>
+          )}
+        </div>
         <button
           onClick={loadData}
           disabled={isRefreshing}
-          className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          className={`${ghostBtn} self-start disabled:opacity-50 sm:self-auto`}
         >
-          <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-          {isRefreshing ? "Sincronizando..." : "Sincronizar"}
+          <RotateCw
+            className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`}
+            strokeWidth={1.9}
+          />
+          {isRefreshing ? "Atualizando…" : "Atualizar"}
         </button>
-      </div>
+      </header>
 
-      {overdueDocs.length === 0 ? (
-        /* CARD TUDO EM DIA */
-        <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-md border border-slate-200/60 dark:border-slate-800/80 rounded-3xl p-16 text-center shadow-sm max-w-2xl mx-auto animate-in zoom-in-98 duration-305">
-          <div className="w-20 h-20 bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20 shadow-inner">
-            <CheckCircle className="w-10 h-10 text-emerald-500" />
-          </div>
-          <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2 tracking-tight">Tudo em Dia! 🎉</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
-            Parabéns, você não possui nenhuma guia ou imposto pendente em atraso. Sua empresa está regularizada.
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : overdueDocs.length === 0 ? (
+        <div className="rounded-2xl border border-line bg-surface px-5 py-16 text-center shadow-sm">
+          <CheckCircle className="mx-auto size-9 text-brand" strokeWidth={1.5} />
+          <h2 className="mt-3 font-serif text-lg font-normal text-ink">
+            Nenhuma guia em atraso
+          </h2>
+          <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
+            Sua empresa está regular. As guias vencidas aparecem aqui.
           </p>
         </div>
       ) : (
-        /* GRID DE GUIAS EM ATRASO */
-        <div className="space-y-3">
+        <ul className="space-y-3">
           {overdueDocs.map((doc: any) => {
-            const daysOverdue = getDaysOverdue(doc.dueDate);
-            const isHighlighted = true;
+            const days = getDaysOverdue(doc.dueDate);
+            const paid = doc.status === "paid";
+            const value = doc.extractedData?.extractedValue;
             return (
-              <div 
-                key={doc.id} 
-                className={`relative overflow-hidden p-4 rounded-2xl border transition-all shadow-xs ${doc.status === "paid" ? "bg-white/40 dark:bg-slate-900/10 border-slate-100 dark:border-slate-800 opacity-75" : "bg-gradient-to-r from-red-50/50 to-amber-50/20 border-amber-200 dark:from-rose-950/15 dark:to-amber-950/5 dark:border-rose-900/40"}`}
+              <li
+                key={doc.id}
+                className={`rounded-xl border border-line border-l-[3px] bg-surface p-4 ${
+                  paid ? "border-l-line opacity-70" : "border-l-danger"
+                }`}
               >
-                <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${doc.status === "paid" ? "bg-emerald-500" : "bg-rose-500"}`} />
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-                  <div className="flex items-start sm:items-center gap-3">
-                    <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 sm:mt-0 ${doc.status === "paid" ? "bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20" : "bg-rose-500/10 text-rose-500 dark:bg-rose-500/20"}`}>
-                      {doc.status === "paid" ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5 animate-pulse" />}
-                    </div>
-
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm capitalize">
-                          {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : (doc.category || 'Geral')}
-                        </h4>
-                        {doc.status === "paid" ? (
-                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                            Pago
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20 animate-pulse">
-                            Atrasado {daysOverdue} {daysOverdue === 1 ? "dia" : "dias"}
-                          </span>
-                        )}
-                        {doc.competence && (
-                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                            Comp: {doc.competence}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
-                        </span>
-                        {doc.extractedData?.extractedValue && (
-                          <>
-                            <span>•</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                              <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                            </span>
-                          </>
-                        )}
-                        <span>•</span>
-                        <span className="font-medium break-all">Arquivo: {doc.title || "Documento"}</span>
-                      </div>
-                    </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-[15px] font-normal leading-snug text-ink">
+                      {doc.title || "Documento"}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted tabular-nums">
+                      {doc.competence ? `Competência ${doc.competence} · ` : ""}
+                      venceu {fmtDate(doc.dueDate)}
+                    </p>
                   </div>
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      paid ? "bg-brand-wash text-brand-fg" : "bg-danger-wash text-danger"
+                    }`}
+                  >
+                    {paid ? "Pago" : `Atrasada ${days} ${days === 1 ? "dia" : "dias"}`}
+                  </span>
+                </div>
 
-                  {doc.status === "waiting_accountant" ? (
-                     <div className="flex items-center p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl mt-3 sm:mt-0 sm:self-center w-full sm:w-auto">
-                         <span className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                             <Send className="w-3.5 h-3.5" /> Aguardando contador.
-                         </span>
-                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-2 self-start sm:self-center w-full sm:w-auto mt-2 sm:mt-0">
-                      <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
-                        {doc.fileUrl && (
-                          <button
-                            onClick={() => openDocument(doc.id, 'download', { filename: doc.title })}
-                            className="flex-1 sm:flex-none h-8 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Baixar
-                          </button>
-                        )}
-                        {doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
-                          <div className="flex-1 sm:flex-none">
-                            <PixScannerButton docId={doc.id} />
-                          </div>
-                        )}
-                        {doc.status !== "paid" ? (
-                          <button
-                            onClick={() => handleMarkAsPaid(doc.id)}
-                            className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
-                          >
-                            Marcar como Pago
-                          </button>
-                        ) : (
-                          <div className="flex-1 sm:flex-none h-10 px-3 bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-500 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs opacity-70">
-                            <CheckCircle className="w-4 h-4" />
-                            Pago
-                          </div>
-                        )}
-                      </div>
-                      {doc.status !== "paid" && (
-                        <div className="w-full mt-2">
-                          <GuiaAtualizarButton 
-                            clienteId={doc.clientId}
-                            guia={{
-                              id: doc.id,
-                              tipoGuia: (doc.category === "DCTFWEB" || doc.category === "INSS" || doc.category?.toUpperCase()?.includes("INSS") || doc.title?.toUpperCase()?.includes("DCTFWEB") || doc.title?.toUpperCase()?.includes("INSS")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.category?.toUpperCase()?.includes("SIMPLES") || doc.title?.toUpperCase()?.includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
-                              competencia: doc.competence || "01/2026",
-                              status: doc.status,
-                              title: doc.title
-                            }}
-                            isOverdue={true}
-                            onAtualizado={() => {}}
-                          />
-                        </div>
+                {value != null && (
+                  <p className="mt-2 font-serif text-lg leading-none text-ink tabular-nums">
+                    {brl(value)}
+                  </p>
+                )}
+
+                {doc.status === "waiting_accountant" ? (
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-sunken px-3 py-2 text-xs font-medium text-muted">
+                    <Send className="size-3.5" strokeWidth={1.9} /> Aguardando o contador
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {doc.fileUrl && (
+                        <button
+                          onClick={() =>
+                            openDocument(doc.id, "download", { filename: doc.title })
+                          }
+                          className={`${ghostBtn} flex-1 sm:flex-none`}
+                        >
+                          <Download className="size-3.5" strokeWidth={1.9} /> Baixar
+                        </button>
+                      )}
+                      {doc.fileUrl?.toLowerCase().endsWith(".pdf") && (
+                        <PixScannerButton docId={doc.id} />
+                      )}
+                      {!paid ? (
+                        <button
+                          onClick={() => handleMarkAsPaid(doc.id)}
+                          className="inline-flex h-9 flex-1 items-center justify-center rounded-lg bg-brand px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-brand-strong sm:flex-none"
+                        >
+                          Marcar como pago
+                        </button>
+                      ) : (
+                        <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-semibold text-brand-fg">
+                          <CheckCircle className="size-4" strokeWidth={1.9} /> Pago
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
+                    {!paid && (
+                      <GuiaAtualizarButton
+                        clienteId={doc.clientId}
+                        guia={{
+                          id: doc.id,
+                          tipoGuia:
+                            doc.category === "DCTFWEB" ||
+                            doc.category === "INSS" ||
+                            doc.category?.toUpperCase()?.includes("INSS") ||
+                            doc.title?.toUpperCase()?.includes("DCTFWEB") ||
+                            doc.title?.toUpperCase()?.includes("INSS")
+                              ? "DCTFWEB_INSS"
+                              : doc.category === "SIMPLES_NACIONAL" ||
+                                  doc.category?.toUpperCase()?.includes("SIMPLES") ||
+                                  doc.title?.toUpperCase()?.includes("SIMPLES")
+                                ? "DAS_SIMPLES"
+                                : "OUTROS",
+                          competencia: doc.competence || "01/2026",
+                          status: doc.status,
+                          title: doc.title,
+                        }}
+                        isOverdue={true}
+                        onAtualizado={() => {}}
+                      />
+                    )}
+                  </div>
+                )}
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );
