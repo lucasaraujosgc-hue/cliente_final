@@ -381,6 +381,21 @@ export function registerClientRoutes(app: Express) {
           console.warn("[SERPRO API] Guia gerada sem PIX copia e cola extraido do PDF.");
         }
 
+        // Valor da guia recalculada: DAS traz na resposta da API; DCTFWEB não,
+        // então extrai do texto do PDF (mesma função usada nos webhooks). Sem
+        // isso o dashboard continua mostrando o valor antigo em "pendências".
+        let resolvedValue: number | null =
+          typeof valorTotal === "number" && !isNaN(valorTotal) ? valorTotal : null;
+        if (resolvedValue == null) {
+          try {
+            const { extractValueFromPdfBuffer } = await import("../qrExtractor");
+            resolvedValue = await extractValueFromPdfBuffer(pdfBuffer, tipoGuia);
+          } catch (err) {
+            console.warn("Nao foi possivel extrair o valor do PDF da guia:", err);
+          }
+        }
+        console.log(`[SERPRO API] Valor resolvido da guia: ${resolvedValue}`);
+
         let guiaId: number;
         let realFileUrl: string;
 
@@ -395,7 +410,7 @@ export function registerClientRoutes(app: Express) {
               competencia: competencia,
               status: "CONCLUIDO",
               dataVencimento: vencFormatado,
-              valorTotal: valorTotal,
+              valorTotal: resolvedValue,
               pdfPath: "", // Atualizado abaixo
               createdAt: new Date(),
               concluidoAt: new Date(),
@@ -419,6 +434,20 @@ export function registerClientRoutes(app: Express) {
 
           // Atualiza o documento original associado
           if (documentId && isUuid(documentId)) {
+            const [orig] = await tx
+              .select()
+              .from(documents)
+              .where(eq(documents.id, documentId));
+
+            // Preserva o resto do extractedData, só troca o valor pelo recalculado.
+            let extractedData: any = orig?.extractedData ?? {};
+            if (typeof extractedData !== "object" || Array.isArray(extractedData)) {
+              extractedData = { original: extractedData };
+            }
+            if (resolvedValue != null) {
+              extractedData = { ...extractedData, extractedValue: resolvedValue };
+            }
+
             await tx
               .update(documents)
               .set({
@@ -426,6 +455,7 @@ export function registerClientRoutes(app: Express) {
                 fileUrl: realFileUrl,
                 pixCode,
                 status: "GUIA_ATUALIZADA",
+                extractedData,
               })
               .where(eq(documents.id, documentId));
           }
@@ -439,7 +469,7 @@ export function registerClientRoutes(app: Express) {
           status: "CONCLUIDO",
           guiaId: guiaId!,
           dataVencimento: vencFormatado,
-          valorTotal: valorTotal,
+          valorTotal: resolvedValue,
           pdfPath: realFileUrl!,
           pixCode,
         });

@@ -110,8 +110,12 @@ export function DueDatesCard({
                       {doc.title || "Documento"}
                     </h3>
                     <p className="mt-1 text-xs text-muted tabular-nums">
-                      {doc.competence ? `Competência ${doc.competence} · ` : ""}
-                      vence {fmtDate(doc.dueDate)}
+                      {[
+                        doc.competence ? `Competência ${doc.competence}` : null,
+                        doc.dueDate ? `vence ${fmtDate(doc.dueDate)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <span

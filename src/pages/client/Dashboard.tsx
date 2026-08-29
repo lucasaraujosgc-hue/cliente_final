@@ -16,12 +16,12 @@ import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PwaBanner } from "./dashboard/PwaBanner";
 import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
-import { KpiCards } from "./dashboard/KpiCards";
 import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
 import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
 import { StatusHeroCard } from "./dashboard/StatusHeroCard";
 import { UpcomingDuesStrip, UpcomingDue } from "./dashboard/UpcomingDuesStrip";
+import { FeatureGrid } from "./dashboard/FeatureGrid";
 import { ClientDashboardSkeleton } from "../../components/Skeleton";
 
 export function ClientDashboard() {
@@ -61,6 +61,7 @@ export function ClientDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
   const guiasRef = useRef<HTMLDivElement>(null);
+  const chartsRef = useRef<HTMLDivElement>(null);
   let user = {};
   try {
     user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
@@ -487,18 +488,6 @@ export function ClientDashboard() {
     return sum + (typeof val === 'number' ? val : 0);
   }, 0);
 
-  // Filter pending ones explicitly
-  const pendingDocs = allCurrentDocs.filter((d: any) => 
-    d.status !== "paid" && 
-    d.dueDate && 
-    !['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())
-  );
-
-  const totalPendingValue = pendingDocs.reduce((sum: number, doc: any) => {
-    const val = doc.extractedData?.extractedValue;
-    return sum + (typeof val === 'number' ? val : 0);
-  }, 0);
-
   // Sort documents: Overdue first, followed by soon-to-expire, standard pending, and paid
   const sortedExpirations = [...allCurrentDocs].sort((a: any, b: any) => {
     const statusA = getDocDueStatus(a);
@@ -547,6 +536,16 @@ export function ClientDashboard() {
     if (competence) setSelectedCompetence(competence);
     setTimeout(() => guiasRef.current?.scrollIntoView({ block: "start" }), 60);
   };
+  const scrollToGuias = () => guiasRef.current?.scrollIntoView({ block: "start" });
+  const scrollToCharts = () => chartsRef.current?.scrollIntoView({ block: "start" });
+
+  // Counts for the feature grid — same filters the target pages use.
+  const vaultCount = data.documents.filter(
+    (d: any) => d.uploadedBy === "accountant",
+  ).length;
+  const uploadsCount = data.documents.filter(
+    (d: any) => d.category === "upload",
+  ).length;
 
   const monthsTotalBilling = billingForm.servicesRevenue + billingForm.salesRevenue;
   const hasBankStatement = data.documents.some((d: any) => d.category === "bank_statement" && d.competence === selectedCompetence);
@@ -683,24 +682,19 @@ export function ClientDashboard() {
         />
       </div>
 
-      <KpiCards
-        selectedCompetence={selectedCompetence}
-        monthsTotalBilling={monthsTotalBilling}
-        pendingDocsCount={pendingDocs.length}
-        totalPendingValue={totalPendingValue}
-        overdueDocsCount={allOverdueDocs.length}
-        totalOverdueValue={totalOverdueValue}
+      <FeatureGrid
+        pendingCount={pendingGuiasNotOverdue.length}
+        pendingTotal={totalPendingGuiasValue}
+        overdueCount={allOverdueDocs.length}
+        vaultCount={vaultCount}
+        uploadsCount={uploadsCount}
+        billingTotal={monthsTotalBilling}
+        notificationsOn={pushGranted}
+        onGoGuias={scrollToGuias}
+        onGoCharts={scrollToCharts}
+        onOpenNotifications={() => setShowPrefsModal(true)}
+        onEnableNotifications={() => subscribeToPush().then(() => setPushGranted(true))}
       />
-
-      {!pushGranted && (
-        <button
-          onClick={() => subscribeToPush().then(() => setPushGranted(true))}
-          className="flex w-full items-center gap-3 rounded-lg border border-brand/25 bg-brand-wash px-3.5 py-2.5 text-left text-sm text-brand-fg transition-colors hover:bg-brand-wash/70"
-        >
-          <Bell className="size-4 shrink-0" strokeWidth={1.9} />
-          <span className="font-medium">Ativar notificações de vencimento neste dispositivo</span>
-        </button>
-      )}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
         <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
@@ -732,7 +726,9 @@ export function ClientDashboard() {
         <SupportCards whatsappSupport={whatsappSupport} />
       </div>
 
-      <BillingHistoryCharts chartData={chartData} />
+      <div ref={chartsRef} className="scroll-mt-4">
+        <BillingHistoryCharts chartData={chartData} />
+      </div>
 
       {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
 
