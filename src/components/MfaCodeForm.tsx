@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { apiFetch, saveSession } from "../lib/apiClient";
+import { RateLimitNotice, lockUntilFrom } from "./RateLimitNotice";
 
 // Second step of the accountant login: enter the 6-digit code emailed after
 // username + password were accepted. On success it stores the session and calls
@@ -17,12 +18,15 @@ export function MfaCodeForm({
   const [challengeId, setChallengeId] = useState(initialChallengeId);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
   const [info, setInfo] = useState("Enviamos um código de acesso para o e-mail do contador.");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const locked = !!lockUntil;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (locked) return;
     setError("");
     setLoading(true);
     try {
@@ -32,6 +36,10 @@ export function MfaCodeForm({
         body: JSON.stringify({ challengeId, code }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok && data.token && data.refreshToken) {
         saveSession({
           kind: "accountant",
@@ -51,6 +59,7 @@ export function MfaCodeForm({
   };
 
   const resend = async () => {
+    if (locked) return;
     setError("");
     setResending(true);
     try {
@@ -60,6 +69,10 @@ export function MfaCodeForm({
         body: JSON.stringify({ challengeId }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok && data.challengeId) {
         setChallengeId(data.challengeId);
         setInfo("Se o código anterior expirou, um novo foi enviado.");
@@ -81,6 +94,9 @@ export function MfaCodeForm({
           {error}
         </div>
       )}
+      {lockUntil && (
+        <RateLimitNotice until={lockUntil} onExpire={() => setLockUntil(null)} />
+      )}
       <div>
         <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5">
           Código de verificação
@@ -99,10 +115,10 @@ export function MfaCodeForm({
       </div>
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || locked}
         className="w-full rounded-lg bg-brand py-3 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50"
       >
-        {loading ? "Verificando..." : "Confirmar e entrar"}
+        {locked ? "Aguarde para tentar de novo" : loading ? "Verificando..." : "Confirmar e entrar"}
       </button>
       <div className="flex items-center justify-between text-xs">
         <button type="button" onClick={onCancel} className="font-medium text-faint hover:text-muted">
@@ -111,7 +127,7 @@ export function MfaCodeForm({
         <button
           type="button"
           onClick={resend}
-          disabled={resending}
+          disabled={resending || locked}
           className="font-medium text-brand hover:text-brand-strong disabled:opacity-50"
         >
           {resending ? "Reenviando..." : "Reenviar código"}

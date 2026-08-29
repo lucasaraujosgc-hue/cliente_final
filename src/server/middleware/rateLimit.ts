@@ -18,9 +18,20 @@ export const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error:
-      "Muitas tentativas para esta conta. Aguarde alguns minutos e tente de novo.",
+  // Return the seconds left in the JSON body so the login screen can show a
+  // live countdown (response headers aren't readable cross-origin in the
+  // Capacitor build).
+  handler: (req, res, _next, options) => {
+    const resetTime = (req as unknown as { rateLimit?: { resetTime?: Date } })
+      .rateLimit?.resetTime;
+    const retryAfter = resetTime
+      ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
+      : Math.ceil(options.windowMs / 1000);
+    res.status(options.statusCode).json({
+      error:
+        "Limite de tentativas de login atingido. Aguarde o tempo indicado para tentar de novo.",
+      retryAfter,
+    });
   },
 });
 

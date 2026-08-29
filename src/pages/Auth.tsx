@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
 import { apiFetch, saveSession } from "../lib/apiClient";
 import { MfaCodeForm } from "../components/MfaCodeForm";
+import { RateLimitNotice, lockUntilFrom } from "../components/RateLimitNotice";
 
 function storeClientUser(user: unknown, remember: boolean) {
   const json = JSON.stringify(user);
@@ -26,6 +27,7 @@ export function Login() {
   const [cnpj, setCnpj] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
 
   const [showForgotPwd, setShowForgotPwd] = useState(false);
@@ -58,13 +60,19 @@ export function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockUntil && lockUntil > Date.now()) return;
+    setError("");
     try {
       const res = await apiFetch("/api/auth/client/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj, password })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok) {
         // Admin from the client form, 2FA on → go to the code step.
         if (data.mfaRequired && data.challengeId) {
@@ -213,6 +221,10 @@ export function Login() {
             </div>
           )}
 
+          {lockUntil && (
+            <RateLimitNotice until={lockUntil} onExpire={() => setLockUntil(null)} />
+          )}
+
           {mfaChallengeId ? (
             <div className="mt-7">
               <MfaCodeForm
@@ -267,8 +279,8 @@ export function Login() {
                 </button>
               </div>
 
-              <button type="submit" className={primaryBtn}>
-                Acessar
+              <button type="submit" disabled={!!lockUntil} className={primaryBtn}>
+                {lockUntil ? "Aguarde para tentar de novo" : "Acessar"}
               </button>
             </form>
           )}
@@ -385,11 +397,13 @@ export function AccountantLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockUntil && lockUntil > Date.now()) return;
     setError("");
     try {
       const res = await apiFetch("/api/auth/accountant/login", {
@@ -397,7 +411,11 @@ export function AccountantLogin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok) {
         if (data.mfaRequired && data.challengeId) {
           setMfaChallengeId(data.challengeId);
@@ -443,6 +461,10 @@ export function AccountantLogin() {
           </div>
         )}
 
+        {lockUntil && (
+          <RateLimitNotice until={lockUntil} onExpire={() => setLockUntil(null)} />
+        )}
+
         {mfaChallengeId ? (
           <div className="mt-7">
             <MfaCodeForm
@@ -475,8 +497,8 @@ export function AccountantLogin() {
                 required
               />
             </div>
-            <button type="submit" className={PRIMARY_BTN}>
-              Entrar
+            <button type="submit" disabled={!!lockUntil} className={PRIMARY_BTN}>
+              {lockUntil ? "Aguarde para tentar de novo" : "Entrar"}
             </button>
           </form>
         )}
