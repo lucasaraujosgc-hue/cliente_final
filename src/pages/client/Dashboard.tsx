@@ -21,6 +21,7 @@ import { SupportCards } from "./dashboard/SupportCards";
 import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
 import { StatusHeroCard } from "./dashboard/StatusHeroCard";
 import { FeatureGrid } from "./dashboard/FeatureGrid";
+import { NfseCallout } from "./dashboard/NfseCallout";
 import { ClientDashboardSkeleton } from "../../components/Skeleton";
 
 export function ClientDashboard() {
@@ -659,6 +660,8 @@ export function ClientDashboard() {
           onReloadData={loadData}
         />
       </div>
+
+      <NfseCallout />
 
       <FeatureGrid
         pendingCount={pendingGuiasNotOverdue.length}
