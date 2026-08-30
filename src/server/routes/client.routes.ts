@@ -1,7 +1,6 @@
 import { Express } from "express";
 import fs from "fs";
 import path from "path";
-import https from "https";
 import { eq, desc, asc } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -11,6 +10,7 @@ import {
   messages,
   serproConfig,
   guiasGeradas,
+  paymentChecks,
 } from "../schema";
 import { transporter } from "../services/mailer";
 import { upload, GUIAS_PDF_DIR, validateUploadedFileContent } from "../services/upload";
@@ -20,8 +20,8 @@ import {
   sendDataUri,
   isReadableFile,
 } from "../services/files";
-import { decryptSecret, decryptBytes } from "../services/secretbox";
-import { getSerproToken, serproPost, isUuid } from "../services/serpro";
+import { getSerproToken, serproPost, isUuid, buildSerproContext } from "../services/serpro";
+import { recordGuiaInteraction, isFederalGuia } from "../services/paymentQuery";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 import { getClientId } from "../types";
@@ -36,6 +36,7 @@ import {
   clientUploadSchema,
   clientPreferencesSchema,
   clientGuiaSchema,
+  clientGuiaInteractionSchema,
   docStatusSchema,
 } from "../schemas/validation";
 import { upsertBilling } from "../services/billing";
@@ -71,12 +72,22 @@ export function registerClientRoutes(app: Express) {
     const serproConf = await db.select().from(serproConfig).limit(1);
     const whatsappSupport = serproConf[0]?.whatsappSupport || "";
 
+    // Payment-check state per guia (read-only). No SERPRO call here — the
+    // backend job owns the querying; this just surfaces the current status.
+    const checks = await db
+      .select()
+      .from(paymentChecks)
+      .where(eq(paymentChecks.clientId, clientId));
+    const checkByDoc = new Map(checks.map((c) => [c.documentId, c]));
+
     res.json({
       client: clientSelfDTO(client),
       whatsappSupport,
       documents: docs.map((d) => ({
         ...d,
         createdAt: d.createdAt.toISOString(),
+        paymentStatus: checkByDoc.get(d.id)?.status ?? null,
+        paymentNextCheckAt: checkByDoc.get(d.id)?.nextCheckAt?.toISOString() ?? null,
       })),
       billing,
       messages: msgs.map((m) => ({
@@ -224,19 +235,15 @@ export function registerClientRoutes(app: Express) {
           return res.status(404).json({ error: "Cliente não encontrado." });
         }
 
-        const serproList = await db.select().from(serproConfig).limit(1);
-        if (serproList.length === 0 || !serproList[0].consumerKey) {
-           return res.status(400).json({ error: "Integra Contador não configurado. Acesse as configurações." });
+        // Shared SERPRO wiring (config decrypt + trial/prod URL + mTLS agent).
+        let serproCtx;
+        try {
+          serproCtx = await buildSerproContext();
+        } catch (e: any) {
+          return res.status(Number(e?.status) || 400).json({ error: e?.message || "Integra Contador não configurado." });
         }
-        // Secrets are stored encrypted at rest — decrypt only in memory, here.
-        const config = {
-          ...serproList[0],
-          consumerSecret: decryptSecret(serproList[0].consumerSecret),
-          certSenha: decryptSecret(serproList[0].certSenha),
-        };
-        const cnpjContrato = config.cnpjContratante
-            ? config.cnpjContratante.replace(/\D/g, "")
-            : "00000000000100";
+        const config = serproCtx.config;
+        const cnpjContrato = serproCtx.cnpjContratante;
 
         const client = clientList[0];
         const anoPA = competencia.substring(0, 4);
@@ -274,42 +281,15 @@ export function registerClientRoutes(app: Express) {
         }
 
         console.log(`[SERPRO API] Enviando POST /Emitir para tipo ${tipoGuia}`);
-        
-        let certAgent;
-        if (config.ambiente === "producao") {
-          if (!config.certPath) {
-            return res.status(400).json({
-              error: "Certificado digital nao configurado. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
-            });
-          }
 
-          try {
-            const pfx = decryptBytes(await fs.promises.readFile(config.certPath));
-            certAgent = new https.Agent({
-              pfx,
-              passphrase: config.certSenha || "",
-              rejectUnauthorized: true,
-            });
-          } catch (err: any) {
-            console.error("Certificado SERPRO configurado nao pode ser lido:", {
-              path: config.certPath,
-              code: err?.code,
-              message: err?.message,
-            });
-            return res.status(400).json({
-              error: "Certificado digital nao encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
-            });
-          }
-        }
+        const certAgent = serproCtx.certAgent;
 
         let pdfBase64;
         let vencFormatado;
         let valorTotal;
         try {
           const tokens = await getSerproToken(config, certAgent);
-          const baseUrl = config.ambiente === "producao"
-            ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
-            : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
+          const baseUrl = serproCtx.baseUrl;
 
           const apiResp = await serproPost(`${baseUrl}/Emitir`, tokens, payload, certAgent);
           if (!apiResp.ok) {
@@ -598,6 +578,33 @@ export function registerClientRoutes(app: Express) {
       res.status(404).json({ error: "Doc not found" });
     }
   });
+
+  // Records that the client interacted with a guia (opened the boleto / copied
+  // the PIX / copied the payment code). Does NOT hit SERPRO — it just schedules
+  // a payment check for the next day (one per guia, deduped). The backend job
+  // (services/paymentQuery.ts) does the actual querying.
+  app.post(
+    "/api/client/guia/:documentId/interaction",
+    verifyClientAuth,
+    validateBody(clientGuiaInteractionSchema),
+    async (req, res) => {
+      const clientId = getClientId(req);
+      const docId = req.params.documentId;
+      if (!isUuid(docId)) return res.status(400).json({ error: "ID inválido." });
+
+      const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+      if (!doc) return res.status(404).json({ error: "Documento não encontrado." });
+      if (doc.clientId !== clientId) return res.status(403).json({ error: "Acesso negado." });
+
+      // Only guias with a payment status worth tracking. Others: silent no-op.
+      if (!isFederalGuia(doc) || doc.status === "paid") {
+        return res.json({ scheduled: false, nextCheckAt: null });
+      }
+
+      const result = await recordGuiaInteraction(docId, clientId, req.body.type);
+      res.json(result);
+    },
+  );
 
   app.post("/api/client/message", verifyClientAuth, validateBody(clientMessageSchema), async (req, res) => {
     try {

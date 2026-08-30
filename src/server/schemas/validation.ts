@@ -131,6 +131,14 @@ export const serproConfigSchema = z.object({
   multipleFilesText: optStr(500),
 });
 
+export const accountantPaymentCheckSchema = z.object({
+  documentIds: z.array(z.string().uuid()).min(1, "Selecione ao menos uma guia.").max(150),
+});
+
+export const accountantPaymentCheckClientSchema = z.object({
+  clientId: z.string().uuid(),
+});
+
 // --- Client portal ----------------------------------------------------
 
 export const clientSetupProfileSchema = z.object({
@@ -156,6 +164,10 @@ export const clientGuiaSchema = z.object({
   tipoGuia: z.string().min(1).max(40),
   competencia: z.string().min(1).max(10),
   documentId: z.string().uuid().optional().or(z.literal("")),
+});
+
+export const clientGuiaInteractionSchema = z.object({
+  type: z.enum(["view", "copy_pix", "copy_barcode"]),
 });
 
 // --- Integration API --------------------------------------------------

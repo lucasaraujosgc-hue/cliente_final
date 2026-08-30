@@ -26,7 +26,7 @@ async function applyForwardMigrations(db: PGlite) {
 const EXPECTED_TABLES = [
   "clients", "documents", "billing_data", "messages", "subscriptions",
   "serpro_config", "guias_geradas", "scheduled_notifications", "audit_log",
-  "auth_sessions",
+  "auth_sessions", "payment_checks",
 ];
 
 async function tables(db: PGlite): Promise<Set<string>> {
@@ -91,6 +91,12 @@ async function assertTargetSchema(db: PGlite) {
   // 0002: every stored CNPJ is digits-only
   const cnpjs = await db.query<{ cnpj: string }>(`SELECT cnpj FROM clients`);
   for (const r of cnpjs.rows) expect(r.cnpj).toMatch(/^\d*$/);
+
+  // 0004: payment_checks — one row per guia (unique document_id), cascade FKs
+  expect(await constraintExists(db, "payment_checks_document_id_unique")).toBe(true);
+  expect(await fkDeleteRule(db, "payment_checks")).toBe("c"); // ON DELETE CASCADE
+  expect(await columnType(db, "payment_checks", "next_check_at")).toMatch(/timestamp/);
+  expect(await columnType(db, "payment_checks", "check_attempts")).toBe("integer");
 }
 
 // Approximates a database built by the pre-migrations src/server/db.ts:

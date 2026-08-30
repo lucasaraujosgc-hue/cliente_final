@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const clients = pgTable('clients', {
@@ -119,6 +119,32 @@ export const guiasGeradas = pgTable('guias_geradas', {
   createdAt: timestamp('created_at').defaultNow(),
   concluidoAt: timestamp('concluido_at')
 });
+
+// One row per guia whose payment status is being tracked. Created lazily the
+// first time the client interacts with the guia (opens it / copies the PIX).
+// The backend job (services/paymentQuery.ts) reads `next_check_at` to decide
+// which guias to query at SERPRO — never on portal open. `document_id` is unique
+// so there is exactly one scheduled check per guia (idempotency at the DB level).
+export const paymentChecks = pgTable('payment_checks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  documentId: uuid('document_id').notNull().unique().references(() => documents.id, { onDelete: 'cascade' }),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  // PENDENTE | PAGO | ERRO | NAO_APLICAVEL
+  status: text('status').notNull().default('PENDENTE'),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  // null = no check scheduled. The job selects rows with next_check_at <= now().
+  nextCheckAt: timestamp('next_check_at', { withTimezone: true }),
+  checkAttempts: integer('check_attempts').notNull().default(0),
+  lastInteractionAt: timestamp('last_interaction_at', { withTimezone: true }),
+  lastInteractionType: text('last_interaction_type'), // view | copy_pix | copy_barcode | manual
+  lastError: text('last_error'),
+  paidDetectedAt: timestamp('paid_detected_at', { withTimezone: true }),
+  paidSource: text('paid_source'), // serpro | accountant | client
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  dueIdx: index('payment_checks_due_idx').on(t.status, t.nextCheckAt),
+}));
 
 export const billingDataRelations = relations(billingData, ({ one }) => ({
 	client: one(clients, {

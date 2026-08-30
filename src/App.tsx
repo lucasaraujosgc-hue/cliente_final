@@ -28,6 +28,7 @@ const AccountantDashboard = named(() => import("./pages/accountant/Dashboard"), 
 const ClientsList = named(() => import("./pages/accountant/ClientsList"), "ClientsList");
 const ClientDetail = named(() => import("./pages/accountant/ClientDetail"), "ClientDetail");
 const AccountantNotifications = named(() => import("./pages/accountant/Notifications"), "AccountantNotifications");
+const AccountantPayments = named(() => import("./pages/accountant/Payments"), "AccountantPayments");
 const FileGallery = named(() => import("./pages/accountant/FileGallery"), "FileGallery");
 const Settings = named(() => import("./pages/accountant/Settings"), "Settings");
 const Devices = named(() => import("./pages/accountant/Devices"), "Devices");
@@ -60,6 +61,7 @@ export default function App() {
               <Route path="clients" element={<ClientsList />} />
               <Route path="client/:id" element={<ClientDetail />} />
               <Route path="notifications" element={<AccountantNotifications />} />
+              <Route path="payments" element={<AccountantPayments />} />
               <Route path="devices" element={<Devices />} />
               <Route path="audit" element={<Audit />} />
               <Route path="gallery" element={<FileGallery />} />

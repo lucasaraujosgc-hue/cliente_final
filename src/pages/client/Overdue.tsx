@@ -1,4 +1,5 @@
 import { apiFetch, openDocument } from "../../lib/apiClient";
+import { registerGuiaInteraction } from "../../lib/guiaInteraction";
 import { useState, useEffect } from "react";
 import { isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
 import { Download, CheckCircle, RotateCw, Send } from "lucide-react";
@@ -219,9 +220,10 @@ export function ClientOverdue() {
                     <div className="flex flex-wrap gap-2">
                       {doc.fileUrl && (
                         <button
-                          onClick={() =>
-                            openDocument(doc.id, "download", { filename: doc.title })
-                          }
+                          onClick={() => {
+                            registerGuiaInteraction(doc.id, "view");
+                            openDocument(doc.id, "download", { filename: doc.title });
+                          }}
                           className={`${ghostBtn} flex-1 sm:flex-none`}
                         >
                           <Download className="size-3.5" strokeWidth={1.9} /> Baixar

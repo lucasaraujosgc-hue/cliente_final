@@ -6,6 +6,9 @@ import { registerClientRoutes } from "./client.routes";
 import { registerAccountantRoutes } from "./accountant.routes";
 import { registerNotificationRoutes } from "./notifications.routes";
 import { registerFileRoutes } from "./files.routes";
+// Side-effect import: starts the payment-status background job (setInterval),
+// same activation pattern as services/notificationSweeper.ts.
+import "../services/paymentQuery";
 
 // Re-exported so existing imports of `triggerDebouncedDocumentNotification`
 // from "./routes" keep working after the split.

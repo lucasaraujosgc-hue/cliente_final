@@ -29,6 +29,13 @@
       "when": 1787907009658,
       "tag": "0003_auth_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788098399216,
+      "tag": "0004_payment_checks",
+      "breakpoints": true
     }
   ]
 }

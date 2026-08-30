@@ -5,6 +5,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
 import { documentFileUrl, documentAuthHeadersFresh } from "../lib/apiClient";
+import { registerGuiaInteraction } from "../lib/guiaInteraction";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const pdfLoadOptions = {
@@ -322,6 +323,7 @@ export function PixScannerButton({ docId }: PixScannerButtonProps) {
 
   const handleCopyClick = () => {
     if (pixCode) {
+      registerGuiaInteraction(docId, "copy_pix");
       copyToClipboard(pixCode);
     }
   };

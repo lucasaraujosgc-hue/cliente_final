@@ -1,4 +1,5 @@
 import { apiFetch, openDocument } from "../../lib/apiClient";
+import { registerGuiaInteraction } from "../../lib/guiaInteraction";
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
@@ -196,6 +197,7 @@ export function ClientVault() {
                   {doc.pixCode && (
                     <button
                       onClick={() => {
+                        registerGuiaInteraction(doc.id, "copy_pix");
                         navigator.clipboard.writeText(doc.pixCode);
                         setCopiedId(doc.id);
                         setTimeout(() => setCopiedId(null), 2000);
@@ -207,7 +209,13 @@ export function ClientVault() {
                     </button>
                   )}
                   {doc.fileUrl && (
-                    <button onClick={() => openDocument(doc.id, "view", { filename: doc.title })} className={ghostBtn}>
+                    <button
+                      onClick={() => {
+                        registerGuiaInteraction(doc.id, "view");
+                        openDocument(doc.id, "view", { filename: doc.title });
+                      }}
+                      className={ghostBtn}
+                    >
                       <Eye className="size-3.5" strokeWidth={1.9} /> Ver
                     </button>
                   )}

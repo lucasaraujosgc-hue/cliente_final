@@ -2,6 +2,7 @@ import { Copy, Check, Eye, Send, Download, CircleCheck } from "lucide-react";
 import { PixScannerButton } from "../../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../../components/GuiaAtualizarButton";
 import { openDocument } from "../../../lib/apiClient";
+import { registerGuiaInteraction } from "../../../lib/guiaInteraction";
 
 export interface DocDueStatus {
   label: string;
@@ -131,6 +132,15 @@ export function DueDatesCard({
                   </p>
                 )}
 
+                {!paid &&
+                  doc.paymentStatus === "PENDENTE" &&
+                  doc.paymentNextCheckAt && (
+                    <p className="mt-2 text-[11px] text-faint">
+                      Conferência de pagamento agendada — avisamos quando for
+                      identificado.
+                    </p>
+                  )}
+
                 {paidFlashId === doc.id && (
                   <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-brand-fg">
                     <CircleCheck className="size-4" strokeWidth={2.2} /> Guia
@@ -149,9 +159,10 @@ export function DueDatesCard({
                       {doc.fileUrl && (
                         <>
                           <button
-                            onClick={() =>
-                              openDocument(doc.id, "view", { filename: doc.title })
-                            }
+                            onClick={() => {
+                              registerGuiaInteraction(doc.id, "view");
+                              openDocument(doc.id, "view", { filename: doc.title });
+                            }}
                             className={`${ghostBtn} flex-1 sm:flex-none`}
                             title="Ver arquivo"
                           >
@@ -173,7 +184,10 @@ export function DueDatesCard({
 
                       {doc.pixCode ? (
                         <button
-                          onClick={() => onCopyCode(doc.id, doc.pixCode)}
+                          onClick={() => {
+                            registerGuiaInteraction(doc.id, "copy_pix");
+                            onCopyCode(doc.id, doc.pixCode);
+                          }}
                           className={`${ghostBtn} flex-1 border-brand/30 bg-brand-wash text-brand-fg hover:bg-brand-wash sm:flex-none`}
                         >
                           {copiedId === doc.id ? (

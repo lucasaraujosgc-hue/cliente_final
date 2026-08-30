@@ -1,6 +1,6 @@
 import { Express } from "express";
 import fs from "fs";
-import { eq, desc, inArray, or } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "../db";
 import {
   clients,
@@ -12,7 +12,9 @@ import {
   serproConfig,
   scheduledNotifications,
   auditLog,
+  paymentChecks,
 } from "../schema";
+import { checkPaymentsForDocuments, isFederalGuia } from "../services/paymentQuery";
 import { upload, uploadCert, validateUploadedFileContent } from "../services/upload";
 import { resolveUploadPath } from "../services/files";
 import { encryptSecret, encryptBytes } from "../services/secretbox";
@@ -46,6 +48,8 @@ import {
   serproConfigSchema,
   billingUpdateSchema,
   billingBulkSchema,
+  accountantPaymentCheckSchema,
+  accountantPaymentCheckClientSchema,
 } from "../schemas/validation";
 
 // Best-effort on-disk / inline size of a stored document, for the gallery
@@ -901,6 +905,115 @@ export function registerAccountantRoutes(app: Express) {
         console.error("ERRO SERPRO POST:", e);
         res.status(500).json({ error: "Falha ao salvar a configuração do Integra Contador." });
       }
+    },
+  );
+
+  // --- Consulta de pagamentos (manual / lote) -------------------------------
+
+  // Lista as guias pendentes (não pagas, com vencimento, federais) + o estado
+  // atual do rastreio de pagamento. `clientId` opcional filtra por empresa.
+  app.get("/api/accountant/payments", verifyAccountantAuth, async (req, res) => {
+    const clientId = typeof req.query.clientId === "string" ? req.query.clientId : null;
+
+    const docRows = await db
+      .select({
+        id: documents.id,
+        clientId: documents.clientId,
+        title: documents.title,
+        category: documents.category,
+        competence: documents.competence,
+        dueDate: documents.dueDate,
+        status: documents.status,
+        extractedData: documents.extractedData,
+      })
+      .from(documents)
+      .where(
+        clientId
+          ? and(eq(documents.clientId, clientId), isNotNull(documents.dueDate))
+          : isNotNull(documents.dueDate),
+      );
+
+    const pending = docRows.filter(
+      (d) => d.status !== "paid" && d.status !== "ok" && isFederalGuia(d),
+    );
+
+    const clientRows = await db.select({ id: clients.id, name: clients.name }).from(clients);
+    const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
+
+    const ids = pending.map((d) => d.id);
+    const checks = ids.length
+      ? await db.select().from(paymentChecks).where(inArray(paymentChecks.documentId, ids))
+      : [];
+    const checkByDoc = new Map(checks.map((c) => [c.documentId, c]));
+
+    res.json({
+      clients: clientRows,
+      guias: pending.map((d) => {
+        const c = checkByDoc.get(d.id);
+        const val = (d.extractedData as any)?.extractedValue;
+        return {
+          documentId: d.id,
+          clientId: d.clientId,
+          clientName: clientName.get(d.clientId) || "—",
+          title: d.title,
+          competence: d.competence,
+          dueDate: d.dueDate,
+          value: typeof val === "number" ? val : null,
+          paymentStatus: c?.status ?? "SEM_CONSULTA",
+          lastCheckedAt: c?.lastCheckedAt?.toISOString() ?? null,
+          nextCheckAt: c?.nextCheckAt?.toISOString() ?? null,
+          checkAttempts: c?.checkAttempts ?? 0,
+        };
+      }),
+    });
+  });
+
+  // Consulta agora um conjunto de guias (selecionadas na tela). Processamento
+  // no backend, com concorrência limitada (não dispara centenas de chamadas).
+  app.post(
+    "/api/accountant/payments/check",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckSchema),
+    async (req, res) => {
+      const result = await checkPaymentsForDocuments(req.body.documentIds);
+      await logAudit(req, "payment.batch_check", {
+        summary: `Consulta de pagamento em lote: ${result.checked} guia(s), ${result.paid} paga(s)`,
+        metadata: { selected: result.selected, paid: result.paid, errors: result.errors },
+      });
+      res.json(result);
+    },
+  );
+
+  // Consulta todas as guias pendentes de uma empresa.
+  app.post(
+    "/api/accountant/payments/check-client",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckClientSchema),
+    async (req, res) => {
+      const { clientId } = req.body;
+      const docRows = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.clientId, clientId), isNotNull(documents.dueDate)));
+      const ids = docRows
+        .filter((d) => d.status !== "paid" && d.status !== "ok" && isFederalGuia(d))
+        .map((d) => d.id);
+
+      if (ids.length === 0) {
+        return res.json({
+          selected: 0, checked: 0, paid: 0, notFound: 0, errors: 0, notApplicable: 0,
+          ranAt: new Date().toISOString(), results: [],
+        });
+      }
+
+      const result = await checkPaymentsForDocuments(ids);
+      await logAudit(req, "payment.client_check", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Consulta de pagamento do cliente: ${result.checked} guia(s), ${result.paid} paga(s)`,
+        metadata: { paid: result.paid, errors: result.errors },
+      });
+      res.json(result);
     },
   );
 }
