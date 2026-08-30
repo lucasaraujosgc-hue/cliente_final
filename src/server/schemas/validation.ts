@@ -170,6 +170,15 @@ export const clientGuiaInteractionSchema = z.object({
   type: z.enum(["view", "copy_pix", "copy_barcode"]),
 });
 
+// NFS-e — shape defined now even though POST /api/nfse/emissoes still 501s.
+export const nfseEmissaoCreateSchema = z.object({
+  competencia: z.string().min(1).max(10),
+  valorServicos: z.number().int().nonnegative(),
+  descricao: z.string().min(1).max(2000),
+  tomadorDoc: optStr(20),
+  tomadorNome: optStr(200),
+});
+
 // --- Integration API --------------------------------------------------
 
 export const integrationUploadDocSchema = z.object({

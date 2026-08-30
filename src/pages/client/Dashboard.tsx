@@ -20,7 +20,6 @@ import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
 import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
 import { StatusHeroCard } from "./dashboard/StatusHeroCard";
-import { UpcomingDuesStrip, UpcomingDue } from "./dashboard/UpcomingDuesStrip";
 import { FeatureGrid } from "./dashboard/FeatureGrid";
 import { ClientDashboardSkeleton } from "../../components/Skeleton";
 
@@ -516,26 +515,8 @@ export function ClientDashboard() {
     const val = doc.extractedData?.extractedValue;
     return sum + (typeof val === "number" ? val : 0);
   }, 0);
-  const nextDue = upcomingGuias[0] || null;
   const hasAnyGuia = data.documents.some(isGuiaLikeDoc);
 
-  const upcomingStripItems: UpcomingDue[] = upcomingGuias.slice(0, 4).map((d: any) => {
-    const st = getDocDueStatus(d);
-    return {
-      id: d.id,
-      title: d.title || "Guia",
-      competence: d.competence,
-      dueDate: d.dueDate,
-      value: typeof d.extractedData?.extractedValue === "number" ? d.extractedData.extractedValue : null,
-      isOverdue: Boolean(st.isOverdue),
-      isSoon: Boolean(st.isSoon),
-    };
-  });
-
-  const handlePickCompetence = (competence: string | null | undefined) => {
-    if (competence) setSelectedCompetence(competence);
-    setTimeout(() => guiasRef.current?.scrollIntoView({ block: "start" }), 60);
-  };
   const scrollToGuias = () => guiasRef.current?.scrollIntoView({ block: "start" });
   const scrollToCharts = () => chartsRef.current?.scrollIntoView({ block: "start" });
 
@@ -625,12 +606,9 @@ export function ClientDashboard() {
         overdueTotal={totalOverdueValue}
         pendingCount={pendingGuiasNotOverdue.length}
         pendingTotal={totalPendingGuiasValue}
-        nextDueDate={nextDue?.dueDate}
         hasAnyGuia={hasAnyGuia}
-        onSeeGuias={() => handlePickCompetence(undefined)}
+        onSeeGuias={scrollToGuias}
       />
-
-      <UpcomingDuesStrip items={upcomingStripItems} onPick={handlePickCompetence} />
 
       {!data.client?.firstAccessDone && (
         <div className="flex flex-col gap-3 rounded-xl border border-warn/25 bg-warn-wash px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">

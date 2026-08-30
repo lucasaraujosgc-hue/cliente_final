@@ -5,24 +5,11 @@ import { useNavigate } from "react-router-dom";
 const brl = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// Accepts ISO (YYYY-MM-DD) or BR (DD/MM/YYYY) and returns "DD/MM".
-function fmtShortDate(d?: string | null) {
-  if (!d) return null;
-  if (d.includes("-")) {
-    const [, m, day] = d.split("T")[0].split("-");
-    return `${day}/${m}`;
-  }
-  const parts = d.split("/");
-  if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
-  return d;
-}
-
 interface StatusHeroCardProps {
   overdueCount: number;
   overdueTotal: number;
   pendingCount: number;
   pendingTotal: number;
-  nextDueDate?: string | null;
   hasAnyGuia: boolean;
   /** Scroll the guia list into view (used by the "pending" state). */
   onSeeGuias: () => void;
@@ -70,7 +57,6 @@ export function StatusHeroCard({
   overdueTotal,
   pendingCount,
   pendingTotal,
-  nextDueDate,
   hasAnyGuia,
   onSeeGuias,
 }: StatusHeroCardProps) {
@@ -94,18 +80,14 @@ export function StatusHeroCard({
     action = { label: "Ver guias vencidas", onClick: () => navigate("/overdue") };
   } else if (pendingCount > 0) {
     tone = "warn";
-    const nd = fmtShortDate(nextDueDate);
     title =
       pendingCount === 1
         ? "Você tem 1 guia a pagar"
         : `Você tem ${pendingCount} guias a pagar`;
     detail =
-      [
-        pendingTotal > 0 ? `${brl(pendingTotal)} no total` : null,
-        nd ? `próxima vence ${nd}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ") || "Confira os vencimentos abaixo.";
+      pendingTotal > 0
+        ? `${brl(pendingTotal)} no total. Confira os detalhes abaixo.`
+        : "Confira os detalhes abaixo.";
     action = { label: "Ver guias", onClick: onSeeGuias };
   } else if (hasAnyGuia) {
     tone = "ok";

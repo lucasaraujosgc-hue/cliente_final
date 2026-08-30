@@ -24,6 +24,7 @@ const ClientDashboard = named(() => import("./pages/client/Dashboard"), "ClientD
 const ClientOverdue = named(() => import("./pages/client/Overdue"), "ClientOverdue");
 const ClientVault = named(() => import("./pages/client/Vault"), "ClientVault");
 const ClientUploads = named(() => import("./pages/client/MyUploads"), "ClientUploads");
+const ClientNfse = named(() => import("./pages/client/Nfse"), "ClientNfse");
 const AccountantDashboard = named(() => import("./pages/accountant/Dashboard"), "AccountantDashboard");
 const ClientsList = named(() => import("./pages/accountant/ClientsList"), "ClientsList");
 const ClientDetail = named(() => import("./pages/accountant/ClientDetail"), "ClientDetail");
@@ -53,6 +54,7 @@ export default function App() {
               <Route path="/overdue" element={<ClientOverdue />} />
               <Route path="/vault" element={<ClientVault />} />
               <Route path="/uploads" element={<ClientUploads />} />
+              <Route path="/nfse" element={<ClientNfse />} />
             </Route>
 
             {/* Accountant Routes */}

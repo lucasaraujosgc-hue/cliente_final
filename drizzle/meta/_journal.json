@@ -36,6 +36,13 @@
       "when": 1788098399216,
       "tag": "0004_payment_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788102593842,
+      "tag": "0005_nfse_emissoes",
+      "breakpoints": true
     }
   ]
 }

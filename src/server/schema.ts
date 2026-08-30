@@ -146,6 +146,29 @@ export const paymentChecks = pgTable('payment_checks', {
   dueIdx: index('payment_checks_due_idx').on(t.status, t.nextCheckAt),
 }));
 
+// NFS-e (Nota Fiscal de Serviço eletrônica). The emitter is NOT implemented yet
+// — this table is the scaffold so the future municipal/nacional integration
+// (services/nfse.ts) has a place to persist emissions. Empty until then.
+export const nfseEmissoes = pgTable('nfse_emissoes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  // rascunho | processando | emitida | rejeitada | cancelada
+  status: text('status').notNull().default('rascunho'),
+  competencia: text('competencia'), // MM/YYYY
+  valorServicos: integer('valor_servicos'), // centavos
+  descricao: text('descricao'),
+  tomadorDoc: text('tomador_doc'), // CPF/CNPJ do tomador
+  tomadorNome: text('tomador_nome'),
+  numeroNota: text('numero_nota'),
+  codigoVerificacao: text('codigo_verificacao'),
+  providerRef: text('provider_ref'), // id no provedor externo
+  xml: text('xml'),
+  pdfUrl: text('pdf_url'),
+  erroMsg: text('erro_msg'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const billingDataRelations = relations(billingData, ({ one }) => ({
 	client: one(clients, {
 		fields: [billingData.clientId],

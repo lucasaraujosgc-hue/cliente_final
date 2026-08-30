@@ -24,13 +24,12 @@ export function ClientDashboardSkeleton() {
         <Skeleton className="h-9 w-40" />
       </div>
       <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-64 w-full rounded-2xl" />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-24 rounded-2xl" />
         ))}
       </div>
-      <Skeleton className="h-40 w-full rounded-2xl" />
-      <Skeleton className="h-64 w-full rounded-2xl" />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Skeleton className="h-64 rounded-2xl" />
         <Skeleton className="h-64 rounded-2xl" />

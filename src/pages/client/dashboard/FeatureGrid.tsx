@@ -7,6 +7,7 @@ import {
   Upload,
   TrendingUp,
   Bell,
+  FileText,
 } from "lucide-react";
 
 const brl = (n: number) =>
@@ -28,6 +29,7 @@ interface Tile {
   Icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   accent: Accent;
   alert?: boolean;
+  badge?: string;
   onClick: () => void;
 }
 
@@ -118,6 +120,15 @@ export function FeatureGrid({
       accent: notificationsOn ? "brand" : "slate",
       onClick: notificationsOn ? onOpenNotifications : onEnableNotifications,
     },
+    {
+      key: "nfse",
+      title: "Nota de Serviço",
+      sub: "Disponível em nov/2026",
+      Icon: FileText,
+      accent: "slate",
+      badge: "Em breve",
+      onClick: () => navigate("/nfse"),
+    },
   ];
 
   return (
@@ -131,10 +142,17 @@ export function FeatureGrid({
             t.alert ? "border-danger/30 bg-danger-wash" : "border-line bg-surface"
           }`}
         >
-          <span
-            className={`grid size-9 place-items-center rounded-xl ${accentRing[t.accent]}`}
-          >
-            <t.Icon className="size-[17px]" strokeWidth={1.9} />
+          <span className="flex w-full items-start justify-between">
+            <span
+              className={`grid size-9 place-items-center rounded-xl ${accentRing[t.accent]}`}
+            >
+              <t.Icon className="size-[17px]" strokeWidth={1.9} />
+            </span>
+            {t.badge && (
+              <span className="rounded-full bg-sunken px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                {t.badge}
+              </span>
+            )}
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-semibold leading-tight text-ink">
