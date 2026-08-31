@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 /* next-themes toggles a `.dark` class on <html>; make `dark:` follow it
@@ -6,11 +6,18 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Fonts as on `main`: Inter for everything. `--font-serif` is kept only as
-     an alias so the components that reference `font-serif` for display headings
-     keep working — they render Inter (heavier weight, see the base rule below). */
+  /* Body/UI as on `main`: Inter. `--font-serif` is kept only as an alias so
+     the components that reference `font-serif` for display headings keep
+     working — they render Inter (heavier weight, see the base rule below).
+     `--font-brand` (Fraunces) is used ONLY by the "Vírgula," wordmark. */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-brand: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* ---- "Vírgula," wordmark — its own small palette, spec-defined -------- */
+  --color-wordmark: oklch(0.36 0.06 165);        /* "Vírgula" — deep green */
+  --color-wordmark-comma: oklch(0.72 0.14 55);   /* the comma — warm gold */
+  --color-wordmark-sub: oklch(0.48 0.02 160);    /* "CONTÁBIL" — muted */
 
   /* ---- Surfaces & ink — `main` palette (slate) ------------------------- */
   --color-ground: #f8fafc;     /* app background — slate-50 */
@@ -82,6 +89,11 @@
     --color-virgula-green: #34d399;
     --color-virgula-primary: #f1f5f9;
     --color-virgula-muted: #94a3b8;
+
+    /* wordmark, lightened so it holds on a dark surface */
+    --color-wordmark: oklch(0.9 0.045 165);
+    --color-wordmark-comma: oklch(0.78 0.13 60);
+    --color-wordmark-sub: oklch(0.66 0.02 160);
 
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
