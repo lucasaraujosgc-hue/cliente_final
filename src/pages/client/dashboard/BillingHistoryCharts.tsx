@@ -57,7 +57,7 @@ export function BillingHistoryCharts({ chartData }: BillingHistoryChartsProps) {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
-        <h3 className="font-serif text-base font-normal text-ink">Faturamento declarado</h3>
+        <h3 className="font-serif text-base font-semibold text-ink">Faturamento declarado</h3>
         <p className="mt-0.5 text-xs text-muted">Histórico dos últimos meses</p>
         <div className="mt-3">
           <Legend
@@ -92,7 +92,7 @@ export function BillingHistoryCharts({ chartData }: BillingHistoryChartsProps) {
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
-        <h3 className="font-serif text-base font-normal text-ink">Entradas e serviços tomados</h3>
+        <h3 className="font-serif text-base font-semibold text-ink">Entradas e serviços tomados</h3>
         <p className="mt-0.5 text-xs text-muted">Comparativo mensal</p>
         <div className="mt-3">
           <Legend

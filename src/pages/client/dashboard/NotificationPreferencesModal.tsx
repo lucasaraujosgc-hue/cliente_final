@@ -44,7 +44,7 @@ export function NotificationPreferencesModal({
         >
           <X className="size-5" />
         </button>
-        <h3 className="font-serif text-xl font-normal text-ink">Notificações</h3>
+        <h3 className="font-serif text-xl font-semibold text-ink">Notificações</h3>
         <p className="mt-1.5 text-sm text-muted">Escolha o que quer receber por push.</p>
 
         <label className="mt-5 flex items-start gap-3 rounded-lg border border-line bg-sunken px-3.5 py-3 select-none">

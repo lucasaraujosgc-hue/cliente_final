@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 /* next-themes toggles a `.dark` class on <html>; make `dark:` follow it
@@ -6,84 +6,88 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+  /* One friendly geometric family for the whole product (matches the app the
+     client wants it to feel like). `--font-serif` is kept as an alias so the
+     many `font-serif` display headings keep working — they just render Poppins
+     now, heavier weight carrying the hierarchy instead of a serif. */
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Poppins", ui-sans-serif, system-ui, sans-serif;
 
   /* ---- Surfaces & ink (light; dark overrides in @layer base) ------------ */
-  --color-ground: #f4f7f5;     /* app background — warm-cool near-white, faint green bias */
+  --color-ground: #f4f6fb;     /* app background — very light cool blue-grey */
   --color-surface: #ffffff;    /* cards, sheets */
-  --color-sunken: #eef2f0;     /* inputs, insets, table stripes */
-  --color-ink: #17211d;        /* primary text */
-  --color-muted: #566860;      /* secondary text */
-  --color-faint: #8a9b93;      /* tertiary / micro-labels */
-  --color-line: #e2e8e4;       /* hairlines, borders */
+  --color-sunken: #edf0f7;     /* inputs, insets, table stripes */
+  --color-ink: #1b2440;        /* primary text — deep navy */
+  --color-muted: #6a7391;      /* secondary text */
+  --color-faint: #9aa1bc;      /* tertiary / micro-labels */
+  --color-line: #e3e7f2;       /* hairlines, borders */
 
-  /* ---- Brand (one green, used everywhere the old indigo/emerald mix was) */
-  --color-brand: #0d7a51;
-  --color-brand-strong: #0a5c3d;
-  --color-brand-wash: #e5f2ea;
-  --color-brand-fg: #0a5c3d;   /* text/icon sitting on --color-brand-wash */
+  /* ---- Brand (one blue, cornflower — the reference app's hero colour) --- */
+  --color-brand: #3b63f0;
+  --color-brand-strong: #2e4fcc;
+  --color-brand-wash: #e9eefe;
+  --color-brand-fg: #2a48b8;   /* text/icon sitting on --color-brand-wash */
 
-  /* wordmark comma + rare warm highlight */
-  --color-gold: oklch(0.7 0.13 62);
+  /* wordmark comma + rare warm highlight — the friendly yellow accent */
+  --color-gold: #f2c94c;
 
   /* ---- Semantic (separate from the brand accent) ---------------------- */
-  --color-ok: #0d7a51;
-  --color-ok-wash: #e5f2ea;
-  --color-warn: #a9741a;
-  --color-warn-wash: #f7ecd6;
-  --color-danger: #b0472c;
-  --color-danger-wash: #f7e3dc;
+  --color-ok: #16a96b;
+  --color-ok-wash: #e4f6ee;
+  --color-warn: #e8930c;
+  --color-warn-wash: #fdf0dc;
+  --color-danger: #ec4436;
+  --color-danger-wash: #fdece9;
 
   /* legacy aliases — existing components still reference these */
-  --color-virgula-green: #0d7a51;
-  --color-virgula-card: #151b18;
-  --color-virgula-primary: #16473a;
-  --color-virgula-accent: oklch(0.7 0.13 62);
-  --color-virgula-muted: #566860;
+  --color-virgula-green: #3b63f0;
+  --color-virgula-card: #1b2440;
+  --color-virgula-primary: #1b2440;
+  --color-virgula-accent: #f2c94c;
+  --color-virgula-muted: #6a7391;
 
   /* ---- Shape & depth ------------------------------------------------- */
   --radius-lg: 0.75rem;
-  --radius-xl: 0.875rem;
-  --radius-2xl: 1rem;
-  --radius-3xl: 1.125rem;   /* pulls the app's many rounded-3xl down from 24px */
+  --radius-xl: 0.9375rem;
+  --radius-2xl: 1.125rem;
+  --radius-3xl: 1.375rem;
 
-  --shadow-xs: 0 1px 2px rgba(20, 40, 32, 0.04);
-  --shadow-sm: 0 1px 2px rgba(20, 40, 32, 0.05), 0 1px 3px rgba(20, 40, 32, 0.04);
-  --shadow-md: 0 4px 12px -4px rgba(20, 40, 32, 0.10), 0 2px 6px -2px rgba(20, 40, 32, 0.06);
-  --shadow-lg: 0 12px 32px -12px rgba(20, 40, 32, 0.16), 0 4px 12px -6px rgba(20, 40, 32, 0.08);
+  --shadow-xs: 0 1px 2px rgba(27, 36, 64, 0.05);
+  --shadow-sm: 0 1px 2px rgba(27, 36, 64, 0.06), 0 2px 6px -2px rgba(27, 36, 64, 0.05);
+  --shadow-md: 0 6px 20px -6px rgba(27, 36, 64, 0.14), 0 2px 8px -3px rgba(27, 36, 64, 0.08);
+  --shadow-lg: 0 18px 40px -14px rgba(27, 36, 64, 0.20), 0 6px 16px -8px rgba(27, 36, 64, 0.10);
 }
 
 @layer base {
   .dark {
-    --color-ground: #0c110f;
-    --color-surface: #141b18;
-    --color-sunken: #1b2420;
-    --color-ink: #e8efeb;
-    --color-muted: #a4b3ac;
-    --color-faint: #74847c;
-    --color-line: #27312c;
+    --color-ground: #0f1420;
+    --color-surface: #171e2e;
+    --color-sunken: #1e2637;
+    --color-ink: #eaedf4;
+    --color-muted: #9aa3b5;
+    --color-faint: #6b7488;
+    --color-line: #28324a;
 
-    --color-brand: #23b483;
-    --color-brand-strong: #3ec99a;
-    --color-brand-wash: #12281e;
-    --color-brand-fg: #62d3a6;
+    --color-brand: #5b84f5;
+    --color-brand-strong: #7797f7;
+    --color-brand-wash: #1b2540;
+    --color-brand-fg: #90aafb;
 
-    --color-ok: #23b483;
-    --color-ok-wash: #12281e;
-    --color-warn: #d9a34a;
-    --color-warn-wash: #2c2411;
-    --color-danger: #dd8b6c;
-    --color-danger-wash: #2c1a13;
+    --color-ok: #35c98c;
+    --color-ok-wash: #16301f;
+    --color-warn: #e8a94a;
+    --color-warn-wash: #2f2410;
+    --color-danger: #f0736a;
+    --color-danger-wash: #33191a;
 
-    --color-virgula-green: #23b483;
-    --color-virgula-primary: #e8efeb;
-    --color-virgula-muted: #a4b3ac;
+    --color-virgula-green: #5b84f5;
+    --color-virgula-primary: #eaedf4;
+    --color-virgula-muted: #9aa3b5;
 
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 16px 40px -16px rgba(0, 0, 0, 0.6);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 22px -8px rgba(0, 0, 0, 0.55);
+    --shadow-lg: 0 20px 44px -18px rgba(0, 0, 0, 0.65);
   }
 
   html {
@@ -114,7 +118,8 @@
 
   ::selection { background: color-mix(in srgb, var(--color-brand) 22%, transparent); }
 
-  /* Fraunces display: default to a calm weight + optical tightening.
-     Components can still override with font-medium / font-semibold. */
-  .font-serif { letter-spacing: -0.012em; }
+  /* Display headings: Poppins, a touch tighter, a shade heavier than body so
+     hierarchy reads without a second family. Components can still override
+     with font-normal / font-bold. */
+  .font-serif { font-weight: 600; letter-spacing: -0.015em; }
 }

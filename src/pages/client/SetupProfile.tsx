@@ -54,7 +54,7 @@ export function SetupProfile() {
         <p className="mt-9 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
           Primeiro acesso
         </p>
-        <h1 className="mt-1.5 font-serif text-2xl font-normal text-ink">Bem-vindo(a) ao portal</h1>
+        <h1 className="mt-1.5 font-serif text-2xl font-semibold text-ink">Bem-vindo(a) ao portal</h1>
         <p className="mt-1.5 text-sm text-muted">
           Cadastre um e-mail de contato e troque a senha inicial (o CNPJ) por uma sua.
         </p>

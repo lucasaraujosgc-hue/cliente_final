@@ -115,7 +115,7 @@ export function StatusHeroCard({
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             Situação das suas guias
           </p>
-          <h2 className="mt-0.5 font-serif text-lg font-normal leading-tight text-ink sm:text-xl">
+          <h2 className="mt-0.5 font-serif text-lg font-semibold leading-tight text-ink sm:text-xl">
             {title}
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted">{detail}</p>

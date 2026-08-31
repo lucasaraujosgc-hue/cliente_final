@@ -188,7 +188,7 @@ export function Login() {
         </span>
         <Logo size="lg" onDark />
         <div className="relative max-w-sm">
-          <h2 className="font-serif text-4xl font-normal leading-[1.15] text-balance">
+          <h2 className="font-serif text-4xl font-semibold leading-[1.15] text-balance">
             Suas guias, vencimentos e documentos — num lugar só.
           </h2>
           <p className="mt-4 text-sm leading-relaxed text-white/60">
@@ -206,7 +206,7 @@ export function Login() {
             <Logo size="md" />
           </div>
 
-          <h1 className="font-serif text-2xl font-normal text-ink">
+          <h1 className="font-serif text-2xl font-semibold text-ink">
             {mfaChallengeId ? "Verificação em duas etapas" : "Entrar no portal"}
           </h1>
           <p className="mt-1.5 text-sm text-muted">
@@ -307,7 +307,7 @@ export function Login() {
             >
               ✕
             </button>
-            <h2 className="font-serif text-xl font-normal text-ink">Recuperar senha</h2>
+            <h2 className="font-serif text-xl font-semibold text-ink">Recuperar senha</h2>
             <p className="mt-1.5 text-sm text-muted">
               {resetStep === 1
                 ? "Informe seu CNPJ para receber um código por e-mail."
@@ -446,7 +446,7 @@ export function AccountantLogin() {
         <p className="mt-9 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
           Painel administrativo
         </p>
-        <h1 className="mt-1.5 font-serif text-2xl font-normal text-ink">
+        <h1 className="mt-1.5 font-serif text-2xl font-semibold text-ink">
           {mfaChallengeId ? "Verificação em duas etapas" : "Área do contador"}
         </h1>
         <p className="mt-1.5 text-sm text-muted">

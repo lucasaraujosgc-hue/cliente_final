@@ -131,7 +131,7 @@ export function ClientOverdue() {
     <div className="space-y-5">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-serif text-[1.75rem] font-normal leading-tight text-ink">
+          <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-ink">
             Guias em atraso
           </h1>
           {!loading && (
@@ -166,7 +166,7 @@ export function ClientOverdue() {
       ) : overdueDocs.length === 0 ? (
         <div className="rounded-2xl border border-line bg-surface px-5 py-16 text-center shadow-sm">
           <CheckCircle className="mx-auto size-9 text-brand" strokeWidth={1.5} />
-          <h2 className="mt-3 font-serif text-lg font-normal text-ink">
+          <h2 className="mt-3 font-serif text-lg font-semibold text-ink">
             Nenhuma guia em atraso
           </h2>
           <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
@@ -188,7 +188,7 @@ export function ClientOverdue() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-serif text-[15px] font-normal leading-snug text-ink">
+                    <h3 className="font-serif text-[15px] font-semibold leading-snug text-ink">
                       {doc.title || "Documento"}
                     </h3>
                     <p className="mt-1 text-xs text-muted tabular-nums">

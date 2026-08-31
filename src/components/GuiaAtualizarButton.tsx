@@ -115,7 +115,7 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
           <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-line bg-surface p-8 text-center shadow-lg">
             <RefreshCw className="size-7 animate-spin text-brand" strokeWidth={1.6} />
             <div>
-              <h3 className="font-serif text-lg font-normal text-ink">Recalculando a guia</h3>
+              <h3 className="font-serif text-lg font-semibold text-ink">Recalculando a guia</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 Consultando o Integra Contador para calcular multa, juros e gerar o novo PIX.
               </p>

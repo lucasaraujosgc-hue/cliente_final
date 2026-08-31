@@ -17,7 +17,7 @@ export function NfseCallout() {
           <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white">
             A partir de novembro/2026
           </span>
-          <h2 className="mt-2 font-serif text-lg font-normal leading-tight text-ink sm:text-xl">
+          <h2 className="mt-2 font-serif text-lg font-semibold leading-tight text-ink sm:text-xl">
             Emissão de Nota de Serviço
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted">

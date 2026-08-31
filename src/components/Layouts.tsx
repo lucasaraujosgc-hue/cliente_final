@@ -225,7 +225,7 @@ export function ClientLayout() {
             <button onClick={() => setShowPasswordModal(false)} className="absolute right-4 top-4 text-faint transition-colors hover:text-muted" aria-label="Fechar">
               <X className="size-5" />
             </button>
-            <h2 className="font-serif text-xl font-normal text-ink">Alterar dados de acesso</h2>
+            <h2 className="font-serif text-xl font-semibold text-ink">Alterar dados de acesso</h2>
             <p className="mt-1.5 text-sm text-muted">E-mail de contato e senha do portal.</p>
 
             {modalError && (

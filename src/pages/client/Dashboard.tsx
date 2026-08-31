@@ -554,7 +554,7 @@ export function ClientDashboard() {
     <div className="space-y-5">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="font-serif text-xl font-normal leading-tight text-ink sm:text-[1.75rem]">
+          <h1 className="font-serif text-xl font-semibold leading-tight text-ink sm:text-[1.75rem]">
             Olá, {data.client.name}
           </h1>
           <p className="mt-1 hidden items-center gap-2 text-sm text-muted sm:flex">
@@ -679,7 +679,7 @@ export function ClientDashboard() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
         <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
-          <h3 className="font-serif text-base font-normal text-ink">
+          <h3 className="font-serif text-base font-semibold text-ink">
             Extrato bancário — {selectedCompetence}
           </h3>
           <p className="mt-0.5 text-xs text-muted">Envie o extrato do mês em PDF ou OFX.</p>

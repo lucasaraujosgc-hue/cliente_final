@@ -49,7 +49,7 @@ export function ClientUploads() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="font-serif text-[1.75rem] font-normal leading-tight text-ink">Meus envios</h1>
+        <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-ink">Meus envios</h1>
         <p className="mt-1 text-sm text-muted">Documentos que você mandou para o escritório.</p>
       </header>
 
@@ -114,7 +114,7 @@ export function ClientUploads() {
       {myUploads.length === 0 ? (
         <div className="rounded-2xl border border-line bg-surface px-5 py-16 text-center shadow-sm">
           <Folder className="mx-auto size-9 text-faint" strokeWidth={1.5} />
-          <p className="mt-3 font-serif text-lg font-normal text-ink">Nenhum envio ainda</p>
+          <p className="mt-3 font-serif text-lg font-semibold text-ink">Nenhum envio ainda</p>
           <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted">
             Os arquivos que você enviar para o escritório aparecem aqui.
           </p>

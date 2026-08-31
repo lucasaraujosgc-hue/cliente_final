@@ -14,7 +14,7 @@ export function ClientNfse() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="font-serif text-[1.75rem] font-normal leading-tight text-ink">
+        <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-ink">
           Emissão de Nota de Serviço
         </h1>
         <p className="mt-1 text-sm text-muted">
@@ -30,7 +30,7 @@ export function ClientNfse() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             Em preparação
           </p>
-          <h2 className="mt-0.5 font-serif text-lg font-normal leading-tight text-ink">
+          <h2 className="mt-0.5 font-serif text-lg font-semibold leading-tight text-ink">
             Disponível a partir de novembro/2026
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted">
@@ -42,7 +42,7 @@ export function ClientNfse() {
 
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <header className="border-b border-line px-5 py-4">
-          <h2 className="font-serif text-base font-normal text-ink">Notas emitidas</h2>
+          <h2 className="font-serif text-base font-semibold text-ink">Notas emitidas</h2>
         </header>
         {emissoes.length === 0 ? (
           <div className="px-5 py-14 text-center">

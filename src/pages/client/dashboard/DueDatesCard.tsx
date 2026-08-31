@@ -57,7 +57,7 @@ export function DueDatesCard({
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-5 py-4">
-        <h2 className="font-serif text-lg font-normal text-ink">
+        <h2 className="font-serif text-lg font-semibold text-ink">
           Guias de {selectedCompetence}
         </h2>
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
@@ -107,7 +107,7 @@ export function DueDatesCard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-serif text-[15px] font-normal leading-snug text-ink">
+                    <h3 className="font-serif text-[15px] font-semibold leading-snug text-ink">
                       {doc.title || "Documento"}
                     </h3>
                     <p className="mt-1 text-xs text-muted tabular-nums">
