@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 /* next-themes toggles a `.dark` class on <html>; make `dark:` follow it
@@ -6,86 +6,85 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* One friendly geometric family for the whole product (matches the app the
-     client wants it to feel like). `--font-serif` is kept as an alias so the
-     many `font-serif` display headings keep working — they just render Poppins
-     now, heavier weight carrying the hierarchy instead of a serif. */
-  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  /* Fonts as on `main`: Inter for everything. `--font-serif` is kept only as
+     an alias so the components that reference `font-serif` for display headings
+     keep working — they render Inter (heavier weight, see the base rule below). */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* ---- Surfaces & ink (light; dark overrides in @layer base) ------------ */
-  --color-ground: #f4f6fb;     /* app background — very light cool blue-grey */
+  /* ---- Surfaces & ink — `main` palette (slate) ------------------------- */
+  --color-ground: #f8fafc;     /* app background — slate-50 */
   --color-surface: #ffffff;    /* cards, sheets */
-  --color-sunken: #edf0f7;     /* inputs, insets, table stripes */
-  --color-ink: #1b2440;        /* primary text — deep navy */
-  --color-muted: #6a7391;      /* secondary text */
-  --color-faint: #9aa1bc;      /* tertiary / micro-labels */
-  --color-line: #e3e7f2;       /* hairlines, borders */
+  --color-sunken: #f1f5f9;     /* inputs, insets, table stripes — slate-100 */
+  --color-ink: #0f172a;        /* primary text — slate-900 */
+  --color-muted: #64748b;      /* secondary text — slate-500 */
+  --color-faint: #94a3b8;      /* tertiary / micro-labels — slate-400 */
+  --color-line: #e2e8f0;       /* hairlines, borders — slate-200 */
 
-  /* ---- Brand (one blue, cornflower — the reference app's hero colour) --- */
-  --color-brand: #3b63f0;
-  --color-brand-strong: #2e4fcc;
-  --color-brand-wash: #e9eefe;
-  --color-brand-fg: #2a48b8;   /* text/icon sitting on --color-brand-wash */
+  /* ---- Brand — `main` emerald --------------------------------------- */
+  --color-brand: #10b981;         /* emerald-500 */
+  --color-brand-strong: #059669;  /* emerald-600 */
+  --color-brand-wash: #ecfdf5;    /* emerald-50 */
+  --color-brand-fg: #047857;      /* emerald-700 — text/icon on brand-wash */
 
-  /* wordmark comma + rare warm highlight — the friendly yellow accent */
-  --color-gold: #f2c94c;
+  /* wordmark comma + rare warm highlight */
+  --color-gold: #f59e0b;          /* amber-500 */
 
   /* ---- Semantic (separate from the brand accent) ---------------------- */
-  --color-ok: #16a96b;
-  --color-ok-wash: #e4f6ee;
-  --color-warn: #e8930c;
-  --color-warn-wash: #fdf0dc;
-  --color-danger: #ec4436;
-  --color-danger-wash: #fdece9;
+  --color-ok: #10b981;
+  --color-ok-wash: #ecfdf5;
+  --color-warn: #d97706;          /* amber-600 */
+  --color-warn-wash: #fffbeb;     /* amber-50 */
+  --color-danger: #e11d48;        /* rose-600 */
+  --color-danger-wash: #fff1f2;   /* rose-50 */
 
   /* legacy aliases — existing components still reference these */
-  --color-virgula-green: #3b63f0;
-  --color-virgula-card: #1b2440;
-  --color-virgula-primary: #1b2440;
-  --color-virgula-accent: #f2c94c;
-  --color-virgula-muted: #6a7391;
+  --color-virgula-green: #10b981;
+  --color-virgula-card: #1f2937;
+  --color-virgula-primary: #0f172a;
+  --color-virgula-accent: #f59e0b;
+  --color-virgula-muted: #64748b;
 
   /* ---- Shape & depth ------------------------------------------------- */
   --radius-lg: 0.75rem;
-  --radius-xl: 0.9375rem;
-  --radius-2xl: 1.125rem;
-  --radius-3xl: 1.375rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
 
-  --shadow-xs: 0 1px 2px rgba(27, 36, 64, 0.05);
-  --shadow-sm: 0 1px 2px rgba(27, 36, 64, 0.06), 0 2px 6px -2px rgba(27, 36, 64, 0.05);
-  --shadow-md: 0 6px 20px -6px rgba(27, 36, 64, 0.14), 0 2px 8px -3px rgba(27, 36, 64, 0.08);
-  --shadow-lg: 0 18px 40px -14px rgba(27, 36, 64, 0.20), 0 6px 16px -8px rgba(27, 36, 64, 0.10);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 6px 20px -6px rgba(15, 23, 42, 0.12), 0 2px 8px -3px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 20px 44px -14px rgba(15, 23, 42, 0.18), 0 6px 16px -8px rgba(15, 23, 42, 0.08);
 }
 
 @layer base {
   .dark {
-    --color-ground: #0f1420;
-    --color-surface: #171e2e;
-    --color-sunken: #1e2637;
-    --color-ink: #eaedf4;
-    --color-muted: #9aa3b5;
-    --color-faint: #6b7488;
-    --color-line: #28324a;
+    --color-ground: #0f172a;     /* slate-900 */
+    --color-surface: #1e293b;    /* slate-800 */
+    --color-sunken: #334155;     /* slate-700 */
+    --color-ink: #f1f5f9;        /* slate-100 */
+    --color-muted: #94a3b8;      /* slate-400 */
+    --color-faint: #64748b;      /* slate-500 */
+    --color-line: #334155;       /* slate-700 */
 
-    --color-brand: #5b84f5;
-    --color-brand-strong: #7797f7;
-    --color-brand-wash: #1b2540;
-    --color-brand-fg: #90aafb;
+    --color-brand: #34d399;      /* emerald-400 */
+    --color-brand-strong: #6ee7b7;
+    --color-brand-wash: #064e3b; /* emerald-900 */
+    --color-brand-fg: #6ee7b7;   /* emerald-300 */
 
-    --color-ok: #35c98c;
-    --color-ok-wash: #16301f;
-    --color-warn: #e8a94a;
-    --color-warn-wash: #2f2410;
-    --color-danger: #f0736a;
-    --color-danger-wash: #33191a;
+    --color-ok: #34d399;
+    --color-ok-wash: #064e3b;
+    --color-warn: #fbbf24;       /* amber-400 */
+    --color-warn-wash: #451a03;  /* amber-950 */
+    --color-danger: #fb7185;     /* rose-400 */
+    --color-danger-wash: #4c0519;/* rose-950 */
 
-    --color-virgula-green: #5b84f5;
-    --color-virgula-primary: #eaedf4;
-    --color-virgula-muted: #9aa3b5;
+    --color-virgula-green: #34d399;
+    --color-virgula-primary: #f1f5f9;
+    --color-virgula-muted: #94a3b8;
 
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 8px 22px -8px rgba(0, 0, 0, 0.55);
     --shadow-lg: 0 20px 44px -18px rgba(0, 0, 0, 0.65);
   }
@@ -118,8 +117,8 @@
 
   ::selection { background: color-mix(in srgb, var(--color-brand) 22%, transparent); }
 
-  /* Display headings: Poppins, a touch tighter, a shade heavier than body so
-     hierarchy reads without a second family. Components can still override
-     with font-normal / font-bold. */
-  .font-serif { font-weight: 600; letter-spacing: -0.015em; }
+  /* Display headings use `font-serif` in the components — with Inter that just
+     means "heavier + a touch tighter" so hierarchy reads. Explicit
+     font-normal / font-semibold / font-bold on the element still win. */
+  .font-serif { font-weight: 700; letter-spacing: -0.02em; }
 }

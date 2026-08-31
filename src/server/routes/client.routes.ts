@@ -80,15 +80,43 @@ export function registerClientRoutes(app: Express) {
       .where(eq(paymentChecks.clientId, clientId));
     const checkByDoc = new Map(checks.map((c) => [c.documentId, c]));
 
+    // Generated guias (SERPRO). Their value / due date live on the guias_geradas
+    // row; a document that points at one (file_url = /api/pendencies/guia/N/pdf)
+    // should fall back to that when its own extracted_data is missing a value —
+    // e.g. a guia recalculated before the value was persisted on the document.
+    const guias = await db
+      .select()
+      .from(guiasGeradas)
+      .where(eq(guiasGeradas.clientId, clientId));
+    const guiaById = new Map(guias.map((g) => [String(g.id), g]));
+    const guiaIdFromUrl = (u: string | null) =>
+      u?.match(/\/api\/pendencies\/guia\/(\d+)\/pdf/)?.[1] ?? null;
+
+    const resolveDoc = (d: (typeof docs)[number]) => {
+      const ed =
+        d.extractedData && typeof d.extractedData === "object" && !Array.isArray(d.extractedData)
+          ? { ...(d.extractedData as Record<string, unknown>) }
+          : {};
+      const g = guiaById.get(guiaIdFromUrl(d.fileUrl) ?? "");
+      if ((ed.extractedValue == null || ed.extractedValue === 0) && typeof g?.valorTotal === "number") {
+        ed.extractedValue = g.valorTotal;
+      }
+      const dueDate = d.dueDate || g?.dataVencimento || null;
+      return { ...d, dueDate, extractedData: ed };
+    };
+
     res.json({
       client: clientSelfDTO(client),
       whatsappSupport,
-      documents: docs.map((d) => ({
-        ...d,
-        createdAt: d.createdAt.toISOString(),
-        paymentStatus: checkByDoc.get(d.id)?.status ?? null,
-        paymentNextCheckAt: checkByDoc.get(d.id)?.nextCheckAt?.toISOString() ?? null,
-      })),
+      documents: docs.map((d) => {
+        const r = resolveDoc(d);
+        return {
+          ...r,
+          createdAt: d.createdAt.toISOString(),
+          paymentStatus: checkByDoc.get(d.id)?.status ?? null,
+          paymentNextCheckAt: checkByDoc.get(d.id)?.nextCheckAt?.toISOString() ?? null,
+        };
+      }),
       billing,
       messages: msgs.map((m) => ({
         ...m,

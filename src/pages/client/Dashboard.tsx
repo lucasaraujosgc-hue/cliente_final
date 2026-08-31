@@ -518,7 +518,17 @@ export function ClientDashboard() {
   }, 0);
   const hasAnyGuia = data.documents.some(isGuiaLikeDoc);
 
-  const scrollToGuias = () => guiasRef.current?.scrollIntoView({ block: "start" });
+  // Jump to (and scroll to) the guia list. If the guia that needs attention
+  // lives in another competence — e.g. a guia recalculated months ago whose
+  // due date moved — switch the competence selector to it first, otherwise the
+  // list would be empty.
+  const goToGuias = () => {
+    const target = (pendingGuiasNotOverdue[0] || upcomingGuias[0])?.competence;
+    if (target && target !== selectedCompetence && availableCompetences.includes(target)) {
+      setSelectedCompetence(target);
+    }
+    setTimeout(() => guiasRef.current?.scrollIntoView({ block: "start" }), 80);
+  };
   const scrollToCharts = () => chartsRef.current?.scrollIntoView({ block: "start" });
 
   // Counts for the feature grid — same filters the target pages use.
@@ -608,7 +618,7 @@ export function ClientDashboard() {
         pendingCount={pendingGuiasNotOverdue.length}
         pendingTotal={totalPendingGuiasValue}
         hasAnyGuia={hasAnyGuia}
-        onSeeGuias={scrollToGuias}
+        onSeeGuias={goToGuias}
       />
 
       {!data.client?.firstAccessDone && (
@@ -671,7 +681,7 @@ export function ClientDashboard() {
         uploadsCount={uploadsCount}
         billingTotal={monthsTotalBilling}
         notificationsOn={pushGranted}
-        onGoGuias={scrollToGuias}
+        onGoGuias={goToGuias}
         onGoCharts={scrollToCharts}
         onOpenNotifications={() => setShowPrefsModal(true)}
         onEnableNotifications={() => subscribeToPush().then(() => setPushGranted(true))}
