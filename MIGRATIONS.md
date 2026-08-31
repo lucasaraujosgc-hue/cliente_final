@@ -63,6 +63,9 @@ against a real Postgres engine (pglite), including a data-preservation check.
 | `0001_integration_hash_digest` | adds `clients.integration_hash_digest`, backfills the sha256 of the existing plaintext `integration_hash` | **Transition**: both columns stay; `findClientByIntegrationToken` matches either so no webhook integration breaks. Once every integration has re-saved / re-generated its token, a later migration can drop `integration_hash`. |
 | `0002_normalize_cnpj` | `clients.cnpj` → digits-only (14) | Aborts (no half-apply) if stripping punctuation would collide two rows. Formatting is now a display concern (`src/lib/cnpj.ts`). |
 | `0003_auth_sessions` | creates `auth_sessions` (one row per login: hashed rotating refresh token, reuse-detection column, expiry, revocation) | New table, `CREATE TABLE IF NOT EXISTS` so it's re-runnable. No FK — the accountant has no `clients` row and the delete handler clears client sessions explicitly. See `docs/SECURITY.md`. |
+| `0004_payment_checks` | creates `payment_checks` (one row per guia whose payment is being tracked) | `CREATE TABLE IF NOT EXISTS` + unique `document_id`. |
+| `0005_nfse_emissoes` | creates `nfse_emissoes` (scaffold da NFS-e) | `CREATE TABLE IF NOT EXISTS`. |
+| `0006_nfse` | creates `nfse_config` (1/cliente: certificado A1 + dados fiscais + série/contador de DPS) and `nfse_atividades`; adds ~20 nullable columns to `nfse_emissoes` (chave de acesso, XMLs, DANFSE, rejeição, cancelamento) | `CREATE TABLE IF NOT EXISTS` + `ADD COLUMN IF NOT EXISTS` so o teste "safe to run twice" passa. Emissor de NFS-e Nacional — ver `docs/CHANGELOG.md`. |
 
 ## Schema facts worth knowing
 

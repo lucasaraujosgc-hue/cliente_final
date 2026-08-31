@@ -39,6 +39,7 @@ com o CNPJ e é levado a `/setup-profile` para definir e-mail e nova senha.
 | `/overdue` | `Overdue.tsx` | guias atrasadas de todas as competências + botão "recalcular guia em atraso" (`GuiaAtualizarButton`) |
 | `/vault` | `Vault.tsx` | cofre digital — todos os documentos recebidos + os enviados pelo cliente |
 | `/uploads` | `MyUploads.tsx` | histórico de arquivos que o cliente enviou e status ("Aguardando análise" / "Contabilidade recebeu") |
+| `/nfse` | `client/Nfse.tsx` (+ `client/nfse/`) | emissor de NFS-e. Sem setup completo → card "a partir de novembro/2026". Com setup → notas emitidas (ver PDF / compartilhar / duplicar / cancelar) + wizard de 3 passos (tomador → atividade/descrição → valor). |
 | `/setup-profile` | `SetupProfile.tsx` (fora do layout) | primeiro acesso: e-mail + nova senha + aceite de termos |
 
 Layout: **bottom nav** até `lg` (1024px), **sidebar** acima — ver
@@ -51,6 +52,7 @@ na tela "Visão Geral".
 |------|--------|----------|
 | `/admin` | `accountant/Dashboard.tsx` | **Inbox** — KPIs (`/api/accountant/overview`), últimos documentos recebidos dos clientes, "Atividade recente" (audit log) |
 | `/admin/clients` | `ClientsList.tsx` | lista/busca de clientes, criar/editar, resetar senha, importar via Excel, envio de mural em massa |
+| `/admin/nfse` | `accountant/nfse/` | **NFS-e** — por cliente: upload do certificado A1 + dados fiscais + atividades pré-configuradas (item LC 116, alíquota ISS, retenções); "Testar certificado" (abre o `.pfx` + checa convênio do município); aba "Notas emitidas" |
 | `/admin/client/:id` | `ClientDetail.tsx` | detalhe do cliente: documentos, mensagens, faturamento, upload de doc, editar doc, marcar status, gerar/revogar token de integração (mostrado uma vez) |
 | `/admin/notifications` | `Notifications.tsx` | envio de push imediato + regras de notificação agendada |
 | `/admin/devices` | `Devices.tsx` | dispositivos/subscriptions de push por cliente |
@@ -66,6 +68,11 @@ Layout: sidebar fixa no desktop; drawer via hambúrguer no mobile.
   do tipo "guia" com vencimento; o cliente vê, copia o PIX, marca como pago.
 - **Geração/recálculo de guia via SERPRO Integra Contador:** `DAS_SIMPLES` e
   `DCTFWEB_INSS`. Chama `/Emitir`, salva o PDF, extrai o PIX copia-e-cola.
+- **Emissor de NFS-e Nacional:** integração direta com a Sefin Nacional. O
+  contador cadastra por cliente o certificado A1 + atividades; o cliente emite
+  pelo wizard (`services/nfse/` monta e assina a DPS v1.01, envia
+  `POST /nfse`, persiste). Só habilita com certificado + atividade ativa +
+  switch ligado — ver `docs/CHANGELOG.md`.
 - **Cofre digital:** documentos de qualquer categoria, baixados apenas por
   endpoint autenticado.
 - **Upload de extrato bancário** pelo cliente (PDF/OFX), com validação de
@@ -143,7 +150,7 @@ arquivo + `documents` → notifica.
 ## 7. Banco de dados
 
 Postgres via Drizzle. Schema em `src/server/schema.ts` (**única fonte de verdade**).
-10 tabelas:
+14 tabelas:
 
 | Tabela | Papel | Notas |
 |--------|-------|-------|
@@ -157,9 +164,12 @@ Postgres via Drizzle. Schema em `src/server/schema.ts` (**única fonte de verdad
 | `scheduled_notifications` | regras de push agendado | `client_id` nulo = broadcast. FK cascade. |
 | `audit_log` | trilha de ações do contador | **sem FK** (sobrevive à exclusão do cliente). |
 | `auth_sessions` | 1 linha por login | refresh token hasheado + rotação + `previous_refresh_hash` (reuso) + `expires_at` + `revoked_at`. **Sem FK** (contador não tem linha; o delete de cliente limpa explicitamente). |
+| `payment_checks` | rastreio de pagamento de guia | 1 linha/guia (`document_id` unique). FK cascade. |
+| `nfse_config` | config de NFS-e (1/cliente) | certificado A1 (`cert_path` cifrado, `cert_senha` `enc:v1:`), `codigo_municipio` (IBGE), `regime_tributario`, `serie_dps`, `prox_numero_dps`, `ativo`. FK cascade. **DTO obrigatório** (`dto/nfse.ts`). |
+| `nfse_atividades` | atividades pré-configuradas | item LC 116, `cod_tributacao_nac`, `aliquota_iss`, `iss_retido`, retenções federais. FK cascade. |
+| `nfse_emissoes` | notas emitidas / rascunhos / rejeições | `chave_acesso` (50), `xml_dps`/`xml_nfse`, `danfse_pdf_path`, `rejeicao_codigo/motivo`, `cancelada_em`. FK cascade. |
 
-Migrations: `drizzle/0000_baseline.sql`, `0001_integration_hash_digest.sql`,
-`0002_normalize_cnpj.sql`, `0003_auth_sessions.sql` + `drizzle/reconcile-legacy.sql`
+Migrations: `drizzle/0000_baseline.sql` … `0006_nfse.sql` + `drizzle/reconcile-legacy.sql`
 (bridge para bancos antigos). Runner: `scripts/migrate.ts` (`npm run db:migrate`),
 auto nos hooks `predev`/`prestart`. Ver `MIGRATIONS.md`.
 
@@ -283,6 +293,9 @@ Ver `docs/MOBILE_APP.md`.
 - Audit log das ações sensíveis do contador.
 - Notificações push (web-push + FCM) + regras agendadas + sweeper.
 - Geração/recálculo de guia SERPRO (DAS/DCTFWEB) com extração de PIX.
+- Emissor de NFS-e Nacional (Sefin Nacional, DPS v1.01): cadastro do certificado
+  A1 + atividades por cliente pelo contador, wizard de emissão, DANFSE,
+  cancelamento. **Não homologado em produção restrita** (ver Pendências).
 - PWA (manifest + service worker).
 - Code splitting por rota + `manualChunks` para libs pesadas.
 - CI (lint + test + build) e Dockerfile com migração no `prestart`.
@@ -298,10 +311,18 @@ Ver `docs/MOBILE_APP.md`.
 - Handler do botão voltar do Android.
 - Remoção da coluna `integration_hash` plaintext (após confirmar que toda
   integração migrou para token novo).
+- NFS-e: PIS/COFINS retido (bloco `piscofins` com CST), deduções/reduções,
+  cancelamento por substituição, retry automático de emissões `processando`,
+  regimes/exigibilidades além do caso comum.
 
 ### Pendências
+- **NFS-e — homologar em produção restrita** (`sefin.producaorestrita.nfse.gov.br`)
+  com um certificado A1 real: validar a assinatura XMLDSig (SHA-1 vs SHA-256), a
+  ordem/campos da DPS v1.01 e o parse da resposta. Conferir também o convênio dos
+  municípios dos clientes.
 - `SECRETS_KEY` precisa ser definido em produção **e** a config SERPRO
-  re-salva para os valores existentes serem cifrados.
+  re-salva para os valores existentes serem cifrados. `SECRETS_KEY` também é
+  obrigatório para guardar os certificados A1 de NFS-e.
 - Rodar as migrations (`reconcile`/`0001`…`0003`) contra uma **cópia** da base
   de produção antes do primeiro deploy — conferir a conversão
   `reset_code_expires` text→timestamp.

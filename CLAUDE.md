@@ -78,23 +78,25 @@ src/
     Logo.tsx, Skeleton.tsx, ThemeToggle.tsx
     PixScannerButton.tsx      lê PIX de PDF com pdf.js (recebe documentAuthHeaders())
     GuiaAtualizarButton.tsx   dispara recálculo de guia SERPRO
+  lib/listaServicosLC116.ts  lista de serviços LC 116/2003 (compartilhado cli+srv)
   pages/
     Auth.tsx                  /login (cliente) + /admin/login (contador) + fluxo recuperar senha
-    client/                   Dashboard, Overdue, Vault, MyUploads, SetupProfile
+    client/                   Dashboard, Overdue, Vault, MyUploads, SetupProfile, Nfse (+ nfse/)
       dashboard/*             sub-componentes do Dashboard do cliente
     accountant/               Dashboard(Inbox), ClientsList, ClientDetail, Notifications,
-                              FileGallery, Devices, Settings, Audit
+                              Payments, FileGallery, Devices, Settings, Audit, nfse/
   server/
     db.ts                    pg Pool + drizzle; initDb() só testa conexão
-    schema.ts                schema Drizzle (10 tabelas)
+    schema.ts                schema Drizzle (14 tabelas)
     env.ts                   validateEnv() (fail-fast em prod), corsOrigins(), trustProxy(), PORT
     types.ts                 augment de Express.Request + getAuth/getClientId/getIntegrationClient
     middleware/              auth.ts, rateLimit.ts, validate.ts
-    routes/                  index.ts + auth/client/accountant/integration/webhook/notifications/files
+    routes/                  index.ts + auth/client/accountant/integration/webhook/notifications/files/nfse
     schemas/validation.ts    schemas zod — TODO endpoint de escrita tem um
-    dto/client.ts            clientSelfDTO / clientAdminDTO / clientIntegrationDTO
+    dto/                     client.ts (clientSelfDTO…) + nfse.ts (nfseConfigDTO…)
     services/                billing, audit, password, resetCode, integrationToken, secretbox,
-                             upload, fileType, files, mailer, push, serpro, notificationSweeper
+                             upload, fileType, files, mailer, push, serpro, notificationSweeper,
+                             paymentQuery, nfse/ (emissor NFS-e Nacional)
     qrExtractor.ts           extrai PIX copia-e-cola do PDF de uma guia
 drizzle/                     migrations (fonte de verdade) + reconcile-legacy.sql
 scripts/                     migrate.ts (db:migrate), seed.ts (db:seed), migrate-passwords.ts
@@ -191,3 +193,9 @@ deste repo, ou PWA instalada). Ver `docs/MOBILE_APP.md`.
 - **regularidade** – status de conformidade do cliente: `green` / `warning` / `red`.
 - **SITFIS** – relatório de situação fiscal da Receita, chega por webhook.
 - **pendência / solicitação** – cliente pedindo ao contador para (re)calcular.
+- **NFS-e** – nota fiscal de serviço eletrônica. Emitida direto pelo Sistema
+  Nacional NFS-e (Sefin Nacional / gov.br); ver `src/server/services/nfse/`.
+- **DPS** – Declaração de Prestação de Serviços: o XML que o contribuinte monta,
+  assina (XMLDSig) e envia; a Sefin valida e devolve a NFS-e.
+- **DANFSE** – PDF impresso da NFS-e (baixado do ADN pela chave de acesso).
+- **tomador** – quem contrata/recebe o serviço (o cliente é o *prestador*).

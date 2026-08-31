@@ -1,6 +1,14 @@
 import type { Request } from "express";
 import type { InferSelectModel } from "drizzle-orm";
-import type { clients, documents, billingData, messages } from "./schema";
+import type {
+  clients,
+  documents,
+  billingData,
+  messages,
+  nfseConfig,
+  nfseAtividades,
+  nfseEmissoes,
+} from "./schema";
 
 // Row types inferred straight from the Drizzle schema — the single source of
 // truth. Prefer these over hand-written interfaces.
@@ -8,6 +16,9 @@ export type Client = InferSelectModel<typeof clients>;
 export type Document = InferSelectModel<typeof documents>;
 export type BillingRow = InferSelectModel<typeof billingData>;
 export type Message = InferSelectModel<typeof messages>;
+export type NfseConfigRow = InferSelectModel<typeof nfseConfig>;
+export type NfseAtividadeRow = InferSelectModel<typeof nfseAtividades>;
+export type NfseEmissaoRow = InferSelectModel<typeof nfseEmissoes>;
 
 // Access-token JWT payload. Signed in services/session.ts.
 export interface AuthPayload {

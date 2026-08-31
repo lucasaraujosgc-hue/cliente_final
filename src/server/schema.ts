@@ -146,25 +146,106 @@ export const paymentChecks = pgTable('payment_checks', {
   dueIdx: index('payment_checks_due_idx').on(t.status, t.nextCheckAt),
 }));
 
-// NFS-e (Nota Fiscal de Serviço eletrônica). The emitter is NOT implemented yet
-// — this table is the scaffold so the future municipal/nacional integration
-// (services/nfse.ts) has a place to persist emissions. Empty until then.
+// NFS-e (Nota Fiscal de Serviço eletrônica) — integração direta com o Sistema
+// Nacional NFS-e (Sefin Nacional / gov.br). Ver src/server/services/nfse/.
+//
+//   nfse_config     — 1 linha por cliente: certificado A1 + dados fiscais.
+//   nfse_atividades — atividades pré-configuradas pelo contador (item LC116,
+//                     alíquota ISS, retenções) que o cliente escolhe ao emitir.
+//   nfse_emissoes   — cada nota emitida / rascunho / rejeição.
+
+export const nfseConfig = pgTable('nfse_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().unique().references(() => clients.id, { onDelete: 'cascade' }),
+  // Master switch — o cliente só vê o emissor quando ativo === true E há
+  // certificado E ao menos uma atividade ativa.
+  ativo: boolean('ativo').default(false).notNull(),
+  // 'homologacao' (produção restrita) | 'producao'
+  ambiente: text('ambiente').default('homologacao').notNull(),
+  // Certificado A1 do PRÓPRIO cliente (.pfx cifrado no disco, magic ENCv1\0).
+  certPath: text('cert_path'),
+  certSenha: text('cert_senha'), // cifrada (enc:v1:...)
+  certCnpj: text('cert_cnpj'), // CNPJ lido do subject do certificado
+  certValidadeAte: timestamp('cert_validade_ate', { withTimezone: true }),
+  codigoMunicipio: text('codigo_municipio'), // IBGE 7 dígitos do município emissor
+  // 'simples_nacional' | 'mei' | 'normal'
+  regimeTributario: text('regime_tributario').default('simples_nacional').notNull(),
+  regimeEspecialTrib: text('regime_especial_trib'), // código do regime especial de tributação (opcional)
+  optanteSimplesNacional: boolean('optante_simples_nacional').default(true).notNull(),
+  incentivoFiscal: boolean('incentivo_fiscal').default(false).notNull(),
+  serieDps: text('serie_dps').default('00001').notNull(),
+  // Contador local do número da DPS (incrementado atomicamente na emissão).
+  proxNumeroDps: integer('prox_numero_dps').default(1).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nfseAtividades = pgTable('nfse_atividades', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  nome: text('nome').notNull(), // rótulo amigável ("Consulta psicológica")
+  itemListaServico: text('item_lista_servico').notNull(), // LC 116/2003, ex. "4.16"
+  codTributacaoNac: text('cod_tributacao_nac'), // cTribNac (6 dígitos)
+  codTributacaoMun: text('cod_tributacao_mun'),
+  cnae: text('cnae'),
+  descricaoPadrao: text('descricao_padrao').default('').notNull(),
+  aliquotaIss: real('aliquota_iss').default(0).notNull(), // %
+  issRetido: boolean('iss_retido').default(false).notNull(),
+  // exigibilidade ISS: 1 exigível, 2 não incidência, 3 isenção, 4 exportação,
+  // 5 imunidade, 6 susp. judicial, 7 susp. administrativa
+  exigibilidadeIss: text('exigibilidade_iss').default('1').notNull(),
+  municipioIncidencia: text('municipio_incidencia'), // IBGE, se ISS devido em outro município
+  // Retenções federais (percentuais). 0 = não retém.
+  retIrrf: real('ret_irrf').default(0).notNull(),
+  retPis: real('ret_pis').default(0).notNull(),
+  retCofins: real('ret_cofins').default(0).notNull(),
+  retCsll: real('ret_csll').default(0).notNull(),
+  retInss: real('ret_inss').default(0).notNull(),
+  ativo: boolean('ativo').default(true).notNull(),
+  ordem: integer('ordem').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const nfseEmissoes = pgTable('nfse_emissoes', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  atividadeId: uuid('atividade_id').references(() => nfseAtividades.id, { onDelete: 'set null' }),
   // rascunho | processando | emitida | rejeitada | cancelada
   status: text('status').notNull().default('rascunho'),
+  ambiente: text('ambiente'), // homologacao | producao (fixado no momento da emissão)
   competencia: text('competencia'), // MM/YYYY
   valorServicos: integer('valor_servicos'), // centavos
+  aliquotaIss: real('aliquota_iss'),
+  valorIss: integer('valor_iss'), // centavos
   descricao: text('descricao'),
-  tomadorDoc: text('tomador_doc'), // CPF/CNPJ do tomador
+  tomadorDoc: text('tomador_doc'), // CPF/CNPJ do tomador (dígitos)
   tomadorNome: text('tomador_nome'),
+  tomadorEmail: text('tomador_email'),
+  tomadorTelefone: text('tomador_telefone'),
+  tomadorEndereco: jsonb('tomador_endereco'),
+  // Identificadores da nota
   numeroNota: text('numero_nota'),
+  serieDps: text('serie_dps'),
+  numeroDps: integer('numero_dps'),
+  idDps: text('id_dps'), // identificador usado em GET /dps/{id}
+  chaveAcesso: text('chave_acesso'), // 50 dígitos
   codigoVerificacao: text('codigo_verificacao'),
-  providerRef: text('provider_ref'), // id no provedor externo
-  xml: text('xml'),
-  pdfUrl: text('pdf_url'),
+  dataEmissao: timestamp('data_emissao', { withTimezone: true }),
+  // Artefatos
+  xmlDps: text('xml_dps'), // DPS assinada que enviamos
+  xmlNfse: text('xml_nfse'), // NFS-e retornada pela Sefin
+  xml: text('xml'), // legado — mantido por compat
+  danfsePdfPath: text('danfse_pdf_path'),
+  pdfUrl: text('pdf_url'), // legado
+  providerRef: text('provider_ref'), // legado
+  // Rejeição / cancelamento
+  rejeicaoCodigo: text('rejeicao_codigo'),
+  rejeicaoMotivo: text('rejeicao_motivo'),
   erroMsg: text('erro_msg'),
+  canceladaEm: timestamp('cancelada_em', { withTimezone: true }),
+  cancelamentoMotivo: text('cancelamento_motivo'),
+  substituiChave: text('substitui_chave'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

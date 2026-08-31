@@ -41,7 +41,9 @@ Todas carregadas via `React.lazy` em `src/App.tsx`, dentro de um único
 | `client/Overdue.tsx` | `/overdue` | `ClientLayout` |
 | `client/Vault.tsx` | `/vault` | `ClientLayout` |
 | `client/MyUploads.tsx` | `/uploads` | `ClientLayout` |
+| `client/Nfse.tsx` (+ `client/nfse/EmitWizard.tsx`) | `/nfse` | `ClientLayout` |
 | `accountant/Dashboard.tsx` | `/admin` (index) | `AccountantLayout` |
+| `accountant/nfse/` (`index`, `ClientNfsePanel`, `AtividadeForm`) | `/admin/nfse` | `AccountantLayout` |
 | `accountant/ClientsList.tsx` | `/admin/clients` | `AccountantLayout` |
 | `accountant/ClientDetail.tsx` | `/admin/client/:id` | `AccountantLayout` |
 | `accountant/Notifications.tsx` | `/admin/notifications` | `AccountantLayout` |
@@ -169,6 +171,7 @@ Fora do `startServer`: `pool.on("error")` + `unhandledRejection` só logam;
 | `integration.routes.ts` | `/api/integration/*` | `verifyIntegrationToken` | upload-doc, sync-client, update-billing |
 | `webhook.routes.ts` | `/api/webhook/*` | token de integração no corpo (`hash_empresa`/`companyHash`) | receitas (SITFIS/base64), documentos (multipart/JSON) |
 | `notifications.routes.ts` | `/api/notifications/*`, `/api/admin/notifications/*`, `/api/accountant/subscriptions*`, `/api/vapidPublicKey` | client / accountant | subscribe, send, regras agendadas, listar/apagar dispositivos |
+| `nfse.routes.ts` | `/api/nfse/*`, `/api/nfse/admin/*` | client / accountant | status+gating, atividades, emissões (listar/emitir/cancelar/DANFSE), lookup-cnpj, lista LC 116; admin: config+certificado (multipart), atividades CRUD, testar, emissões |
 
 Lista completa de paths: `grep -rhoE '"/api/[^"]+"' src/server/routes/`.
 
@@ -198,18 +201,23 @@ Também `src/server/services/upload.ts` exporta o middleware
 | `logger.ts` | `logger.info/warn/error` — formato consistente com timestamp + contexto |
 | `integrationToken.ts` | `generateIntegrationToken` (`vic_` + 32 bytes), `hashIntegrationToken` (sha256), `setIntegrationToken`/`clearIntegrationToken` (patch de colunas), `findClientByIntegrationToken` (digest **ou** plaintext legado) |
 | `secretbox.ts` | AES-256-GCM. `encryptSecret`/`decryptSecret` (string, formato `enc:v1:iv:tag:ct`), `encryptBytes`/`decryptBytes` (Buffer, magic `ENCv1\0`). Chave = sha256(`SECRETS_KEY`). Sem chave: no-op + lê plaintext legado |
-| `upload.ts` | `UPLOADS_DIR`, `GUIAS_PDF_DIR`, `ALLOWED_UPLOAD_EXTENSIONS`, `MAX_UPLOAD_BYTES` (10MB), `sanitizeFilename`, `isAllowedUploadName`, multer `upload`/`uploadCert`, `validateUploadedFileContent` |
+| `upload.ts` | `UPLOADS_DIR`, `GUIAS_PDF_DIR`, `NFSE_CERTS_DIR`, `NFSE_PDF_DIR`, `ALLOWED_UPLOAD_EXTENSIONS`, `MAX_UPLOAD_BYTES` (10MB), `sanitizeFilename`, `isAllowedUploadName`, multer `upload`/`uploadCert`/`uploadNfseCert`, `validateUploadedFileContent` |
 | `fileType.ts` | `sniffFamily(buf)` (magic bytes) + `contentMatchesExtension(buf, filename)` |
 | `files.ts` | `resolveUploadPath` / `resolveGuiaPdfPath` (traversal-safe), `contentTypeForPath`, `contentDisposition` (anti-injection), `sendDiskFile` (stream), `sendDataUri`, `isReadableFile` |
 | `serpro.ts` | `isUuid`, `getSerproToken` (cache em memória), `serproPost` (https nativo, suporta agent mTLS) |
+| `nfse/` (pasta) | Emissor de NFS-e Nacional. `status` (gating), `cert` (PKCS#12 → agente mTLS + PEM, node-forge), `config` (CRUD config/atividades), `dps` (XML da DPS v1.01), `sign` (XMLDSig enveloped, xml-crypto), `client` (HTTP mTLS: emitir/consultar/eventos/DANFSE/parâmetros), `params` (cache), `emitir` (orquestra + persiste), `events` (cancelamento e101101), `danfse` (cache do PDF), `chave` (parse 50 díg.), `cnpjLookup` (BrasilAPI→ReceitaWS) |
 | `mailer.ts` | `transporter` (Nodemailer SMTP), `resend` (Resend) |
 | `push.ts` | init Firebase Admin (se env), VAPID, `sendClientNotification`, `sendPushToClients` |
 | `notificationSweeper.ts` | `triggerDebouncedDocumentNotification` (debounce 30 s), `runNotificationSweeper` (+ `setInterval` 30 min e `setTimeout` 10 s no import) |
 | `qrExtractor.ts` (fora de services/) | extrai PIX copia-e-cola e valor do PDF da guia |
 
-### DTOs (`src/server/dto/client.ts`)
+### DTOs (`src/server/dto/`)
 
-`clientSelfDTO` (portal do próprio cliente), `clientAdminDTO`
+`dto/nfse.ts`: `nfseConfigDTO` (nunca `cert_path`/`cert_senha` — só `hasCert`,
+`certCnpj`, `certValidadeAte`), `nfseAtividadeAdminDTO`/`nfseAtividadeClientDTO`,
+`nfseEmissaoListDTO`/`nfseEmissaoDetailDTO`.
+
+`dto/client.ts`: `clientSelfDTO` (portal do próprio cliente), `clientAdminDTO`
 (`hasIntegrationToken: boolean`, sem valor), `clientIntegrationDTO`
 (resposta de `sync-client`). **Nenhum endpoint faz `res.json({ client: <row> })`.**
 `serpro_config` é sanitizado à mão no `GET /api/pendencies/sitfis/config`

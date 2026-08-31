@@ -16,6 +16,13 @@ export const GUIAS_PDF_DIR = process.env.DATA_PATH
   ? path.join(process.env.DATA_PATH, "guias_pdfs")
   : path.join(process.cwd(), "data", "guias_pdfs");
 
+// Where cached NFS-e DANFSE PDFs are written.
+export const NFSE_PDF_DIR = process.env.NFSE_PDF_DIR
+  ? process.env.NFSE_PDF_DIR
+  : process.env.DATA_PATH
+    ? path.join(process.env.DATA_PATH, "nfse_pdfs")
+    : path.join(process.cwd(), "data", "nfse_pdfs");
+
 // Extensions accepted for client / accountant / webhook document uploads.
 // Anything executable or script-like (.exe, .sh, .js, .html, .svg, .php...) is
 // rejected — these are contábil documents, not code.
@@ -132,6 +139,34 @@ const certStorage = multer.diskStorage({
 // Digital certificate upload (.pfx / .p12) used for SERPRO integration. 5 MB limit.
 export const uploadCert = multer({
   storage: certStorage,
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === ".pfx" || ext === ".p12") cb(null, true);
+    else cb(unsupportedTypeError("Apenas arquivos .pfx ou .p12 são aceitos."));
+  },
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
+// Per-client A1 certificate for NFS-e emission. Same rules as uploadCert but a
+// dedicated directory (NFSE_CERTS_DIR) so a client's cert never collides with
+// the office's SERPRO cert. Files are encrypted in place by the route handler.
+export const NFSE_CERTS_DIR = process.env.NFSE_CERTS_DIR
+  ? process.env.NFSE_CERTS_DIR
+  : process.env.DATA_PATH
+    ? path.join(process.env.DATA_PATH, "certs", "nfse")
+    : path.join(process.cwd(), "data", "certs", "nfse");
+
+const nfseCertStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(NFSE_CERTS_DIR)) fs.mkdirSync(NFSE_CERTS_DIR, { recursive: true });
+    cb(null, NFSE_CERTS_DIR);
+  },
+  filename: (_req, file, cb) =>
+    cb(null, `nfsecert_${Date.now()}_${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase()}`),
+});
+
+export const uploadNfseCert = multer({
+  storage: nfseCertStorage,
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ext === ".pfx" || ext === ".p12") cb(null, true);

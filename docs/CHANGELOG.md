@@ -11,6 +11,64 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### Emissor de NFS-e Nacional (integração direta gov.br)
+
+Emissão de NFS-e pelo cliente, integrando **direto com o Sistema Nacional NFS-e
+(Sefin Nacional)** — sem provedor terceirizado, sem custo por nota, certificado e
+dados fiscais no próprio servidor. Layout **DPS v1.01**.
+
+- **Migration `0006_nfse`**: `nfse_config` (1/cliente: certificado A1 + dados
+  fiscais + série/contador de DPS), `nfse_atividades` (atividades pré-configuradas
+  pelo contador — item LC 116, cód. tributação nacional, alíquota ISS, retenções),
+  e expansão de `nfse_emissoes` (chave de acesso, XMLs, DANFSE, rejeição,
+  cancelamento). `EXPECTED_TABLES` do `migrate.ts` atualizado.
+- **`src/server/services/nfse/`** (pasta, ex-`nfse.ts`):
+  `status` (gating), `cert` (PKCS#12 via `node-forge` → agente mTLS + PEM p/
+  assinar, valida CNPJ raiz + validade), `config` (CRUD config/atividades),
+  `dps` (monta o XML da DPS na ordem do XSD, via `xmlbuilder2`), `sign` (XMLDSig
+  enveloped sobre `infDPS`/`infPedReg` via `xml-crypto` — RSA-SHA1, C14N,
+  enveloped+C14N transforms, `KeyInfo`/X509), `client` (HTTP mTLS nativo:
+  `POST /nfse` com `dpsXmlGZipB64`, consulta, eventos, DANFSE, parâmetros
+  municipais), `params` (cache dos parâmetros municipais), `emitir` (orquestra e
+  persiste — grava linha `emitida` ou `rejeitada`), `events` (cancelamento —
+  evento e101101), `danfse` (busca+cacheia o PDF), `chave` (parse dos 50
+  dígitos), `cnpjLookup` (BrasilAPI → ReceitaWS).
+- **Rotas** (`nfse.routes.ts`): cliente — `GET /api/nfse` (status/gating),
+  `/api/nfse/atividades`, `/api/nfse/emissoes[/:id]`, `POST /lookup-cnpj`,
+  `POST /emissoes`, `POST /emissoes/:id/cancelar`, `GET /emissoes/:id/danfse`;
+  contador — `GET|PUT /api/nfse/admin/clients[/:id]/config` (multipart cert),
+  `.../atividades` CRUD, `POST .../test` (abre o cert + checa convênio do
+  município via mTLS), `GET /api/nfse/admin/emissoes`. Limiters
+  `nfseEmitLimiter`/`nfseLookupLimiter`. DTOs em `dto/nfse.ts` (nunca devolvem
+  `cert_path`/`cert_senha`).
+- **Certificado por cliente**: `.pfx`/`.p12` enviado pelo contador, cifrado em
+  repouso (`encryptBytes`, magic `ENCv1\0`, exige `SECRETS_KEY`) em
+  `NFSE_CERTS_DIR`. Decifrado só em memória para o `https.Agent`/assinatura.
+- **Frontend**: nova página do contador `/admin/nfse` (`pages/accountant/nfse/`)
+  — lista de clientes + painel de certificado/dados fiscais/atividades (busca na
+  lista LC 116). Página do cliente `client/Nfse.tsx` reescrita: quem não tem
+  setup completo continua vendo "a partir de novembro/2026"; quem tem vê as notas
+  emitidas (tomador/valor/data/status) com **Ver PDF / Compartilhar (arquivo via
+  `navigator.share`) / Duplicar / Cancelar** e o **wizard de 3 passos**
+  (CNPJ do tomador → atividade+descrição → valor → concluir) com tela de sucesso
+  (visualizar/compartilhar/nova) e de rejeição (código + motivo). `NfseCallout`
+  do dashboard vira CTA quando habilitado.
+- **Lista LC 116/2003** completa em `src/lib/listaServicosLC116.ts` (módulo
+  compartilhado, servido em `GET /api/nfse/lista-servicos`).
+- **Deps novas** (server-side): `node-forge`, `xml-crypto`, `@xmldom/xmldom`,
+  `xmlbuilder2`. Env novas: `NFSE_AMBIENTE_DEFAULT`, `NFSE_SEFIN_BASE_*`,
+  `NFSE_ADN_BASE_*`, `NFSE_CERTS_DIR`, `NFSE_PDF_DIR`, `BRASILAPI_BASE`,
+  `RECEITAWS_BASE`.
+- **Testes**: `dps.test.ts` (estrutura/ordem/Id da DPS), `sign.test.ts`
+  (assinatura verifica + detecta adulteração, com cert self-signed),
+  `chave.test.ts`, `cnpjLookup.test.ts` (fallback), `gating.test.ts` (pglite).
+- **`[PLANEJADO]` / limites do v1**: assinatura só validada contra cert
+  self-signed — falta homologar em **produção restrita**
+  (`sefin.producaorestrita.nfse.gov.br`) com A1 real; só municípios conveniados
+  ao padrão nacional; regime comum (SN/MEI/Normal, ISS operação tributável,
+  retenção federal só INSS/IRRF/CSLL); sem PIS/COFINS com CST, sem deduções, sem
+  cancelamento por substituição, sem retry de `processando`.
+
 ### Revisão pós-implementação (ajustes)
 - Webhooks (`/api/webhook/receitas` e `/documentos`) não devolvem mais
   `e.message` ao chamador — resposta genérica, detalhe só no log do servidor.

@@ -170,13 +170,98 @@ export const clientGuiaInteractionSchema = z.object({
   type: z.enum(["view", "copy_pix", "copy_barcode"]),
 });
 
-// NFS-e — shape defined now even though POST /api/nfse/emissoes still 501s.
-export const nfseEmissaoCreateSchema = z.object({
-  competencia: z.string().min(1).max(10),
-  valorServicos: z.number().int().nonnegative(),
-  descricao: z.string().min(1).max(2000),
-  tomadorDoc: optStr(20),
-  tomadorNome: optStr(200),
+// --- NFS-e -----------------------------------------------------------------
+
+// FormData sends every field as a string. Keep "" meaning "not provided" and
+// coerce "true"/"1" to boolean, preserving undefined.
+const optBoolStr = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((v) => {
+    if (v === undefined || v === "") return undefined;
+    if (typeof v === "boolean") return v;
+    return v === "true" || v === "1" || v === "on";
+  });
+
+// Accountant: per-client certificate + fiscal data (multipart, cert file apart).
+export const nfseConfigSchema = z.object({
+  codigoMunicipio: optStr(10),
+  regimeTributario: z.enum(["simples_nacional", "mei", "normal"]).optional().or(z.literal("")),
+  regimeEspecialTrib: optStr(10),
+  optanteSimplesNacional: optBoolStr,
+  incentivoFiscal: optBoolStr,
+  ambiente: z.enum(["homologacao", "producao"]).optional().or(z.literal("")),
+  serieDps: optStr(5),
+  ativo: optBoolStr,
+  certSenha: optStr(200),
+});
+
+// Accountant: one pre-configured activity (JSON).
+export const nfseAtividadeSchema = z.object({
+  nome: z.string().min(1, "Nome é obrigatório.").max(120),
+  itemListaServico: z.string().min(1, "Item da lista de serviço é obrigatório.").max(10),
+  codTributacaoNac: z.string().max(12).nullish(),
+  codTributacaoMun: z.string().max(20).nullish(),
+  cnae: z.string().max(15).nullish(),
+  descricaoPadrao: z.string().max(2000).optional(),
+  aliquotaIss: z.number().min(0).max(100).optional(),
+  issRetido: z.boolean().optional(),
+  exigibilidadeIss: z.enum(["1", "2", "3", "4", "5", "6", "7"]).optional(),
+  municipioIncidencia: z.string().max(10).nullish(),
+  retIrrf: z.number().min(0).max(100).optional(),
+  retPis: z.number().min(0).max(100).optional(),
+  retCofins: z.number().min(0).max(100).optional(),
+  retCsll: z.number().min(0).max(100).optional(),
+  retInss: z.number().min(0).max(100).optional(),
+  ativo: z.boolean().optional(),
+  ordem: z.number().int().min(0).max(9999).optional(),
+});
+
+// Client: CNPJ lookup for the tomador.
+export const nfseCnpjLookupSchema = z.object({
+  cnpj: z.string().min(11, "CNPJ inválido.").max(18),
+});
+
+const nfseEnderecoSchema = z
+  .object({
+    logradouro: optStr(150),
+    numero: optStr(20),
+    complemento: optStr(80),
+    bairro: optStr(80),
+    codigoMunicipio: optStr(10),
+    municipio: optStr(120),
+    uf: optStr(2),
+    cep: optStr(12),
+  })
+  .partial()
+  .optional();
+
+// Client: emit a new NFS-e (JSON). `valor` is in centavos.
+export const nfseEmitSchema = z.object({
+  atividadeId: z.string().uuid("Selecione uma atividade."),
+  tomador: z.object({
+    doc: z.string().min(11, "Documento do tomador inválido.").max(18),
+    nome: z.string().min(1, "Razão social do tomador é obrigatória.").max(200),
+    email: z.string().email("E-mail inválido.").max(200).optional().or(z.literal("")),
+    telefone: optStr(20),
+    inscricaoMunicipal: optStr(20),
+    endereco: nfseEnderecoSchema,
+  }),
+  descricao: z.string().min(1, "Descrição do serviço é obrigatória.").max(2000),
+  valor: z.number().int("Valor inválido.").positive("Valor deve ser maior que zero.").max(99_999_999_99),
+  competencia: z
+    .string()
+    .regex(/^\d{2}\/\d{4}$/, "Competência no formato MM/AAAA.")
+    .optional()
+    .or(z.literal("")),
+});
+
+export const nfseCancelSchema = z.object({
+  motivo: z
+    .string()
+    .trim()
+    .min(15, "Descreva o motivo do cancelamento (mínimo 15 caracteres).")
+    .max(255),
 });
 
 // --- Integration API --------------------------------------------------

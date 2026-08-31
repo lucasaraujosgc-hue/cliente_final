@@ -77,6 +77,25 @@ export const webhookLimiter = rateLimit({
   message: { error: "Limite de requisições excedido. Tente novamente em instantes." },
 });
 
+// NFS-e emission: each hit signs a DPS and calls the Sefin Nacional. Per-IP,
+// generous enough for a busy day of manual issuing but not a script.
+export const nfseEmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas emissões seguidas. Aguarde alguns minutos e tente de novo." },
+});
+
+// CNPJ lookup for the tomador: hits a free third-party API, so cap it.
+export const nfseLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 80,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas consultas de CNPJ. Aguarde alguns instantes." },
+});
+
 // General-purpose limiter for authenticated API traffic, applied app-wide
 // as a safety net against runaway clients/scripts.
 export const apiLimiter = rateLimit({

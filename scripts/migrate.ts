@@ -104,6 +104,10 @@ const EXPECTED_TABLES = [
   "scheduled_notifications",
   "audit_log",
   "auth_sessions",
+  "payment_checks",
+  "nfse_emissoes",
+  "nfse_config",
+  "nfse_atividades",
 ];
 
 // Sanity check after migrating: every table exists, the password-reset

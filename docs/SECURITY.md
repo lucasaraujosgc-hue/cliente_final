@@ -158,11 +158,16 @@ saem: `password_hash`, `integration_hash`, `integration_hash_digest`,
   (transição sem migration).
 - **Sem `SECRETS_KEY`:** `encryptSecret` é no-op (grava o valor cru) e loga
   warning; `decryptSecret` de um valor legado plaintext funciona.
-- Cobertura: `serpro_config.consumer_secret`, `serpro_config.cert_senha`, e os
-  bytes do certificado `.pfx` no disco. `consumer_key` **não** é cifrado (é
-  identificador), mas **também não é devolvido ao frontend**.
+- Cobertura: `serpro_config.consumer_secret`, `serpro_config.cert_senha`, os
+  bytes do certificado SERPRO `.pfx`, e — por cliente — `nfse_config.cert_senha`
+  + os bytes do certificado A1 de NFS-e (`NFSE_CERTS_DIR`). `consumer_key` **não**
+  é cifrado (é identificador), mas **também não é devolvido ao frontend**.
 - Leitura: `client.routes.ts` decripta em memória só na geração da guia;
-  `serpro.ts` recebe o config já decriptado.
+  `serpro.ts` recebe o config já decriptado. NFS-e: `services/nfse/cert.ts`
+  decripta o `.pfx` só em memória para montar o `https.Agent` (mTLS) e extrair
+  chave/cert PEM p/ a assinatura XMLDSig; valida o CNPJ raiz do certificado contra
+  o do cliente e a data de validade. Nenhuma rota devolve `cert_path`/`cert_senha`
+  (`dto/nfse.ts` só expõe `hasCert`/`certCnpj`/`certValidadeAte`).
 
 ## 9. SECRETS_KEY
 
