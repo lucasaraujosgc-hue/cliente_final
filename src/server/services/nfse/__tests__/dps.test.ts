@@ -144,6 +144,55 @@ describe("CNPJ alfanumérico (NT-009)", () => {
   });
 });
 
+describe("códigos pré-configurados pelo contador", () => {
+  it("emite cNBS, tribISSQN configurável e regApTribSN (SN ME/EPP)", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "simples_nacional", regApTribSN: "2" },
+      servico: { ...base.servico, cNBS: "123456789" },
+      valores: { ...base.valores, tribISSQN: "1" },
+    });
+    expect(built.xml).toContain("<cNBS>123456789</cNBS>");
+    expect(built.xml).toContain("<opSimpNac>3</opSimpNac><regApTribSN>2</regApTribSN><regEspTrib>");
+  });
+
+  it("não emite regApTribSN fora do Simples ME/EPP", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "mei", regApTribSN: "2" },
+    });
+    expect(built.xml).not.toContain("<regApTribSN>");
+  });
+
+  it("tribISSQN 3 (exportação) omite pAliq", () => {
+    const built = buildDpsXml({ ...base, valores: { ...base.valores, tribISSQN: "3", aliquotaIss: 5 } });
+    expect(built.xml).toContain("<tribISSQN>3</tribISSQN>");
+    expect(built.xml).not.toContain("<pAliq>");
+  });
+
+  it("emite o bloco piscofins quando há CST", () => {
+    const built = buildDpsXml({
+      ...base,
+      valores: { ...base.valores, pisCofinsCST: "01", aliqPis: 1.65, aliqCofins: 7.6 },
+    });
+    expect(built.xml).toContain("<piscofins><CST>01</CST>");
+    expect(built.xml).toContain("<pAliqPis>1.65</pAliqPis>");
+    expect(built.xml).toContain("<vCofins>19.00</vCofins>"); // 250 * 7.6%
+  });
+
+  it("não emite piscofins sem CST", () => {
+    expect(buildDpsXml(base).xml).not.toContain("<piscofins>");
+  });
+
+  it("IBSCBS não é emitido por padrão (NFSE_IBSCBS_ENVIAR off)", () => {
+    const built = buildDpsXml({
+      ...base,
+      ibsCbs: { cst: "000", cClassTrib: "000001", cIndOp: "100000", indDest: "0" },
+    });
+    expect(built.xml).not.toContain("<IBSCBS>");
+  });
+});
+
 describe("regras de tamanho", () => {
   it("trunca xDescServ em 1000 caracteres (Anexo I)", () => {
     const built = buildDpsXml({ ...base, servico: { ...base.servico, descricao: "x".repeat(1500) } });

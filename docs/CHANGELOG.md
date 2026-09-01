@@ -11,6 +11,31 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### NFS-e — atividade pré-configurada pelo contador (todos os códigos)
+
+O contador passa a informar **todos os códigos fiscais** na atividade
+(`/admin/nfse` → AtividadeForm); o cliente na emissão só escolhe a atividade e
+informa **tomador, descrição e valor**.
+
+- Migração `0008_nfse_atividade_rtc` (aditiva) em `nfse_atividades`: `c_nbs`,
+  `trib_issqn` (default `1`), `reg_ap_trib_sn`, `cod_atividade_sn`,
+  `pis_cofins_cst`, `aliquota_pis`, `aliquota_cofins`, `ibs_cbs_cst`,
+  `ibs_cbs_class_trib`, `ibs_cbs_cind_op`, `ibs_cbs_ind_dest` (default `0`).
+- `dps.ts` passa a emitir: `serv/cServ/cNBS`; `regTrib/regApTribSN` (só
+  opSimpNac=3); `tribMun/tribISSQN` configurável (antes fixo em `1`), com `pAliq`
+  só quando `tribISSQN=1`; bloco `tribFed/piscofins` (CST + alíquotas → vPis/
+  vCofins) quando a atividade tem CST; `cLocPrestacao` = município de incidência
+  quando informado.
+- **IBS/CBS**: grupo mínimo do XSD v1.01 (`finNFSe` + `cIndOp` + `indDest` +
+  `valores/trib/gIBSCBS/{CST,cClassTrib}`) — só emitido com
+  `NFSE_IBSCBS_ENVIAR=1` **e** os 3 códigos preenchidos. Default OFF (NT-009 sem
+  cronograma). Os códigos são sempre guardados na atividade.
+- Form do contador reorganizado em seções (Serviço · ISSQN · Simples Nacional ·
+  Retenções federais · PIS/COFINS · IBS/CBS). DTO admin devolve todos os campos;
+  DTO do cliente inalterado.
+- `test:` `maxWorkers: 4` + `testTimeout` 20s no vitest.config (pglite/pdf-lib
+  sob paralelismo estouravam 5s). 171 testes.
+
 ### NFS-e Nacional — auditoria + adequação ao contrato oficial
 
 Após auditoria confrontando o código com `docs/nfse-nacional/` e com os Swaggers

@@ -224,37 +224,64 @@ export interface AtividadeInput {
   codTributacaoNac?: string | null;
   codTributacaoMun?: string | null;
   cnae?: string | null;
+  cNbs?: string | null;
   descricaoPadrao?: string;
   aliquotaIss?: number;
   issRetido?: boolean;
+  tribIssqn?: string;
   exigibilidadeIss?: string;
   municipioIncidencia?: string | null;
+  regApTribSn?: string | null;
+  codAtividadeSn?: string | null;
   retIrrf?: number;
   retPis?: number;
   retCofins?: number;
   retCsll?: number;
   retInss?: number;
+  pisCofinsCst?: string | null;
+  aliquotaPis?: number;
+  aliquotaCofins?: number;
+  ibsCbsCst?: string | null;
+  ibsCbsClassTrib?: string | null;
+  ibsCbsCindOp?: string | null;
+  ibsCbsIndDest?: string;
   ativo?: boolean;
   ordem?: number;
+}
+
+function digitsOrNull(v: unknown, max: number): string | null {
+  const d = String(v ?? "").replace(/\D/g, "").slice(0, max);
+  return d || null;
 }
 
 function normalizeAtividade(input: AtividadeInput) {
   return {
     nome: input.nome.trim(),
     itemListaServico: normalizeCodigoLC116(input.itemListaServico),
-    codTributacaoNac: input.codTributacaoNac?.replace(/\D/g, "").slice(0, 6) || null,
+    codTributacaoNac: digitsOrNull(input.codTributacaoNac, 6),
     codTributacaoMun: input.codTributacaoMun?.trim() || null,
-    cnae: input.cnae?.replace(/\D/g, "").slice(0, 7) || null,
+    cnae: digitsOrNull(input.cnae, 7),
+    cNbs: digitsOrNull(input.cNbs, 9),
     descricaoPadrao: (input.descricaoPadrao ?? "").trim(),
     aliquotaIss: clampPct(input.aliquotaIss),
     issRetido: Boolean(input.issRetido),
+    tribIssqn: ["1", "2", "3", "4"].includes(String(input.tribIssqn)) ? String(input.tribIssqn) : "1",
     exigibilidadeIss: input.exigibilidadeIss || "1",
-    municipioIncidencia: input.municipioIncidencia?.replace(/\D/g, "").slice(0, 7) || null,
+    municipioIncidencia: digitsOrNull(input.municipioIncidencia, 7),
+    regApTribSn: ["1", "2", "3"].includes(String(input.regApTribSn)) ? String(input.regApTribSn) : null,
+    codAtividadeSn: digitsOrNull(input.codAtividadeSn, 2),
     retIrrf: clampPct(input.retIrrf),
     retPis: clampPct(input.retPis),
     retCofins: clampPct(input.retCofins),
     retCsll: clampPct(input.retCsll),
     retInss: clampPct(input.retInss),
+    pisCofinsCst: digitsOrNull(input.pisCofinsCst, 2),
+    aliquotaPis: clampPct(input.aliquotaPis),
+    aliquotaCofins: clampPct(input.aliquotaCofins),
+    ibsCbsCst: digitsOrNull(input.ibsCbsCst, 3),
+    ibsCbsClassTrib: digitsOrNull(input.ibsCbsClassTrib, 6),
+    ibsCbsCindOp: digitsOrNull(input.ibsCbsCindOp, 6),
+    ibsCbsIndDest: input.ibsCbsIndDest === "1" ? "1" : "0",
     ativo: input.ativo ?? true,
     ordem: Number.isFinite(input.ordem) ? Number(input.ordem) : 0,
   };

@@ -14,13 +14,23 @@ import {
 // (tiposComplexos_v1.01.xsd, TCInfDPS) exatamente — o validador nacional é
 // estrito quanto a isso. Ver services/nfse/validate.ts para a checagem local.
 //
-// Escopo v1: prestador Simples Nacional / MEI / Normal, um serviço por nota, ISS
-// "operação tributável", retenção federal só nos campos monetários simples
-// (INSS/IRRF/CSLL). PIS/COFINS com CST, deduções, obra, comércio exterior e os
-// blocos IBSCBS (reforma — NT-009, cronograma ainda não publicado) ficam para
-// depois.
+// Escopo: um serviço por nota. O contador pré-configura na atividade tudo que a
+// DPS precisa (cTribNac, cTribMun, cNBS, tribISSQN, alíquota, regApTribSN,
+// retenções federais, PIS/COFINS CST + alíquotas, códigos IBS/CBS); o cliente só
+// informa tomador + descrição + valor.
+//
+// Deduções/reduções, obra, comércio exterior, exigibilidade suspensa e imunidade
+// detalhada ficam para depois.
+//
+// O grupo IBSCBS (reforma — NT-009, cronograma ainda não publicado) só é emitido
+// quando NFSE_IBSCBS_ENVIAR=1 e a atividade tem os 3 códigos (CST, cClassTrib,
+// cIndOp). Fora isso os códigos ficam só guardados na atividade.
 
 export const NFSE_NS = "http://www.sped.fazenda.gov.br/nfse";
+
+// Emissão do grupo IBSCBS na DPS. Default OFF — a NT-009 ainda não tem cronograma
+// e o ambiente pode rejeitar o grupo. Ligar só depois de homologar.
+const IBSCBS_ENVIAR = process.env.NFSE_IBSCBS_ENVIAR === "1";
 
 // Versão do leiaute da DPS. O XSD TVerNFSe aceita "1.00" ou "1.01"; o default
 // deve casar com o conjunto de XSD adotado para validação e com o que o ambiente
@@ -38,6 +48,7 @@ export interface DpsPrestador {
   nome?: string | null;
   regimeTributario: "simples_nacional" | "mei" | "normal";
   regEspTrib?: string | null; // "0".."6","9"
+  regApTribSN?: string | null; // "1".."3" — só p/ opSimpNac=3 (SN ME/EPP)
 }
 
 export interface DpsEndereco {
@@ -60,7 +71,8 @@ export interface DpsTomador {
 
 export interface DpsServico {
   cTribNac?: string | null; // 6 dígitos — autoritativo
-  cTribMun?: string | null;
+  cTribMun?: string | null; // 3 dígitos
+  cNBS?: string | null; // 9 dígitos (Anexo B)
   itemListaServico?: string | null; // usado só p/ derivar cTribNac quando ausente
   descricao: string;
 }
@@ -69,10 +81,23 @@ export interface DpsValores {
   valorServicosCentavos: number;
   aliquotaIss: number; // %
   issRetido: boolean;
+  tribISSQN?: string; // "1" tributável | "2" imunidade | "3" exportação | "4" não incidência
   exigibilidadeIss: string; // "1".."7"
   retIrrf?: number; // %
   retCsll?: number; // %
   retInss?: number; // %
+  pisCofinsCST?: string | null; // CST PIS/COFINS (2 díg.) — emite o bloco piscofins
+  aliqPis?: number; // %
+  aliqCofins?: number; // %
+}
+
+// Grupo IBSCBS declarado (mínimo do XSD v1.01): finNFSe(0) + cIndOp + indDest +
+// valores/trib/gIBSCBS/{CST, cClassTrib}. Só é emitido com NFSE_IBSCBS_ENVIAR=1.
+export interface DpsIbsCbs {
+  cst: string; // 3 dígitos
+  cClassTrib: string; // 6 dígitos
+  cIndOp: string; // 6 dígitos
+  indDest?: string; // "0" | "1" (default "0")
 }
 
 export interface BuildDpsInput {
@@ -87,6 +112,7 @@ export interface BuildDpsInput {
   tomador?: DpsTomador | null;
   servico: DpsServico;
   valores: DpsValores;
+  ibsCbs?: DpsIbsCbs | null;
 }
 
 export interface BuiltDps {
@@ -187,7 +213,12 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   if (input.prestador.inscricaoMunicipal) prest.ele("IM").txt(String(input.prestador.inscricaoMunicipal));
   if (input.prestador.nome) prest.ele("xNome").txt(input.prestador.nome.slice(0, 150));
   const regTrib = prest.ele("regTrib");
-  regTrib.ele("opSimpNac").txt(opSimpNac(input.prestador.regimeTributario));
+  const op = opSimpNac(input.prestador.regimeTributario);
+  regTrib.ele("opSimpNac").txt(op);
+  // regApTribSN: só para SN ME/EPP (opSimpNac = 3) e quando o contador definiu.
+  if (op === "3" && ["1", "2", "3"].includes(String(input.prestador.regApTribSN))) {
+    regTrib.ele("regApTribSN").txt(String(input.prestador.regApTribSN));
+  }
   regTrib.ele("regEspTrib").txt(String(input.prestador.regEspTrib ?? "0"));
 
   // toma (opcional)
@@ -223,6 +254,8 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   cServ.ele("cTribNac").txt(cTribNac);
   if (input.servico.cTribMun) cServ.ele("cTribMun").txt(String(input.servico.cTribMun).replace(/\D/g, "").slice(0, 3));
   cServ.ele("xDescServ").txt(input.servico.descricao.slice(0, XDESC_MAX));
+  const cNBS = String(input.servico.cNBS || "").replace(/\D/g, "");
+  if (cNBS.length === 9) cServ.ele("cNBS").txt(cNBS);
 
   // valores
   const valores = inf.ele("valores");
@@ -230,22 +263,60 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
 
   const trib = valores.ele("trib");
   const tribMun = trib.ele("tribMun");
-  tribMun.ele("tribISSQN").txt("1"); // 1 = operação tributável
+  const tribISSQN = ["1", "2", "3", "4"].includes(String(input.valores.tribISSQN))
+    ? String(input.valores.tribISSQN)
+    : "1";
+  tribMun.ele("tribISSQN").txt(tribISSQN);
   tribMun.ele("tpRetISSQN").txt(input.valores.issRetido ? "2" : "1"); // 2 = retido pelo tomador
-  if (input.valores.aliquotaIss > 0) tribMun.ele("pAliq").txt(input.valores.aliquotaIss.toFixed(2));
+  // pAliq só quando há incidência (tribISSQN = 1) e alíquota informada.
+  if (tribISSQN === "1" && input.valores.aliquotaIss > 0) {
+    tribMun.ele("pAliq").txt(input.valores.aliquotaIss.toFixed(2));
+  }
 
   const vBase = input.valores.valorServicosCentavos / 100;
   const vRetInss = (vBase * (Number(input.valores.retInss) || 0)) / 100;
   const vRetIrrf = (vBase * (Number(input.valores.retIrrf) || 0)) / 100;
   const vRetCsll = (vBase * (Number(input.valores.retCsll) || 0)) / 100;
-  if (vRetInss > 0 || vRetIrrf > 0 || vRetCsll > 0) {
+  const pisCofinsCST = String(input.valores.pisCofinsCST || "").replace(/\D/g, "").padStart(2, "0").slice(-2);
+  const emitePisCofins = /^\d{2}$/.test(pisCofinsCST) && pisCofinsCST !== "00";
+
+  if (emitePisCofins || vRetInss > 0 || vRetIrrf > 0 || vRetCsll > 0) {
     const tribFed = trib.ele("tribFed");
+    if (emitePisCofins) {
+      const pc = tribFed.ele("piscofins");
+      pc.ele("CST").txt(pisCofinsCST);
+      const aliqPis = Number(input.valores.aliqPis) || 0;
+      const aliqCofins = Number(input.valores.aliqCofins) || 0;
+      if (aliqPis > 0 || aliqCofins > 0) {
+        pc.ele("vBCPisCofins").txt(vBase.toFixed(2));
+        if (aliqPis > 0) pc.ele("pAliqPis").txt(aliqPis.toFixed(2));
+        if (aliqCofins > 0) pc.ele("pAliqCofins").txt(aliqCofins.toFixed(2));
+        if (aliqPis > 0) pc.ele("vPis").txt(((vBase * aliqPis) / 100).toFixed(2));
+        if (aliqCofins > 0) pc.ele("vCofins").txt(((vBase * aliqCofins) / 100).toFixed(2));
+      }
+    }
     if (vRetInss > 0) tribFed.ele("vRetCP").txt(vRetInss.toFixed(2));
     if (vRetIrrf > 0) tribFed.ele("vRetIRRF").txt(vRetIrrf.toFixed(2));
     if (vRetCsll > 0) tribFed.ele("vRetCSLL").txt(vRetCsll.toFixed(2));
   }
 
   trib.ele("totTrib").ele("indTotTrib").txt("0"); // não informa os tributos totais
+
+  // IBSCBS (reforma) — grupo mínimo do XSD v1.01. Só emitido com
+  // NFSE_IBSCBS_ENVIAR=1 e os 3 códigos preenchidos pelo contador.
+  const ib = input.ibsCbs;
+  const ibCst = String(ib?.cst || "").replace(/\D/g, "");
+  const ibClass = String(ib?.cClassTrib || "").replace(/\D/g, "");
+  const ibIndOp = String(ib?.cIndOp || "").replace(/\D/g, "");
+  if (IBSCBS_ENVIAR && ib && ibCst && ibClass && ibIndOp.length === 6) {
+    const ibscbs = inf.ele("IBSCBS");
+    ibscbs.ele("finNFSe").txt("0"); // 0 = NFS-e regular (único valor no v1.01)
+    ibscbs.ele("cIndOp").txt(ibIndOp);
+    ibscbs.ele("indDest").txt(ib.indDest === "1" ? "1" : "0");
+    const gIBSCBS = ibscbs.ele("valores").ele("trib").ele("gIBSCBS");
+    gIBSCBS.ele("CST").txt(ibCst.slice(0, 3));
+    gIBSCBS.ele("cClassTrib").txt(ibClass.slice(0, 6));
+  }
 
   const xml = doc.end({ prettyPrint: false, headless: false });
   return { xml, idDps, numero, serie: input.serie };

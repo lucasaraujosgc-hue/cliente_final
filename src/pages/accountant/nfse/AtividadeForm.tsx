@@ -10,6 +10,10 @@ import {
 const FIELD =
   "w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 dark:text-white";
 const LABEL = "text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide";
+const SECTION =
+  "rounded-xl border border-slate-200 p-3.5 text-sm dark:border-slate-800 open:pb-4";
+const SUMMARY = "cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300";
+const HINT = "mt-1 text-[11px] leading-snug text-slate-400";
 
 const EXIGIBILIDADE: [string, string][] = [
   ["1", "Exigível"],
@@ -21,11 +25,32 @@ const EXIGIBILIDADE: [string, string][] = [
   ["7", "Exigibilidade suspensa — processo administrativo"],
 ];
 
+const TRIB_ISSQN: [string, string][] = [
+  ["1", "Operação tributável"],
+  ["2", "Imunidade"],
+  ["3", "Exportação de serviço"],
+  ["4", "Não incidência"],
+];
+
+const REG_AP_SN: [string, string][] = [
+  ["", "— (não aplicável / usar padrão do SN)"],
+  ["1", "Federais e ISSQN apurados pelo Simples Nacional"],
+  ["2", "Federais pelo SN, ISSQN por fora (legislação municipal)"],
+  ["3", "Federais e ISSQN por fora do SN"],
+];
+
+const IND_DEST: [string, string][] = [
+  ["0", "O destinatário é o próprio tomador"],
+  ["1", "O destinatário é outra pessoa/estabelecimento"],
+];
+
 interface Props {
   initial?: NfseAtividade | null;
   onCancel: () => void;
   onSave: (input: Partial<AtividadeInput>) => Promise<void>;
 }
+
+type FormState = Partial<AtividadeInput>;
 
 export function AtividadeForm({ initial, onCancel, onSave }: Props) {
   const [servicos, setServicos] = useState<ServicoLC116[]>([]);
@@ -33,22 +58,33 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [form, setForm] = useState<Partial<AtividadeInput>>({
+  const [form, setForm] = useState<FormState>({
     nome: initial?.nome ?? "",
     itemListaServico: initial?.itemListaServico ?? "",
     codTributacaoNac: initial?.codTributacaoNac ?? "",
     codTributacaoMun: initial?.codTributacaoMun ?? "",
     cnae: initial?.cnae ?? "",
+    cNbs: initial?.cNbs ?? "",
     descricaoPadrao: initial?.descricaoPadrao ?? "",
     aliquotaIss: initial?.aliquotaIss ?? 0,
     issRetido: initial?.issRetido ?? false,
+    tribIssqn: initial?.tribIssqn ?? "1",
     exigibilidadeIss: initial?.exigibilidadeIss ?? "1",
     municipioIncidencia: initial?.municipioIncidencia ?? "",
+    regApTribSn: initial?.regApTribSn ?? "",
+    codAtividadeSn: initial?.codAtividadeSn ?? "",
     retIrrf: initial?.retIrrf ?? 0,
     retPis: initial?.retPis ?? 0,
     retCofins: initial?.retCofins ?? 0,
     retCsll: initial?.retCsll ?? 0,
     retInss: initial?.retInss ?? 0,
+    pisCofinsCst: initial?.pisCofinsCst ?? "",
+    aliquotaPis: initial?.aliquotaPis ?? 0,
+    aliquotaCofins: initial?.aliquotaCofins ?? 0,
+    ibsCbsCst: initial?.ibsCbsCst ?? "",
+    ibsCbsClassTrib: initial?.ibsCbsClassTrib ?? "",
+    ibsCbsCindOp: initial?.ibsCbsCindOp ?? "",
+    ibsCbsIndDest: initial?.ibsCbsIndDest ?? "0",
     ativo: initial?.ativo ?? true,
     ordem: initial?.ordem ?? 0,
   });
@@ -71,7 +107,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
       .slice(0, 40);
   }, [servicos, servicoQuery]);
 
-  const set = (patch: Partial<AtividadeInput>) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: FormState) => setForm((f) => ({ ...f, ...patch }));
   const num = (v: string) => {
     const n = Number(String(v).replace(",", "."));
     return Number.isFinite(n) ? n : 0;
@@ -101,10 +137,36 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
     }
   };
 
+  // Funções de render (NÃO componentes) — evitam remontar o input a cada tecla.
+  const text = (k: keyof FormState, label: string, placeholder?: string, hint?: string) => (
+    <div>
+      <label className={LABEL}>{label}</label>
+      <input
+        className={FIELD + " mt-1"}
+        value={String((form as any)[k] ?? "")}
+        onChange={(e) => set({ [k]: e.target.value } as FormState)}
+        placeholder={placeholder}
+      />
+      {hint && <p className={HINT}>{hint}</p>}
+    </div>
+  );
+
+  const pct = (k: keyof FormState, label: string) => (
+    <div>
+      <label className="text-[11px] font-bold uppercase text-slate-500">{label}</label>
+      <input
+        className={FIELD + " mt-1"}
+        inputMode="decimal"
+        value={String((form as any)[k] ?? 0)}
+        onChange={(e) => set({ [k]: num(e.target.value) } as FormState)}
+      />
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
       <div className="my-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">
             {initial ? "Editar atividade" : "Nova atividade"}
           </h3>
@@ -112,9 +174,12 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             <X className="h-5 w-5" />
           </button>
         </div>
+        <p className="mb-4 text-xs text-slate-500">
+          Preencha aqui todos os códigos fiscais. Na emissão, o cliente só informa tomador, descrição e valor.
+        </p>
 
         <form onSubmit={submit} className="space-y-4">
-          {/* Busca LC116 */}
+          {/* ---- Serviço ---- */}
           <div>
             <label className={LABEL}>Item da lista de serviço (LC 116/2003)</label>
             <div className="relative mt-1">
@@ -146,30 +211,12 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={LABEL}>Nome da atividade</label>
-              <input className={FIELD + " mt-1"} value={form.nome ?? ""} onChange={(e) => set({ nome: e.target.value })} />
-            </div>
-            <div>
-              <label className={LABEL}>Item LC 116</label>
-              <input className={FIELD + " mt-1"} value={form.itemListaServico ?? ""} onChange={(e) => set({ itemListaServico: e.target.value })} placeholder="ex.: 4.16" />
-            </div>
-            <div>
-              <label className={LABEL}>Cód. tributação nacional</label>
-              <input className={FIELD + " mt-1"} value={form.codTributacaoNac ?? ""} onChange={(e) => set({ codTributacaoNac: e.target.value })} placeholder="6 dígitos" />
-            </div>
-            <div>
-              <label className={LABEL}>Cód. tributação municipal</label>
-              <input className={FIELD + " mt-1"} value={form.codTributacaoMun ?? ""} onChange={(e) => set({ codTributacaoMun: e.target.value })} />
-            </div>
-            <div>
-              <label className={LABEL}>CNAE</label>
-              <input className={FIELD + " mt-1"} value={form.cnae ?? ""} onChange={(e) => set({ cnae: e.target.value })} />
-            </div>
-            <div>
-              <label className={LABEL}>Alíquota ISS (%)</label>
-              <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaIss ?? 0)} onChange={(e) => set({ aliquotaIss: num(e.target.value) })} />
-            </div>
+            {text("nome", "Nome da atividade")}
+            {text("itemListaServico", "Item LC 116", "ex.: 4.16")}
+            {text("codTributacaoNac", "Cód. tributação nacional", "6 dígitos", "Aba MUN.INCID_INFO.SERV. do Anexo I. Se em branco, derivado do item LC 116.")}
+            {text("codTributacaoMun", "Cód. tributação municipal", "3 dígitos")}
+            {text("cnae", "CNAE", "7 dígitos")}
+            {text("cNbs", "Código NBS", "9 dígitos", "Nomenclatura Brasileira de Serviços 2.0 — Anexo B.")}
           </div>
 
           <div>
@@ -182,7 +229,21 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             />
           </div>
 
+          {/* ---- ISSQN ---- */}
           <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={LABEL}>Tributação do ISSQN</label>
+              <select className={FIELD + " mt-1"} value={form.tribIssqn ?? "1"} onChange={(e) => set({ tribIssqn: e.target.value })}>
+                {TRIB_ISSQN.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={LABEL}>Alíquota ISS (%)</label>
+              <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaIss ?? 0)} onChange={(e) => set({ aliquotaIss: num(e.target.value) })} />
+              <p className={HINT}>Município conveniado ao padrão nacional fornece a alíquota — este valor é usado só como fallback.</p>
+            </div>
             <div>
               <label className={LABEL}>Exigibilidade do ISS</label>
               <select className={FIELD + " mt-1"} value={form.exigibilidadeIss ?? "1"} onChange={(e) => set({ exigibilidadeIss: e.target.value })}>
@@ -191,28 +252,80 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
                 ))}
               </select>
             </div>
-            <label className="mt-6 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <input type="checkbox" checked={!!form.issRetido} onChange={(e) => set({ issRetido: e.target.checked })} />
-              ISS retido pelo tomador
-            </label>
+            {text("municipioIncidencia", "Município de incidência (IBGE)", "7 dígitos — se ISS devido em outro município", "Vira o local da prestação (cLocPrestacao) na DPS.")}
           </div>
 
-          <details className="rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-800">
-            <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-300">
-              Retenções federais (%)
-            </summary>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input type="checkbox" checked={!!form.issRetido} onChange={(e) => set({ issRetido: e.target.checked })} />
+            ISS retido pelo tomador
+          </label>
+
+          {/* ---- Simples Nacional ---- */}
+          <details className={SECTION}>
+            <summary className={SUMMARY}>Simples Nacional</summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL}>Regime de apuração pelo SN</label>
+                <select className={FIELD + " mt-1"} value={form.regApTribSn ?? ""} onChange={(e) => set({ regApTribSn: e.target.value })}>
+                  {REG_AP_SN.map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+                <p className={HINT}>regApTribSN — só para Simples Nacional ME/EPP que ultrapassou sublimite.</p>
+              </div>
+              {text("codAtividadeSn", "Código da atividade SN", "ex.: 7, 8, 9…", "cAtvSN (LC 123/2006, NT-009). Capturado; enviado quando o layout entrar em produção.")}
+            </div>
+          </details>
+
+          {/* ---- Retenções federais ---- */}
+          <details className={SECTION}>
+            <summary className={SUMMARY}>Retenções federais (%)</summary>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {(["retIrrf", "retPis", "retCofins", "retCsll", "retInss"] as const).map((k) => (
-                <div key={k}>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">{k.replace("ret", "")}</label>
-                  <input
-                    className={FIELD + " mt-1"}
-                    inputMode="decimal"
-                    value={String((form as any)[k] ?? 0)}
-                    onChange={(e) => set({ [k]: num(e.target.value) } as any)}
-                  />
-                </div>
-              ))}
+              {pct("retIrrf", "IRRF")}
+              {pct("retPis", "PIS")}
+              {pct("retCofins", "COFINS")}
+              {pct("retCsll", "CSLL")}
+              {pct("retInss", "INSS (CP)")}
+            </div>
+            <p className={HINT}>Valores retidos: IRRF → vRetIRRF, CSLL → vRetCSLL, INSS → vRetCP. PIS/COFINS retidos entram no bloco abaixo.</p>
+          </details>
+
+          {/* ---- PIS/COFINS apuração própria ---- */}
+          <details className={SECTION}>
+            <summary className={SUMMARY}>PIS / COFINS — apuração própria</summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              {text("pisCofinsCst", "CST PIS/COFINS", "2 dígitos (ex.: 01, 07…)", "Deixe em branco para não emitir o bloco piscofins (padrão p/ Simples).")}
+              <div>
+                <label className="text-[11px] font-bold uppercase text-slate-500">Alíquota PIS (%)</label>
+                <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaPis ?? 0)} onChange={(e) => set({ aliquotaPis: num(e.target.value) })} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-slate-500">Alíquota COFINS (%)</label>
+                <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaCofins ?? 0)} onChange={(e) => set({ aliquotaCofins: num(e.target.value) })} />
+              </div>
+            </div>
+          </details>
+
+          {/* ---- IBS / CBS ---- */}
+          <details className={SECTION}>
+            <summary className={SUMMARY}>IBS / CBS — Reforma Tributária</summary>
+            <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              Os códigos são guardados agora. O grupo IBS/CBS só é enviado na DPS quando
+              <code className="mx-1 rounded bg-amber-100 px-1 dark:bg-amber-900/40">NFSE_IBSCBS_ENVIAR=1</code>
+              e a NT-009 estiver em produção.
+            </div>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              {text("ibsCbsCst", "CST IBS/CBS", "3 dígitos", "Anexo VII (IndOp/IBSCBS).")}
+              {text("ibsCbsClassTrib", "cClassTrib", "6 dígitos", "Anexo VIII (classificação tributária).")}
+              {text("ibsCbsCindOp", "cIndOp", "6 dígitos", "Código indicador da operação — Anexo VII.")}
+            </div>
+            <div className="mt-3">
+              <label className={LABEL}>Indicador do destinatário</label>
+              <select className={FIELD + " mt-1"} value={form.ibsCbsIndDest ?? "0"} onChange={(e) => set({ ibsCbsIndDest: e.target.value })}>
+                {IND_DEST.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
             </div>
           </details>
 

@@ -196,23 +196,38 @@ export const nfseConfigSchema = z.object({
   certSenha: optStr(200),
 });
 
-// Accountant: one pre-configured activity (JSON).
+// Accountant: one pre-configured activity (JSON). O contador informa TODOS os
+// códigos aqui; o cliente só escolhe a atividade + tomador + descrição + valor.
+const pct = z.number().min(0).max(100).optional();
+const optCode = (n: number) => z.string().max(n).nullish();
+
 export const nfseAtividadeSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório.").max(120),
   itemListaServico: z.string().min(1, "Item da lista de serviço é obrigatório.").max(10),
-  codTributacaoNac: z.string().max(12).nullish(),
-  codTributacaoMun: z.string().max(20).nullish(),
-  cnae: z.string().max(15).nullish(),
+  codTributacaoNac: optCode(12),
+  codTributacaoMun: optCode(20),
+  cnae: optCode(15),
+  cNbs: optCode(12),
   descricaoPadrao: z.string().max(2000).optional(),
-  aliquotaIss: z.number().min(0).max(100).optional(),
+  aliquotaIss: pct,
   issRetido: z.boolean().optional(),
+  tribIssqn: z.enum(["1", "2", "3", "4"]).optional(),
   exigibilidadeIss: z.enum(["1", "2", "3", "4", "5", "6", "7"]).optional(),
-  municipioIncidencia: z.string().max(10).nullish(),
-  retIrrf: z.number().min(0).max(100).optional(),
-  retPis: z.number().min(0).max(100).optional(),
-  retCofins: z.number().min(0).max(100).optional(),
-  retCsll: z.number().min(0).max(100).optional(),
-  retInss: z.number().min(0).max(100).optional(),
+  municipioIncidencia: optCode(10),
+  regApTribSn: z.enum(["1", "2", "3"]).nullish().or(z.literal("")),
+  codAtividadeSn: optCode(3),
+  retIrrf: pct,
+  retPis: pct,
+  retCofins: pct,
+  retCsll: pct,
+  retInss: pct,
+  pisCofinsCst: optCode(3),
+  aliquotaPis: pct,
+  aliquotaCofins: pct,
+  ibsCbsCst: optCode(4),
+  ibsCbsClassTrib: optCode(8),
+  ibsCbsCindOp: optCode(8),
+  ibsCbsIndDest: z.enum(["0", "1"]).optional(),
   ativo: z.boolean().optional(),
   ordem: z.number().int().min(0).max(9999).optional(),
 });

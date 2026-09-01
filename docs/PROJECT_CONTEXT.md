@@ -52,7 +52,7 @@ na tela "Visão Geral".
 |------|--------|----------|
 | `/admin` | `accountant/Dashboard.tsx` | **Inbox** — KPIs (`/api/accountant/overview`), últimos documentos recebidos dos clientes, "Atividade recente" (audit log) |
 | `/admin/clients` | `ClientsList.tsx` | lista/busca de clientes, criar/editar, resetar senha, importar via Excel, envio de mural em massa |
-| `/admin/nfse` | `accountant/nfse/` | **NFS-e** — por cliente: upload do certificado A1 + dados fiscais + atividades pré-configuradas (item LC 116, alíquota ISS, retenções); "Testar certificado" (abre o `.pfx` + checa convênio do município); aba "Notas emitidas" |
+| `/admin/nfse` | `accountant/nfse/` | **NFS-e** — por cliente: upload do certificado A1 + dados fiscais + atividades pré-configuradas. O contador informa **todos** os códigos da atividade (LC 116, cTribNac/cTribMun, NBS, tribISSQN, alíquota ISS, exigibilidade, município de incidência, regApTribSN, cAtvSN, retenções federais, PIS/COFINS CST+alíquotas, IBS/CBS CST/cClassTrib/cIndOp). "Testar certificado"; aba "Notas emitidas". O cliente na emissão só informa tomador, descrição e valor. |
 | `/admin/client/:id` | `ClientDetail.tsx` | detalhe do cliente: documentos, mensagens, faturamento, upload de doc, editar doc, marcar status, gerar/revogar token de integração (mostrado uma vez) |
 | `/admin/notifications` | `Notifications.tsx` | envio de push imediato + regras de notificação agendada |
 | `/admin/devices` | `Devices.tsx` | dispositivos/subscriptions de push por cliente |
@@ -183,7 +183,7 @@ Postgres via Drizzle. Schema em `src/server/schema.ts` (**única fonte de verdad
 | `auth_sessions` | 1 linha por login | refresh token hasheado + rotação + `previous_refresh_hash` (reuso) + `expires_at` + `revoked_at`. **Sem FK** (contador não tem linha; o delete de cliente limpa explicitamente). |
 | `payment_checks` | rastreio de pagamento de guia | 1 linha/guia (`document_id` unique). `paid_source` = `serpro`\|`accountant`. FK cascade. Ver §5.7. |
 | `nfse_config` | config de NFS-e (1/cliente) | certificado A1 (`cert_path` cifrado, `cert_senha` `enc:v1:`), `codigo_municipio` (IBGE), `regime_tributario`, `serie_dps`, `prox_numero_dps`, `ativo`. FK cascade. **DTO obrigatório** (`dto/nfse.ts`). |
-| `nfse_atividades` | atividades pré-configuradas | item LC 116, `cod_tributacao_nac`, `aliquota_iss`, `iss_retido`, retenções federais. FK cascade. |
+| `nfse_atividades` | atividades pré-configuradas pelo contador | item LC 116, `cod_tributacao_nac/mun`, `c_nbs`, `trib_issqn`, `aliquota_iss`, `iss_retido`, `municipio_incidencia`, `reg_ap_trib_sn`, `cod_atividade_sn`, retenções federais, `pis_cofins_cst`+alíquotas, `ibs_cbs_cst/class_trib/cind_op/ind_dest`. FK cascade. |
 | `nfse_emissoes` | notas emitidas / rascunhos / rejeições | `chave_acesso` (50), `xml_dps`/`xml_nfse`, `danfse_pdf_path`, `rejeicao_codigo/motivo`, `cancelada_em`. FK cascade. |
 
 Migrations: `drizzle/0000_baseline.sql` … `0006_nfse.sql` + `drizzle/reconcile-legacy.sql`

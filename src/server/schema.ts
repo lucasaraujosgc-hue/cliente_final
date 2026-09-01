@@ -188,19 +188,36 @@ export const nfseAtividades = pgTable('nfse_atividades', {
   codTributacaoNac: text('cod_tributacao_nac'), // cTribNac (6 dígitos)
   codTributacaoMun: text('cod_tributacao_mun'),
   cnae: text('cnae'),
+  cNbs: text('c_nbs'), // NBS 9 dígitos (Anexo B) — serv/cServ/cNBS
   descricaoPadrao: text('descricao_padrao').default('').notNull(),
   aliquotaIss: real('aliquota_iss').default(0).notNull(), // %
   issRetido: boolean('iss_retido').default(false).notNull(),
+  // Tributação do ISSQN (tribMun/tribISSQN): 1 operação tributável, 2 imunidade,
+  // 3 exportação de serviço, 4 não incidência.
+  tribIssqn: text('trib_issqn').default('1').notNull(),
   // exigibilidade ISS: 1 exigível, 2 não incidência, 3 isenção, 4 exportação,
   // 5 imunidade, 6 susp. judicial, 7 susp. administrativa
   exigibilidadeIss: text('exigibilidade_iss').default('1').notNull(),
-  municipioIncidencia: text('municipio_incidencia'), // IBGE, se ISS devido em outro município
+  municipioIncidencia: text('municipio_incidencia'), // IBGE — vira cLocPrestacao quando ISS é devido em outro município
+  // Regime de apuração pelo Simples Nacional (regApTribSN) — só p/ opSimpNac=3.
+  regApTribSn: text('reg_ap_trib_sn'), // 1 | 2 | 3
+  codAtividadeSn: text('cod_atividade_sn'), // cAtvSN (NT-009) — capturado, ainda não enviado
   // Retenções federais (percentuais). 0 = não retém.
   retIrrf: real('ret_irrf').default(0).notNull(),
   retPis: real('ret_pis').default(0).notNull(),
   retCofins: real('ret_cofins').default(0).notNull(),
   retCsll: real('ret_csll').default(0).notNull(),
   retInss: real('ret_inss').default(0).notNull(),
+  // PIS/COFINS apuração própria (tribFed/piscofins) — só emitido quando cst preenchido.
+  pisCofinsCst: text('pis_cofins_cst'), // CST PIS/COFINS 2 dígitos
+  aliquotaPis: real('aliquota_pis').default(0).notNull(), // %
+  aliquotaCofins: real('aliquota_cofins').default(0).notNull(), // %
+  // IBS/CBS (Reforma Tributária — NT-009). Capturado sempre; só enviado na DPS
+  // quando NFSE_IBSCBS_ENVIAR=1 e os 3 códigos estão preenchidos.
+  ibsCbsCst: text('ibs_cbs_cst'), // CST IBS/CBS 3 dígitos (Anexo VII)
+  ibsCbsClassTrib: text('ibs_cbs_class_trib'), // cClassTrib 6 dígitos (Anexo VIII)
+  ibsCbsCindOp: text('ibs_cbs_cind_op'), // cIndOp 6 dígitos (Anexo VII)
+  ibsCbsIndDest: text('ibs_cbs_ind_dest').default('0').notNull(), // indDest 0 | 1
   ativo: boolean('ativo').default(true).notNull(),
   ordem: integer('ordem').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

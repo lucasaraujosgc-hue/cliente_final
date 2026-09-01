@@ -78,16 +78,27 @@ export interface NfseAtividade {
   codTributacaoNac: string | null;
   codTributacaoMun: string | null;
   cnae: string | null;
+  cNbs: string | null;
   descricaoPadrao: string;
   aliquotaIss: number;
   issRetido: boolean;
+  tribIssqn: string;
   exigibilidadeIss: string;
   municipioIncidencia: string | null;
+  regApTribSn: string | null;
+  codAtividadeSn: string | null;
   retIrrf: number;
   retPis: number;
   retCofins: number;
   retCsll: number;
   retInss: number;
+  pisCofinsCst: string | null;
+  aliquotaPis: number;
+  aliquotaCofins: number;
+  ibsCbsCst: string | null;
+  ibsCbsClassTrib: string | null;
+  ibsCbsCindOp: string | null;
+  ibsCbsIndDest: string;
   ativo: boolean;
   ordem: number;
 }

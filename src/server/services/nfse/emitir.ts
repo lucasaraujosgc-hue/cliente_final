@@ -150,12 +150,15 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     competencia,
     dhEmi,
     cLocEmi: String(config.codigoMunicipio || ""),
+    // ISS devido em outro município → local da prestação = município de incidência.
+    cLocPrestacao: atividade.municipioIncidencia || null,
     prestador: {
       cnpj: normalizeInscricao(client.cnpj),
       inscricaoMunicipal: null,
       nome: client.name,
       regimeTributario: (config.regimeTributario as any) || "simples_nacional",
       regEspTrib: config.regimeEspecialTrib || REG_ESP_TRIB_DEFAULT,
+      regApTribSN: atividade.regApTribSn,
     },
     tomador: {
       doc: tomadorDoc,
@@ -168,6 +171,7 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     servico: {
       cTribNac: atividade.codTributacaoNac,
       cTribMun: atividade.codTributacaoMun,
+      cNBS: atividade.cNbs,
       itemListaServico: atividade.itemListaServico,
       descricao: input.descricao,
     },
@@ -175,11 +179,24 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
       valorServicosCentavos: input.valor,
       aliquotaIss,
       issRetido: atividade.issRetido,
+      tribISSQN: atividade.tribIssqn || "1",
       exigibilidadeIss: atividade.exigibilidadeIss || "1",
       retIrrf: atividade.retIrrf,
       retCsll: atividade.retCsll,
       retInss: atividade.retInss,
+      pisCofinsCST: atividade.pisCofinsCst,
+      aliqPis: atividade.aliquotaPis,
+      aliqCofins: atividade.aliquotaCofins,
     },
+    ibsCbs:
+      atividade.ibsCbsCst && atividade.ibsCbsClassTrib && atividade.ibsCbsCindOp
+        ? {
+            cst: atividade.ibsCbsCst,
+            cClassTrib: atividade.ibsCbsClassTrib,
+            cIndOp: atividade.ibsCbsCindOp,
+            indDest: atividade.ibsCbsIndDest || "0",
+          }
+        : null,
   });
 
   const valorIss = Math.round((aliquotaIss / 100) * input.valor);
