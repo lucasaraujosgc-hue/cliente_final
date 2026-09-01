@@ -54,9 +54,15 @@ export interface NfseEmissaoDetail extends NfseEmissao {
   tomadorEmail: string | null;
   tomadorTelefone: string | null;
   tomadorEndereco: NfseEndereco | null;
+  idDps: string | null;
   rejeicaoCodigo: string | null;
+  erroMsg: string | null;
+  alertas: { codigo: string | null; mensagem: string | null }[] | null;
+  versaoAplicativo: string | null;
   cancelamentoMotivo: string | null;
   hasDanfse: boolean;
+  hasXmlDps: boolean;
+  hasXmlNfse: boolean;
 }
 
 export interface TomadorLookup {
@@ -404,6 +410,24 @@ export async function adminListNfseEmissoes(): Promise<(NfseEmissaoDetail & { cl
   const res = await apiFetch("/api/nfse/admin/emissoes", {}, "accountant");
   const data = await res.json();
   return data.emissoes || [];
+}
+
+// Baixa o XML da DPS assinada ou da NFS-e de uma emissão (diagnóstico).
+export async function adminDownloadEmissaoXml(id: string, tipo: "dps" | "nfse"): Promise<void> {
+  const res = await apiFetch(`/api/nfse/admin/emissoes/${id}/xml?tipo=${tipo}`, {}, "accountant");
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || "XML não disponível.");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${tipo}-${id}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 // ---------------------------------------------------------------------------

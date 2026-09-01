@@ -91,7 +91,8 @@ export function nfseEmissaoListDTO(e: NfseEmissaoRow) {
   };
 }
 
-// Detail — also drives "duplicar nota" (prefills tomador + activity + description).
+// Detail — also drives "duplicar nota" (prefills tomador + activity + description)
+// e o diagnóstico de rejeição no painel do contador.
 export function nfseEmissaoDetailDTO(e: NfseEmissaoRow) {
   return {
     ...nfseEmissaoListDTO(e),
@@ -103,11 +104,17 @@ export function nfseEmissaoDetailDTO(e: NfseEmissaoRow) {
     valorIss: e.valorIss ?? null,
     serieDps: e.serieDps ?? null,
     numeroDps: e.numeroDps ?? null,
+    idDps: e.idDps ?? null,
     tomadorEmail: e.tomadorEmail ?? null,
     tomadorTelefone: e.tomadorTelefone ?? null,
     tomadorEndereco: e.tomadorEndereco ?? null,
     rejeicaoCodigo: e.rejeicaoCodigo ?? null,
+    erroMsg: e.erroMsg ?? null,
+    alertas: (e.alertas ?? null) as unknown,
+    versaoAplicativo: e.versaoAplicativo ?? null,
     cancelamentoMotivo: e.cancelamentoMotivo ?? null,
     hasDanfse: !!e.danfsePdfPath || (e.status === "emitida" && !!e.chaveAcesso),
+    hasXmlDps: !!e.xmlDps,
+    hasXmlNfse: !!e.xmlNfse,
   };
 }

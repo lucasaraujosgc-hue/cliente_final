@@ -83,6 +83,30 @@ function assertNoPrefixes(el: any, path: string): void {
   }
 }
 
+// TSString do XSD só aceita ISO-8859-1 (Latin-1). Caractere fora disso (travessão,
+// aspas curvas, emoji, símbolos) → "Dados inválidos" no Sefin.
+const NAO_LATIN1 = /[^\t\n\r\x20-\x7E\xA0-\xFF]/;
+function assertLatin1(el: any, path: string): void {
+  for (const child of elementChildren(el)) {
+    const cp = `${path}/${localName(child)}`;
+    if (elementChildren(child).length === 0) {
+      const t = String(child.textContent ?? "");
+      const m = t.match(NAO_LATIN1);
+      if (m) {
+        fail(
+          `texto com caractere fora do padrão (ISO-8859-1): "${m[0]}" (U+${m[0]
+            .codePointAt(0)!
+            .toString(16)
+            .toUpperCase()})`,
+          cp,
+        );
+      }
+    } else {
+      assertLatin1(child, cp);
+    }
+  }
+}
+
 function checkSequence(
   children: any[],
   seq: string[],
@@ -156,6 +180,7 @@ export function validateDps(xml: string, opts: { requireSignature?: boolean } = 
     fail(`versão do leiaute inválida ("${root.getAttribute("versao")}") — use 1.00 ou 1.01`, "DPS/@versao");
   }
   assertNoPrefixes(root, "DPS");
+  assertLatin1(root, "DPS");
 
   const inf = childByName(root, "infDPS");
   if (!inf) fail('grupo "infDPS" ausente', "DPS");

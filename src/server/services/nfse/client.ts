@@ -149,16 +149,31 @@ function extractMensagens(body: any, key: "erros" | "alertas"): MensagemSefin[] 
   return [];
 }
 
+// Junta TUDO que o Sefin devolveu para o diagnóstico: código do 1º erro +
+// todas as mensagens (com complemento) numa string. Quando o corpo não tem a
+// forma esperada, inclui o HTTP status e um trecho do corpo cru.
 function firstErro(res: RawResponse): { codigo?: string; motivo: string } {
   let body: any;
   try {
     body = res.json();
   } catch {
-    return { motivo: res.text().slice(0, 400) || `HTTP ${res.status}` };
+    return { motivo: `HTTP ${res.status} — ${res.text().slice(0, 500) || "(corpo vazio)"}` };
   }
   const erros = extractMensagens(body, "erros");
-  const e = erros[0];
-  return { codigo: e?.codigo || undefined, motivo: e?.mensagem || `HTTP ${res.status}` };
+  const alertas = extractMensagens(body, "alertas");
+  const todos = [...erros, ...alertas].filter((m) => m.mensagem);
+
+  if (todos.length) {
+    const partes = todos.map((m) => (m.codigo ? `[${m.codigo}] ${m.mensagem}` : m.mensagem));
+    return { codigo: erros[0]?.codigo || undefined, motivo: partes.join(" | ") };
+  }
+
+  // Sem lista de erros reconhecível — devolve o que der (mensagem/título de topo
+  // ou um recorte do JSON) para não perder o motivo real.
+  const topo =
+    String(body?.mensagem ?? body?.Mensagem ?? body?.title ?? body?.detail ?? "").trim();
+  const cru = JSON.stringify(body).slice(0, 600);
+  return { motivo: `HTTP ${res.status}${topo ? ` — ${topo}` : ""} · ${cru}` };
 }
 
 // ---- POST /nfse ------------------------------------------------------------

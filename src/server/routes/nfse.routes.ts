@@ -24,6 +24,7 @@ import {
   nfseStatusForClient,
   listEmissoes,
   getEmissao,
+  getEmissaoById,
   listAllEmissoes,
   getClientConfig,
   certFileExists,
@@ -268,6 +269,28 @@ export function registerNfseRoutes(app: Express) {
     res.json({
       emissoes: rows.map((e) => ({ ...nfseEmissaoDetailDTO(e), clientId: e.clientId })),
     });
+  });
+
+  // Diagnóstico: baixa o XML da DPS assinada (?tipo=dps) ou da NFS-e (?tipo=nfse)
+  // de uma emissão. Só o contador; útil para investigar rejeição.
+  app.get("/api/nfse/admin/emissoes/:id/xml", verifyAccountantAuth, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    const row = await getEmissaoById(req.params.id);
+    if (!row) return res.status(404).json({ error: "Emissão não encontrada." });
+    const tipo = req.query.tipo === "nfse" ? "nfse" : "dps";
+    const xml = tipo === "nfse" ? row.xmlNfse : row.xmlDps;
+    if (!xml) return res.status(404).json({ error: `XML ${tipo === "nfse" ? "da NFS-e" : "da DPS"} não disponível.` });
+    await logAudit(req, "nfse.xml.download", {
+      targetType: "nfse_emissao",
+      targetId: row.id,
+      summary: `Download do XML ${tipo} da emissão`,
+    });
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${tipo}-${row.idDps || row.id}.xml"`,
+    );
+    res.send(xml);
   });
 
   app.get("/api/nfse/admin/clients/:id", verifyAccountantAuth, async (req, res) => {

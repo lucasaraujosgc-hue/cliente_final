@@ -26,3 +26,9 @@ export async function getEmissao(clientId: string, id: string): Promise<NfseEmis
 export async function listAllEmissoes(limit = 200): Promise<NfseEmissaoRow[]> {
   return db.select().from(nfseEmissoes).orderBy(desc(nfseEmissoes.createdAt)).limit(limit);
 }
+
+// Admin: qualquer emissão por id (sem filtro de cliente — o contador vê todas).
+export async function getEmissaoById(id: string): Promise<NfseEmissaoRow | null> {
+  const [row] = await db.select().from(nfseEmissoes).where(eq(nfseEmissoes.id, id));
+  return row ?? null;
+}

@@ -11,6 +11,23 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### NFS-e — diagnóstico de rejeição + saneamento de texto
+
+- **Saneamento ISO-8859-1** (`dps.ts` `sanitizeText`): o tipo `TSString` do XSD só
+  aceita Latin-1. Travessão (—), aspas curvas (" "), reticências (…), non-breaking
+  space e qualquer caractere fora do Latin-1 no nome do prestador/tomador, na
+  descrição ou no endereço faziam o Sefin rejeitar com **"Dados inválidos."**.
+  Agora são transliterados/removidos. `validate.ts` também barra isso antes do
+  envio, com o caractere e o code point no erro.
+- **Captura de erro completa** (`client.ts` `firstErro`): junta todos os
+  `erros[]` + `alertas[]` (com `complemento`) numa string; quando o corpo não tem
+  a forma esperada, inclui o HTTP status + recorte do JSON cru. Some com o
+  "Dados inválidos." pelado.
+- **Painel do contador — aba "Notas emitidas"**: linha expansível com Id da DPS,
+  chave, `verAplic` do Sefin, motivo da rejeição (código + texto), alertas, e
+  **download do XML da DPS assinada / da NFS-e** (rota
+  `GET /api/nfse/admin/emissoes/:id/xml?tipo=dps|nfse`, só contador, com audit).
+
 ### NFS-e — atividade pré-configurada pelo contador (todos os códigos)
 
 O contador passa a informar **todos os códigos fiscais** na atividade

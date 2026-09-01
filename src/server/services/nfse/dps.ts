@@ -126,6 +126,25 @@ function moneyFromCentavos(c: number): string {
   return (Math.round(c) / 100).toFixed(2);
 }
 
+// O tipo TSString do XSD só aceita o intervalo ISO-8859-1 (Latin-1). Texto
+// colado de editores costuma trazer travessão (—), aspas curvas (" "), reticências
+// (…) e caracteres fora do Latin-1 → o Sefin rejeita com "Dados inválidos.".
+// Transliteramos o que dá e removemos o resto.
+export function sanitizeText(s: string | null | undefined): string {
+  return String(s ?? "")
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    .replace(/[‐-―−]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/[   ]/g, " ")
+    .replace(/[•·]/g, "-")
+    .normalize("NFC")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[^\x20-\x7E\xA1-\xFF]/g, "") // fora do Latin-1 imprimível → remove
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function serie5(serie: string): string {
   return String(serie).replace(/\D/g, "").padStart(5, "0").slice(-5);
 }
@@ -210,8 +229,11 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   // prest
   const prest = inf.ele("prest");
   prest.ele("CNPJ").txt(inscPrest);
-  if (input.prestador.inscricaoMunicipal) prest.ele("IM").txt(String(input.prestador.inscricaoMunicipal));
-  if (input.prestador.nome) prest.ele("xNome").txt(input.prestador.nome.slice(0, 150));
+  if (input.prestador.inscricaoMunicipal) {
+    prest.ele("IM").txt(String(input.prestador.inscricaoMunicipal).replace(/\D/g, "").slice(0, 15));
+  }
+  const xNomePrest = sanitizeText(input.prestador.nome).slice(0, 150);
+  if (xNomePrest) prest.ele("xNome").txt(xNomePrest);
   const regTrib = prest.ele("regTrib");
   const op = opSimpNac(input.prestador.regimeTributario);
   regTrib.ele("opSimpNac").txt(op);
@@ -226,25 +248,32 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     const toma = inf.ele("toma");
     if (isCnpj(tomadorDoc)) toma.ele("CNPJ").txt(tomadorDoc);
     else toma.ele("CPF").txt(tomadorDoc.replace(/\D/g, "").padStart(11, "0").slice(-11));
-    if (input.tomador.inscricaoMunicipal) toma.ele("IM").txt(String(input.tomador.inscricaoMunicipal));
-    toma.ele("xNome").txt(input.tomador.nome.slice(0, 150));
+    if (input.tomador.inscricaoMunicipal) {
+      toma.ele("IM").txt(String(input.tomador.inscricaoMunicipal).replace(/\D/g, "").slice(0, 15));
+    }
+    toma.ele("xNome").txt(sanitizeText(input.tomador.nome).slice(0, 150) || "TOMADOR");
 
     const e = input.tomador.endereco;
     const cMun = String(e?.codigoMunicipio || "").replace(/\D/g, "");
     const cep = String(e?.cep || "").replace(/\D/g, "");
-    if (e && e.logradouro && e.numero && e.bairro && cMun.length === 7 && cep.length === 8) {
+    const xLgr = sanitizeText(e?.logradouro).slice(0, 255);
+    const nro = sanitizeText(e?.numero).slice(0, 60);
+    const xBairro = sanitizeText(e?.bairro).slice(0, 60);
+    if (e && xLgr && nro && xBairro && cMun.length === 7 && cep.length === 8) {
       const end = toma.ele("end");
       const endNac = end.ele("endNac");
       endNac.ele("cMun").txt(cMun);
       endNac.ele("CEP").txt(cep);
-      end.ele("xLgr").txt(e.logradouro.slice(0, 255));
-      end.ele("nro").txt(e.numero.slice(0, 60));
-      if (e.complemento) end.ele("xCpl").txt(e.complemento.slice(0, 156));
-      end.ele("xBairro").txt(e.bairro.slice(0, 60));
+      end.ele("xLgr").txt(xLgr);
+      end.ele("nro").txt(nro);
+      const xCpl = sanitizeText(e.complemento).slice(0, 156);
+      if (xCpl) end.ele("xCpl").txt(xCpl);
+      end.ele("xBairro").txt(xBairro);
     }
     const fone = String(input.tomador.telefone || "").replace(/\D/g, "");
     if (fone.length >= 6) toma.ele("fone").txt(fone.slice(0, 20));
-    if (input.tomador.email) toma.ele("email").txt(String(input.tomador.email).slice(0, 80));
+    const email = sanitizeText(input.tomador.email).slice(0, 80);
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) toma.ele("email").txt(email);
   }
 
   // serv
@@ -253,7 +282,7 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   const cServ = serv.ele("cServ");
   cServ.ele("cTribNac").txt(cTribNac);
   if (input.servico.cTribMun) cServ.ele("cTribMun").txt(String(input.servico.cTribMun).replace(/\D/g, "").slice(0, 3));
-  cServ.ele("xDescServ").txt(input.servico.descricao.slice(0, XDESC_MAX));
+  cServ.ele("xDescServ").txt(sanitizeText(input.servico.descricao).slice(0, XDESC_MAX) || "Servico prestado");
   const cNBS = String(input.servico.cNBS || "").replace(/\D/g, "");
   if (cNBS.length === 9) cServ.ele("cNBS").txt(cNBS);
 

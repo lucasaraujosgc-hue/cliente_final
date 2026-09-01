@@ -42,7 +42,7 @@ export {
   type NfseClientOverview,
 } from "./config";
 
-export { listEmissoes, getEmissao, listAllEmissoes } from "./emissoes";
+export { listEmissoes, getEmissao, listAllEmissoes, getEmissaoById } from "./emissoes";
 
 export { lookupCnpj, type TomadorLookup, type TomadorEndereco } from "./cnpjLookup";
 

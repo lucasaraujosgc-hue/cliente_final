@@ -193,6 +193,26 @@ describe("códigos pré-configurados pelo contador", () => {
   });
 });
 
+describe("saneamento de texto (ISO-8859-1)", () => {
+  it("transliteria travessão, aspas curvas e reticências na descrição", () => {
+    const built = buildDpsXml({
+      ...base,
+      servico: { ...base.servico, descricao: "Consultoria — “premium” … 1º nível" },
+    });
+    const d = built.xml.match(/<xDescServ>(.*?)<\/xDescServ>/)?.[1] ?? "";
+    expect(d).toBe('Consultoria - "premium" ... 1º nível');
+    expect(d).not.toMatch(/[—“…]/);
+  });
+
+  it("remove caractere fora do Latin-1 no nome do tomador", () => {
+    const built = buildDpsXml({
+      ...base,
+      tomador: { doc: "98765432000110", nome: "Empresa 😀 Ação Ltda" },
+    });
+    expect(built.xml).toContain("<xNome>Empresa Ação Ltda</xNome>");
+  });
+});
+
 describe("regras de tamanho", () => {
   it("trunca xDescServ em 1000 caracteres (Anexo I)", () => {
     const built = buildDpsXml({ ...base, servico: { ...base.servico, descricao: "x".repeat(1500) } });
