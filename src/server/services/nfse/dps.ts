@@ -32,10 +32,10 @@ export const NFSE_NS = "http://www.sped.fazenda.gov.br/nfse";
 // e o ambiente pode rejeitar o grupo. Ligar só depois de homologar.
 const IBSCBS_ENVIAR = process.env.NFSE_IBSCBS_ENVIAR === "1";
 
-// Versão do leiaute da DPS. O XSD TVerNFSe aceita "1.00" ou "1.01"; o default
-// deve casar com o conjunto de XSD adotado para validação e com o que o ambiente
-// (produção restrita / produção) efetivamente aceita. Configurável por env.
-export const DPS_VERSAO = process.env.NFSE_DPS_VERSAO || "1.00";
+// Versão do leiaute da DPS. O XSD TVerNFSe aceita "1.00" ou "1.01". O pacote de
+// esquemas em produção é o "NFSe-ESQUEMAS_XSD-v1.01-20260209"
+// (gov.br/nfse/.../documentacao-atual) → default "1.01". Sobrescrevível por env.
+export const DPS_VERSAO = process.env.NFSE_DPS_VERSAO || "1.01";
 export const VER_APLIC = (process.env.NFSE_VER_APLIC || "portal-virgula-1").slice(0, 20);
 
 // xDescServ: o XSD (TSDesc2000) permite 2000, mas o Anexo I fixa 1000. Adotamos

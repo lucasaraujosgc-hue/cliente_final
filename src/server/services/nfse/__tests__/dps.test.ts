@@ -54,7 +54,7 @@ describe("buildDpsXml", () => {
 
   it("has the DPS root with the national namespace and versao", () => {
     expect(built.xml).toContain('xmlns="http://www.sped.fazenda.gov.br/nfse"');
-    expect(built.xml).toContain('versao="1.00"');
+    expect(built.xml).toContain('versao="1.01"');
     expect(built.xml).toContain(`<infDPS Id="${built.idDps}">`);
   });
 

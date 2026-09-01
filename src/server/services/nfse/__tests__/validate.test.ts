@@ -21,7 +21,7 @@ describe("validateDps", () => {
   });
 
   it("rejeita versão fora da faixa 1.00 | 1.01", () => {
-    const xml = buildDpsXml(base).xml.replace('versao="1.00"', 'versao="2.00"');
+    const xml = buildDpsXml(base).xml.replace('versao="1.01"', 'versao="2.00"');
     expect(() => validateDps(xml)).toThrow(/versão do leiaute/i);
   });
 

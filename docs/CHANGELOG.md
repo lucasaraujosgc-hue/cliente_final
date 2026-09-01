@@ -13,6 +13,9 @@ lista exata de commits.)
 
 ### NFS-e — diagnóstico de rejeição + saneamento de texto
 
+- **`NFSE_DPS_VERSAO` default `1.00` → `1.01`**: o pacote de esquemas em produção
+  (gov.br/nfse/.../documentacao-atual) é o `NFSe-ESQUEMAS_XSD-v1.01-20260209` —
+  o `versao="1.00"` que a DPS carregava não é o vigente. Sobrescrevível por env.
 - **Saneamento ISO-8859-1** (`dps.ts` `sanitizeText`): o tipo `TSString` do XSD só
   aceita Latin-1. Travessão (—), aspas curvas (" "), reticências (…), non-breaking
   space e qualquer caractere fora do Latin-1 no nome do prestador/tomador, na
