@@ -118,14 +118,31 @@ stream. Nunca via `?token=`, nunca `/uploads` direto.
 `Overdue`/`Dashboard` → `GuiaAtualizarButton` → `POST /api/pendencies/guia/:clienteId`
 (`{tipoGuia, competencia, documentId}`) → decripta credenciais SERPRO em memória
 → `getSerproToken` → `serproPost(.../Emitir)` → salva PDF em `GUIAS_PDF_DIR` →
-`qrExtractor` extrai PIX → atualiza `documents` (`fileUrl` = ponteiro da guia,
-`pixCode`, `dataVencimento`, status `GUIA_ATUALIZADA`).
+`qrExtractor` extrai PIX + valor + **número do documento** (`detalhamentoDas` da
+DAS, ou texto do PDF) → atualiza `documents` (`fileUrl` = ponteiro da guia,
+`pixCode`, `dataVencimento`, `extracted_data.numeroDocumento`, status
+`GUIA_ATUALIZADA`).
 
 ### 5.6 Webhook de documento externo
 Sistema externo → `POST /api/webhook/receitas` ou `/documentos` com
 `hash_empresa`/`companyHash` (token de integração) → `findClientByIntegrationToken`
 (digest **ou** plaintext legado) → valida tamanho/extensão/magic bytes → grava
 arquivo + `documents` → notifica.
+
+### 5.7 Consulta de pagamento de guia (PAGTOWEB)
+`services/paymentQuery.ts`. Guia federal (`isFederalGuia`) recebe uma linha
+`payment_checks` na 1ª interação do cliente (abrir/copiar PIX) ou quando o
+contador dispara a consulta. O job horário (`runPaymentQuerySweeper`) e o botão
+"Consultar" do contador chamam `consultarPagamentoNoSerpro` → PAGTOWEB
+"Consultar Pagamentos" (`idServico PAGAMENTOS71`, endpoint `/Consultar`):
+por `numeroDocumentoLista` se `extracted_data.numeroDocumento` existe (extraído
+do PDF e cacheado na 1ª tentativa se faltar), senão por
+`intervaloDataArrecadacao` + `intervaloValorTotalDocumento`. O serviço só
+retorna documentos arrecadados → item com `dataArrecadacao` marca a guia paga
+(`documents.status = paid`, `payment_checks.status = PAGO`, push ao cliente).
+O contador também pode **informar pagamento manual em lote** em `/admin/payments`
+(`POST /api/accountant/payments/mark-paid` → `markPaymentsManual`) — mesmo efeito,
+sem SERPRO e sem notificar o cliente.
 
 ## 6. Estrutura geral frontend / backend
 
@@ -155,16 +172,16 @@ Postgres via Drizzle. Schema em `src/server/schema.ts` (**única fonte de verdad
 | Tabela | Papel | Notas |
 |--------|-------|-------|
 | `clients` | empresas atendidas | `cnpj` **só dígitos** (14), `unique`. `password_hash` (bcrypt). `integration_hash` (legado, `unique`) + `integration_hash_digest` (sha256, `unique`). `reset_code_hash/expires/attempts`. `notification_preferences` (json). |
-| `documents` | documentos/guias | `file_url` = `/uploads/<nome>` \| `data:...` \| ponteiro de guia. `extracted_data` jsonb. FK cascade. |
+| `documents` | documentos/guias | `file_url` = `/uploads/<nome>` \| `data:...` \| ponteiro de guia. `extracted_data` jsonb (`extractedValue`, `numeroDocumento`). FK cascade. |
 | `billing_data` | faturamento mensal | modelo "services" + colunas legadas mantidas via `upsertBilling()`. FK cascade. |
 | `messages` | mural cliente↔contador | `direction`. FK cascade. |
 | `subscriptions` | push endpoints | web-push (`subscription_object` jsonb) e/ou `fcm_token`. FK cascade. |
 | `serpro_config` | config SERPRO (1 linha, `usuario_id=1`) | `consumer_secret`/`cert_senha` **cifrados** (`enc:v1:...`) quando `SECRETS_KEY` setado. `cert_path` aponta p/ `.pfx` (cifrado no disco). |
-| `guias_geradas` | guias emitidas via SERPRO | `pdf_path` (arquivo em `GUIAS_PDF_DIR` ou `data:`). FK cascade. |
+| `guias_geradas` | guias emitidas via SERPRO | `pdf_path` (arquivo em `GUIAS_PDF_DIR` ou `data:`), `numero_documento` (p/ consulta PAGTOWEB). FK cascade. |
 | `scheduled_notifications` | regras de push agendado | `client_id` nulo = broadcast. FK cascade. |
 | `audit_log` | trilha de ações do contador | **sem FK** (sobrevive à exclusão do cliente). |
 | `auth_sessions` | 1 linha por login | refresh token hasheado + rotação + `previous_refresh_hash` (reuso) + `expires_at` + `revoked_at`. **Sem FK** (contador não tem linha; o delete de cliente limpa explicitamente). |
-| `payment_checks` | rastreio de pagamento de guia | 1 linha/guia (`document_id` unique). FK cascade. |
+| `payment_checks` | rastreio de pagamento de guia | 1 linha/guia (`document_id` unique). `paid_source` = `serpro`\|`accountant`. FK cascade. Ver §5.7. |
 | `nfse_config` | config de NFS-e (1/cliente) | certificado A1 (`cert_path` cifrado, `cert_senha` `enc:v1:`), `codigo_municipio` (IBGE), `regime_tributario`, `serie_dps`, `prox_numero_dps`, `ativo`. FK cascade. **DTO obrigatório** (`dto/nfse.ts`). |
 | `nfse_atividades` | atividades pré-configuradas | item LC 116, `cod_tributacao_nac`, `aliquota_iss`, `iss_retido`, retenções federais. FK cascade. |
 | `nfse_emissoes` | notas emitidas / rascunhos / rejeições | `chave_acesso` (50), `xml_dps`/`xml_nfse`, `danfse_pdf_path`, `rejeicao_codigo/motivo`, `cancelada_em`. FK cascade. |

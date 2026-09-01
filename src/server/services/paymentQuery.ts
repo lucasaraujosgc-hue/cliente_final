@@ -4,15 +4,21 @@ import { auditLog, clients, documents, paymentChecks } from "../schema";
 import { buildSerproContext, getSerproToken, serproPost } from "./serpro";
 import { mapWithConcurrency } from "./concurrencyPool";
 import { sendClientNotification } from "./push";
+import { loadDocumentPdfBuffer } from "./files";
 import { logger } from "./logger";
 
 // --- Integra Contador service for the payment query --------------------------
-// There is no official "was this DARF paid?" endpoint that fits every case; the
-// closest is PAGTOWEB (consulta de arrecadação / comprovantes por CNPJ). The
-// exact idSistema/idServico can differ per SERPRO contract, so both are
-// overridable by env without a code change.
+// SERPRO's PAGTOWEB "Consultar Pagamentos" (Integra Pagamento). The service
+// only ever returns documents that were *arrecadados* (paid): a hit with a
+// `dataArrecadacao` means the guia was paid; an empty list means it wasn't.
+// Query modes:
+//   - by document number  → { numeroDocumentoLista: [num] }   (most reliable)
+//   - fallback by window   → { intervaloDataArrecadacao, intervaloValorTotalDocumento }
+// `primeiroDaPagina` + `tamanhoDaPagina` are mandatory. `dados` is a JSON
+// string inside `pedidoDados`. idSistema/idServico are overridable by env for
+// contract differences without a code change.
 const PAGTOWEB_SISTEMA = process.env.SERPRO_PAGTOWEB_SISTEMA || "PAGTOWEB";
-const PAGTOWEB_SERVICO = process.env.SERPRO_PAGTOWEB_SERVICO || "CONSULTARPAGAMENTOS169";
+const PAGTOWEB_SERVICO = process.env.SERPRO_PAGTOWEB_SERVICO || "PAGAMENTOS71";
 const PAGTOWEB_ENDPOINT = process.env.SERPRO_PAGTOWEB_ENDPOINT || "Consultar";
 
 // Cadence knobs (all overridable, sane defaults).
@@ -48,54 +54,115 @@ export function isFederalGuia(doc: { category?: string | null; title?: string | 
   return /(DAS|DARF|DCTFWEB|SIMPLES|INSS|PGDASD|IMPOSTO|TRIBUT)/.test(hay);
 }
 
-// Best-effort read of the SERPRO PAGTOWEB response. Kept isolated and
-// conservative: only report "paid" when the payload positively shows a
-// settled payment, otherwise "not_found". Tune against real responses.
-function interpretPaymentResponse(raw: any): { paid: boolean; paidAt?: string } {
-  let dados = raw?.dados ?? raw;
-  if (typeof dados === "string") {
-    try {
-      dados = JSON.parse(dados);
-    } catch {
-      /* leave as string */
-    }
+// --- reading / caching the "número do documento" ----------------------------
+
+interface DocForQuery {
+  id?: string;
+  category?: string | null;
+  title?: string | null;
+  competence?: string | null;
+  dueDate?: string | null;
+  extractedData?: unknown;
+  fileUrl?: string | null;
+}
+
+// The number/value we can pull straight from `documents.extracted_data`.
+function readExtracted(doc: DocForQuery): { numeroDocumento?: string; extractedValue?: number } {
+  const ed = doc.extractedData;
+  if (ed && typeof ed === "object" && !Array.isArray(ed)) {
+    const o = ed as Record<string, unknown>;
+    return {
+      numeroDocumento:
+        typeof o.numeroDocumento === "string" && o.numeroDocumento ? o.numeroDocumento : undefined,
+      extractedValue: typeof o.extractedValue === "number" ? o.extractedValue : undefined,
+    };
   }
-  if (typeof dados === "string") {
+  return {};
+}
+
+// Cache a freshly-extracted document number back onto the row, preserving the
+// rest of extracted_data (same shape handling as the guia recálculo flow).
+async function persistDocNumber(docId: string, existing: unknown, numero: string): Promise<void> {
+  let ed: any = existing;
+  if (!ed || typeof ed !== "object") ed = {};
+  else if (Array.isArray(ed)) ed = { array: ed };
+  ed = { ...ed, numeroDocumento: numero };
+  await db.update(documents).set({ extractedData: ed }).where(eq(documents.id, docId));
+}
+
+// --- fallback query window --------------------------------------------------
+
+function parseStoredDate(d?: string | null): Date | null {
+  if (!d) return null;
+  const iso = d.includes("/") ? d.split("/").reverse().join("-") : d.split("T")[0];
+  const t = Date.parse(iso);
+  return isNaN(t) ? null : new Date(t);
+}
+
+const DAY_MS = 86_400_000;
+
+// Arrecadação (payment) date range for the fallback query: from a bit before
+// the due date to ~2 months after, capped at today. Falls back to the
+// competence month when there is no due date.
+function paymentDateWindow(doc: DocForQuery): { dataInicial: string; dataFinal: string } | null {
+  let start: Date | null = null;
+  let end: Date | null = null;
+  const due = parseStoredDate(doc.dueDate);
+  if (due) {
+    start = new Date(due.getTime() - 10 * DAY_MS);
+    end = new Date(due.getTime() + 60 * DAY_MS);
+  } else if (doc.competence && /^\d{2}\/\d{4}$/.test(doc.competence)) {
+    const [m, y] = doc.competence.split("/").map(Number);
+    start = new Date(Date.UTC(y, m - 1, 1));
+    end = new Date(Date.UTC(y, m + 1, 0));
+  }
+  if (!start || !end) return null;
+  const today = new Date();
+  if (end > today) end = today;
+  if (start > end) return null;
+  return { dataInicial: start.toISOString().slice(0, 10), dataFinal: end.toISOString().slice(0, 10) };
+}
+
+// --- reading the SERPRO PAGTOWEB response -----------------------------------
+
+// PAGTOWEB "Consultar Pagamentos" only ever returns documents that were
+// *arrecadados* (paid), so an item carrying a `dataArrecadacao` means the guia
+// was paid. `dados` arrives as a stringified JSON array inside the envelope.
+// In fallback mode (queried by date window, not document number) we require the
+// amount to match so an unrelated payment in the window can't produce a false
+// positive.
+function interpretPaymentResponse(
+  root: any,
+  opts: { expectedValue?: number; requireValueMatch: boolean },
+): { paid: boolean; paidAt?: string } {
+  let dados = root?.dados ?? root;
+  for (let i = 0; i < 2 && typeof dados === "string"; i++) {
     try {
       dados = JSON.parse(dados);
     } catch {
-      /* still a string */
+      break;
     }
   }
 
   const list: any[] = Array.isArray(dados)
     ? dados
-    : Array.isArray(dados?.pagamentos)
-      ? dados.pagamentos
-      : Array.isArray(dados?.arrecadacoes)
-        ? dados.arrecadacoes
-        : Array.isArray(dados?.documentos)
-          ? dados.documentos
-          : dados
-            ? [dados]
-            : [];
+    : Array.isArray(dados?.documentos)
+      ? dados.documentos
+      : Array.isArray(dados?.pagamentos)
+        ? dados.pagamentos
+        : dados && typeof dados === "object"
+          ? [dados]
+          : [];
 
   for (const item of list) {
-    const situacao = String(item?.situacao ?? item?.status ?? "").toUpperCase();
-    const paidAt =
-      item?.dataArrecadacao ??
-      item?.dataPagamento ??
-      item?.dataArrecadacaoDebito ??
-      null;
-    const valorPago = Number(item?.valorTotal ?? item?.valorPago ?? item?.valorRecolhido ?? 0);
-    if (
-      situacao.includes("PAGO") ||
-      situacao.includes("QUITAD") ||
-      situacao.includes("LIQUIDAD") ||
-      (paidAt && valorPago > 0)
-    ) {
-      return { paid: true, paidAt: paidAt || undefined };
+    const paidAt = item?.dataArrecadacao ?? item?.dataPagamento ?? null;
+    if (!paidAt) continue;
+    if (opts.requireValueMatch) {
+      if (opts.expectedValue == null) continue;
+      const total = Number(item?.valorTotal ?? item?.valorPrincipal ?? 0);
+      if (!(Math.abs(total - opts.expectedValue) <= 0.5)) continue;
     }
+    return { paid: true, paidAt: String(paidAt) };
   }
   return { paid: false };
 }
@@ -104,7 +171,7 @@ function interpretPaymentResponse(raw: any): { paid: boolean; paidAt?: string } 
 
 export async function consultarPagamentoNoSerpro(
   client: { cnpj: string },
-  doc: { category?: string | null; title?: string | null; competence?: string | null; dueDate?: string | null },
+  doc: DocForQuery,
 ): Promise<{ outcome: PaymentOutcome; paidAt?: string; raw?: string }> {
   if (!isFederalGuia(doc)) return { outcome: "not_applicable" };
 
@@ -118,20 +185,43 @@ export async function consultarPagamentoNoSerpro(
     return { outcome: "error", raw: String(e?.message || e) };
   }
 
-  // Period for the query — from the guia's competence (MM/YYYY) or due date.
-  let anoPA = "";
-  let mesPA = "";
-  if (doc.competence && /^\d{2}\/\d{4}$/.test(doc.competence)) {
-    const [m, y] = doc.competence.split("/");
-    anoPA = y;
-    mesPA = m;
-  } else if (doc.dueDate) {
-    const d = doc.dueDate.includes("/")
-      ? doc.dueDate.split("/").reverse().join("-")
-      : doc.dueDate.split("T")[0];
-    const parts = d.split("-");
-    anoPA = parts[0];
-    mesPA = parts[1];
+  // Resolve the document number: stored on extracted_data, or parsed from the
+  // guia PDF once and cached back (best-effort — null just means we fall back
+  // to the date/value window query).
+  let { numeroDocumento, extractedValue } = readExtracted(doc);
+  if (!numeroDocumento && doc.id && doc.fileUrl) {
+    try {
+      const buf = await loadDocumentPdfBuffer(doc.fileUrl);
+      if (buf) {
+        const { extractDocNumberFromPdf } = await import("../qrExtractor");
+        const found = await extractDocNumberFromPdf(buf);
+        if (found) {
+          numeroDocumento = found;
+          await persistDocNumber(doc.id, doc.extractedData, found).catch(() => {});
+        }
+      }
+    } catch {
+      /* fall back to the window query */
+    }
+  }
+
+  const byNumber = !!numeroDocumento;
+  const dados: Record<string, unknown> = { primeiroDaPagina: 0, tamanhoDaPagina: 100 };
+  if (byNumber) {
+    dados.numeroDocumentoLista = [numeroDocumento];
+  } else {
+    // Without a document number we can only match on value; with neither we
+    // could never confirm a payment — skip the call.
+    if (extractedValue == null || !(extractedValue > 0)) {
+      return { outcome: "not_found", raw: "sem número do documento nem valor para confrontar" };
+    }
+    const win = paymentDateWindow(doc);
+    if (!win) return { outcome: "not_found", raw: "sem número do documento nem janela de datas" };
+    dados.intervaloDataArrecadacao = win;
+    dados.intervaloValorTotalDocumento = {
+      valorInicial: Number((extractedValue - 0.5).toFixed(2)),
+      valorFinal: Number((extractedValue + 0.5).toFixed(2)),
+    };
   }
 
   const contribuinte = client.cnpj.replace(/\D/g, "");
@@ -143,12 +233,7 @@ export async function consultarPagamentoNoSerpro(
       idSistema: PAGTOWEB_SISTEMA,
       idServico: PAGTOWEB_SERVICO,
       versaoSistema: "1.0",
-      dados: JSON.stringify({
-        contribuinte,
-        anoPA,
-        mesPA,
-        dataInicial: anoPA && mesPA ? `${anoPA}-${mesPA}-01` : undefined,
-      }),
+      dados: JSON.stringify(dados),
     },
   };
 
@@ -172,7 +257,10 @@ export async function consultarPagamentoNoSerpro(
     } catch {
       return { outcome: "error", raw: `resposta não-JSON: ${text.slice(0, 300)}` };
     }
-    const { paid, paidAt } = interpretPaymentResponse(root);
+    const { paid, paidAt } = interpretPaymentResponse(root, {
+      expectedValue: extractedValue,
+      requireValueMatch: !byNumber,
+    });
     return { outcome: paid ? "paid" : "not_found", paidAt, raw: text.slice(0, 500) };
   } catch (e: any) {
     return { outcome: "error", raw: String(e?.message || e) };
@@ -234,6 +322,7 @@ async function markGuiaPaid(
   check: typeof paymentChecks.$inferSelect,
   source: "serpro" | "accountant",
   paidAt?: string,
+  notify = true,
 ) {
   const now = new Date();
   await db
@@ -269,7 +358,7 @@ async function markGuiaPaid(
     })
     .catch(() => {});
 
-  if (doc) {
+  if (doc && notify) {
     sendClientNotification(
       check.clientId,
       "Pagamento identificado",
@@ -448,6 +537,54 @@ export async function checkPaymentsForDocuments(documentIds: string[]): Promise<
     ranAt: now.toISOString(),
     results,
   };
+}
+
+export interface ManualMarkResult {
+  selected: number;
+  marked: number;
+  skipped: number;
+  ranAt: string;
+}
+
+// Accountant marks a set of guias as paid by hand (no SERPRO call). Same
+// portal-wide effect as a detected payment (documents.status -> "paid",
+// payment_checks -> PAGO, audit trail) but the client is NOT notified. Guias
+// already PAGO are left untouched.
+export async function markPaymentsManual(documentIds: string[]): Promise<ManualMarkResult> {
+  const ids = Array.from(new Set(documentIds)).slice(0, 150);
+  const now = new Date();
+  if (ids.length === 0) {
+    return { selected: 0, marked: 0, skipped: 0, ranAt: now.toISOString() };
+  }
+
+  const docs = await db.select().from(documents).where(inArray(documents.id, ids));
+  for (const d of docs) {
+    await db
+      .insert(paymentChecks)
+      .values({
+        documentId: d.id,
+        clientId: d.clientId,
+        status: "PENDENTE",
+        lastInteractionType: "manual",
+        lastInteractionAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({ target: paymentChecks.documentId });
+  }
+
+  const checks = await db
+    .select()
+    .from(paymentChecks)
+    .where(inArray(paymentChecks.documentId, ids));
+
+  let marked = 0;
+  for (const check of checks) {
+    if (check.status === "PAGO") continue;
+    await markGuiaPaid(check, "accountant", undefined, false);
+    marked++;
+  }
+
+  return { selected: ids.length, marked, skipped: ids.length - marked, ranAt: now.toISOString() };
 }
 
 // --- activation (same pattern as notificationSweeper.ts) --------------------

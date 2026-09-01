@@ -203,13 +203,14 @@ Também `src/server/services/upload.ts` exporta o middleware
 | `secretbox.ts` | AES-256-GCM. `encryptSecret`/`decryptSecret` (string, formato `enc:v1:iv:tag:ct`), `encryptBytes`/`decryptBytes` (Buffer, magic `ENCv1\0`). Chave = sha256(`SECRETS_KEY`). Sem chave: no-op + lê plaintext legado |
 | `upload.ts` | `UPLOADS_DIR`, `GUIAS_PDF_DIR`, `NFSE_CERTS_DIR`, `NFSE_PDF_DIR`, `ALLOWED_UPLOAD_EXTENSIONS`, `MAX_UPLOAD_BYTES` (10MB), `sanitizeFilename`, `isAllowedUploadName`, multer `upload`/`uploadCert`/`uploadNfseCert`, `validateUploadedFileContent` |
 | `fileType.ts` | `sniffFamily(buf)` (magic bytes) + `contentMatchesExtension(buf, filename)` |
-| `files.ts` | `resolveUploadPath` / `resolveGuiaPdfPath` (traversal-safe), `contentTypeForPath`, `contentDisposition` (anti-injection), `sendDiskFile` (stream), `sendDataUri`, `isReadableFile` |
+| `files.ts` | `resolveUploadPath` / `resolveGuiaPdfPath` (traversal-safe), `contentTypeForPath`, `contentDisposition` (anti-injection), `sendDiskFile` (stream), `sendDataUri`, `isReadableFile`, `loadDocumentPdfBuffer` (bytes de um `documents` p/ processamento server-side) |
 | `serpro.ts` | `isUuid`, `getSerproToken` (cache em memória), `serproPost` (https nativo, suporta agent mTLS) |
+| `paymentQuery.ts` | consulta de pagamento de guia via PAGTOWEB (`PAGAMENTOS71`). `consultarPagamentoNoSerpro` (por nº do documento ou janela data+valor), `runOnePaymentCheck`/`runPaymentQuerySweeper` (job horário), `checkPaymentsForDocuments` / `markPaymentsManual` (lote do contador), `recordGuiaInteraction`, `isFederalGuia`. Tabela `payment_checks`. Ver PROJECT_CONTEXT §5.7 |
 | `nfse/` (pasta) | Emissor de NFS-e Nacional. `status` (gating), `cert` (PKCS#12 → agente mTLS + PEM, node-forge), `config` (CRUD config/atividades), `dps` (XML da DPS v1.01), `sign` (XMLDSig enveloped, xml-crypto), `client` (HTTP mTLS: emitir/consultar/eventos/DANFSE/parâmetros), `params` (cache), `emitir` (orquestra + persiste), `events` (cancelamento e101101), `danfse` (cache do PDF), `chave` (parse 50 díg.), `cnpjLookup` (BrasilAPI→ReceitaWS) |
 | `mailer.ts` | `transporter` (Nodemailer SMTP), `resend` (Resend) |
 | `push.ts` | init Firebase Admin (se env), VAPID, `sendClientNotification`, `sendPushToClients` |
 | `notificationSweeper.ts` | `triggerDebouncedDocumentNotification` (debounce 30 s), `runNotificationSweeper` (+ `setInterval` 30 min e `setTimeout` 10 s no import) |
-| `qrExtractor.ts` (fora de services/) | extrai PIX copia-e-cola e valor do PDF da guia |
+| `qrExtractor.ts` (fora de services/) | extrai PIX copia-e-cola, valor e número do documento (`extractDocNumberFromPdf`) do PDF da guia |
 
 ### DTOs (`src/server/dto/`)
 

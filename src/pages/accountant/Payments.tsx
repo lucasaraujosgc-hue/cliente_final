@@ -16,6 +16,7 @@ interface Guia {
   clientId: string;
   clientName: string;
   title: string;
+  category: string;
   competence: string | null;
   dueDate: string | null;
   value: number | null;
@@ -47,6 +48,17 @@ const fmtDate = (d?: string | null) => {
   return d;
 };
 
+// Rótulos amigáveis para as categorias mais comuns; qualquer outra cai no
+// próprio valor cru.
+const CATEGORY_LABEL: Record<string, string> = {
+  DAS_SIMPLES: "DAS — Simples Nacional",
+  DCTFWEB: "DCTFWeb",
+  DCTFWEB_INSS: "DCTFWeb / INSS",
+  taxes: "Impostos",
+  webhook_doc: "Outros (integração)",
+};
+const catLabel = (c: string) => CATEGORY_LABEL[c] || c;
+
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   PAGO: { text: "Pago", cls: "bg-emerald-100 text-emerald-700" },
   PENDENTE: { text: "Pendente", cls: "bg-amber-100 text-amber-700" },
@@ -58,10 +70,13 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 export function AccountantPayments() {
   const [guias, setGuias] = useState<Guia[] | null>(null);
   const [clientFilter, setClientFilter] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BatchResult | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [confirmingManual, setConfirmingManual] = useState(false);
 
   const load = async () => {
     setError("");
@@ -85,10 +100,27 @@ export function AccountantPayments() {
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [guias]);
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    (guias || []).forEach((g) => g.category && set.add(g.category));
+    return [...set].sort((a, b) => catLabel(a).localeCompare(catLabel(b)));
+  }, [guias]);
+
   const visible = useMemo(
-    () => (guias || []).filter((g) => !clientFilter || g.clientId === clientFilter),
-    [guias, clientFilter],
+    () =>
+      (guias || []).filter(
+        (g) =>
+          (!clientFilter || g.clientId === clientFilter) &&
+          (!categoryFilter || g.category === categoryFilter),
+      ),
+    [guias, clientFilter, categoryFilter],
   );
+
+  // Any change to the selection or the filters cancels a pending manual-mark
+  // confirmation.
+  useEffect(() => {
+    setConfirmingManual(false);
+  }, [selected, clientFilter, categoryFilter]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -106,6 +138,7 @@ export function AccountantPayments() {
   const runCheck = async (body: object) => {
     setRunning(true);
     setError("");
+    setNotice("");
     setResult(null);
     try {
       const res = await apiFetch(
@@ -128,6 +161,42 @@ export function AccountantPayments() {
       setError(e.message || "Falha na consulta.");
     } finally {
       setRunning(false);
+    }
+  };
+
+  // "Informar pagamento manual": 1º clique arma a confirmação, 2º executa.
+  const runManualMark = async () => {
+    if (!confirmingManual) {
+      setConfirmingManual(true);
+      return;
+    }
+    setRunning(true);
+    setError("");
+    setNotice("");
+    setResult(null);
+    try {
+      const res = await apiFetch(
+        "/api/accountant/payments/mark-paid",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentIds: [...selected] }),
+        },
+        "accountant",
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao marcar pagamento.");
+      setNotice(
+        `${data.marked} guia(s) marcada(s) como paga(s)` +
+          (data.skipped ? ` (${data.skipped} já paga(s) ou sem guia).` : "."),
+      );
+      await load();
+      setSelected(new Set());
+    } catch (e: any) {
+      setError(e.message || "Falha ao marcar pagamento.");
+    } finally {
+      setRunning(false);
+      setConfirmingManual(false);
     }
   };
 
@@ -191,6 +260,12 @@ export function AccountantPayments() {
         </div>
       )}
 
+      {notice && (
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-700 dark:text-emerald-400 text-sm font-medium">
+          {notice}
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center gap-3">
           <select
@@ -208,6 +283,24 @@ export function AccountantPayments() {
               </option>
             ))}
           </select>
+
+          {categories.length > 1 && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value);
+                setSelected(new Set());
+              }}
+              className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm dark:text-white"
+            >
+              <option value="">Todas as categorias</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {catLabel(c)}
+                </option>
+              ))}
+            </select>
+          )}
 
           <div className="flex items-center gap-2 text-xs">
             <button onClick={selectAllVisible} className="font-semibold text-emerald-600 hover:text-emerald-700">
@@ -242,6 +335,21 @@ export function AccountantPayments() {
               ) : (
                 <>Consultar selecionadas ({selected.size})</>
               )}
+            </button>
+            <button
+              disabled={running || selected.size === 0}
+              onClick={runManualMark}
+              onBlur={() => setConfirmingManual(false)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border disabled:opacity-50 ${
+                confirmingManual
+                  ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              {confirmingManual
+                ? `Confirmar pagamento manual (${selected.size})`
+                : `Informar pagamento manual (${selected.size})`}
             </button>
           </div>
         </div>

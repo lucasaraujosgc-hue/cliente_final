@@ -14,7 +14,11 @@ import {
   auditLog,
   paymentChecks,
 } from "../schema";
-import { checkPaymentsForDocuments, isFederalGuia } from "../services/paymentQuery";
+import {
+  checkPaymentsForDocuments,
+  isFederalGuia,
+  markPaymentsManual,
+} from "../services/paymentQuery";
 import { upload, uploadCert, validateUploadedFileContent } from "../services/upload";
 import { resolveUploadPath } from "../services/files";
 import { encryptSecret, encryptBytes } from "../services/secretbox";
@@ -956,6 +960,7 @@ export function registerAccountantRoutes(app: Express) {
           clientId: d.clientId,
           clientName: clientName.get(d.clientId) || "—",
           title: d.title,
+          category: d.category,
           competence: d.competence,
           dueDate: d.dueDate,
           value: typeof val === "number" ? val : null,
@@ -979,6 +984,22 @@ export function registerAccountantRoutes(app: Express) {
       await logAudit(req, "payment.batch_check", {
         summary: `Consulta de pagamento em lote: ${result.checked} guia(s), ${result.paid} paga(s)`,
         metadata: { selected: result.selected, paid: result.paid, errors: result.errors },
+      });
+      res.json(result);
+    },
+  );
+
+  // Informa pagamento manual em lote — marca as guias selecionadas como pagas
+  // sem chamar o SERPRO e sem notificar o cliente.
+  app.post(
+    "/api/accountant/payments/mark-paid",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckSchema),
+    async (req, res) => {
+      const result = await markPaymentsManual(req.body.documentIds);
+      await logAudit(req, "payment.manual_mark", {
+        summary: `Pagamento manual em lote: ${result.marked} guia(s) marcada(s) como paga(s)`,
+        metadata: { selected: result.selected, marked: result.marked, skipped: result.skipped },
       });
       res.json(result);
     },

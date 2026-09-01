@@ -315,6 +315,7 @@ export function registerClientRoutes(app: Express) {
         let pdfBase64;
         let vencFormatado;
         let valorTotal;
+        let numeroDocumento: string | null = null;
         try {
           const tokens = await getSerproToken(config, certAgent);
           const baseUrl = serproCtx.baseUrl;
@@ -344,6 +345,11 @@ export function registerClientRoutes(app: Express) {
             // Data de vencimento da API é da guia original — ignora e usa data de emissão
             vencFormatado = null;
             valorTotal    = det.valores?.total ?? null;
+            // "Número do Documento" da DAS — usado depois na consulta PAGTOWEB.
+            numeroDocumento =
+              typeof det.numeroDocumento === "string" && det.numeroDocumento
+                ? det.numeroDocumento.replace(/\D/g, "") || null
+                : null;
           } else {
             // Resposta: { PDFByteArrayBase64: "..." }
             const dctf = typeof dados === "object" && dados !== null ? dados : {};
@@ -404,6 +410,17 @@ export function registerClientRoutes(app: Express) {
         }
         console.log(`[SERPRO API] Valor resolvido da guia: ${resolvedValue}`);
 
+        // "Número do Documento": DAS traz na resposta; DCTFWEB não, então tenta
+        // do texto do PDF. Usado depois na consulta de pagamento (PAGTOWEB).
+        if (!numeroDocumento) {
+          try {
+            const { extractDocNumberFromPdf } = await import("../qrExtractor");
+            numeroDocumento = await extractDocNumberFromPdf(pdfBuffer);
+          } catch (err) {
+            console.warn("Nao foi possivel extrair o numero do documento do PDF da guia:", err);
+          }
+        }
+
         let guiaId: number;
         let realFileUrl: string;
 
@@ -419,6 +436,7 @@ export function registerClientRoutes(app: Express) {
               status: "CONCLUIDO",
               dataVencimento: vencFormatado,
               valorTotal: resolvedValue,
+              numeroDocumento: numeroDocumento,
               pdfPath: "", // Atualizado abaixo
               createdAt: new Date(),
               concluidoAt: new Date(),
@@ -454,6 +472,9 @@ export function registerClientRoutes(app: Express) {
             }
             if (resolvedValue != null) {
               extractedData = { ...extractedData, extractedValue: resolvedValue };
+            }
+            if (numeroDocumento) {
+              extractedData = { ...extractedData, numeroDocumento };
             }
 
             await tx

@@ -62,6 +62,58 @@ export function resolveGuiaPdfPath(pdfPath: string | null | undefined): string |
   return isInside(GUIAS_PDF_DIR, abs) ? abs : null;
 }
 
+// Loads the bytes of a document's file for server-side processing (PDF text
+// extraction for the payment query). Mirrors the resolution in
+// files.routes.ts: an inline data: URI, a pointer to a SERPRO-generated guia
+// (guias_geradas.pdf_path), or a regular /uploads/<name> file. Returns null
+// when the file can't be resolved or read. Buffers the whole file — only call
+// it for the small guia PDFs, never on a hot request path.
+export async function loadDocumentPdfBuffer(
+  fileUrl: string | null | undefined,
+): Promise<Buffer | null> {
+  if (!fileUrl) return null;
+
+  if (fileUrl.startsWith("data:")) {
+    const m = fileUrl.match(/^data:([^;,]*)(;base64)?,([\s\S]*)$/);
+    if (!m) return null;
+    try {
+      return m[2]
+        ? Buffer.from(m[3], "base64")
+        : Buffer.from(decodeURIComponent(m[3]));
+    } catch {
+      return null;
+    }
+  }
+
+  const guiaMatch = fileUrl.match(/^\/api\/pendencies\/guia\/(\d+)\/pdf$/);
+  if (guiaMatch) {
+    const { eq } = await import("drizzle-orm");
+    const { db } = await import("../db");
+    const { guiasGeradas } = await import("../schema");
+    const [guia] = await db
+      .select()
+      .from(guiasGeradas)
+      .where(eq(guiasGeradas.id, Number(guiaMatch[1])));
+    if (!guia?.pdfPath) return null;
+    if (guia.pdfPath.startsWith("data:")) return loadDocumentPdfBuffer(guia.pdfPath);
+    const guiaAbs = resolveGuiaPdfPath(guia.pdfPath);
+    if (!guiaAbs || !(await isReadableFile(guiaAbs))) return null;
+    try {
+      return await fs.promises.readFile(guiaAbs);
+    } catch {
+      return null;
+    }
+  }
+
+  const abs = resolveUploadPath(fileUrl);
+  if (!abs || !(await isReadableFile(abs))) return null;
+  try {
+    return await fs.promises.readFile(abs);
+  } catch {
+    return null;
+  }
+}
+
 // Header-safe filename for Content-Disposition (ASCII fallback + RFC 5987).
 export function contentDisposition(
   disposition: "inline" | "attachment",
