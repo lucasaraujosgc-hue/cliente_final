@@ -5,7 +5,7 @@ import { db } from "../../db";
 import { nfseConfig } from "../../schema";
 import { eq } from "drizzle-orm";
 import { decryptBytes, decryptSecret } from "../secretbox";
-import { normalizeCnpj } from "../../../lib/cnpj";
+import { normalizeInscricao, inscricaoRaizMatches } from "./inscricao";
 import { NfseError, certMissing, notConfigured } from "./errors";
 import type { NfseConfigRow } from "../../types";
 
@@ -30,18 +30,19 @@ export interface ParsedCert {
 const OID_ICPBR_CNPJ = Buffer.from([0x06, 0x05, 0x60, 0x4c, 0x01, 0x03, 0x03]);
 
 function cnpjFromCn(cn: string): string | null {
-  // e-CNPJ subject CN is usually "RAZAO SOCIAL:12345678000199".
-  const m = cn.match(/(\d{14})\s*$/);
+  // e-CNPJ subject CN is usually "RAZAO SOCIAL:12345678000199" (o CNPJ
+  // alfanumérico pode conter letras — daí [0-9A-Z]).
+  const m = cn.toUpperCase().match(/([0-9A-Z]{14})\s*$/);
   return m ? m[1] : null;
 }
 
 function cnpjFromDer(der: Buffer): string | null {
   const at = der.indexOf(OID_ICPBR_CNPJ);
   if (at < 0) return null;
-  // The CNPJ (14 ASCII digits) sits within the next ~24 bytes, wrapped in a
-  // context tag + string. Grab the first 14-digit run.
+  // The CNPJ (14 ASCII chars) sits within the next ~40 bytes, wrapped in a
+  // context tag + string. Grab the first 14-char run of digits/upper letters.
   const window = der.subarray(at + OID_ICPBR_CNPJ.length, at + OID_ICPBR_CNPJ.length + 40).toString("latin1");
-  const m = window.match(/\d{14}/);
+  const m = window.toUpperCase().match(/[0-9A-Z]{14}/);
   return m ? m[0] : null;
 }
 
@@ -82,7 +83,7 @@ export function parsePfx(pfxBuffer: Buffer, senha: string): ParsedCert {
 
   const subjectCN = String(leaf.subject.getField("CN")?.value || "");
   const der = Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(leaf)).getBytes(), "binary");
-  const cnpj = normalizeCnpj(cnpjFromCn(subjectCN) || cnpjFromDer(der) || "") || null;
+  const cnpj = normalizeInscricao(cnpjFromCn(subjectCN) || cnpjFromDer(der) || "") || null;
 
   return {
     cnpj: cnpj && cnpj.length === 14 ? cnpj : null,
@@ -164,9 +165,6 @@ export function clearAgentCache(clientId?: string) {
   for (const k of agentCache.keys()) if (k.startsWith(`${clientId}:`)) agentCache.delete(k);
 }
 
-// True when the cert's CNPJ shares the 8-digit root (CNPJ raiz) with the client.
-export function cnpjRaizMatches(a: string | null | undefined, b: string | null | undefined): boolean {
-  const da = normalizeCnpj(a);
-  const db_ = normalizeCnpj(b);
-  return da.length >= 8 && db_.length >= 8 && da.slice(0, 8) === db_.slice(0, 8);
-}
+// True when the cert's inscrição shares the 8-char root (CNPJ raiz) with the
+// client. Re-exported from ./inscricao so callers keep the old name.
+export const cnpjRaizMatches = inscricaoRaizMatches;

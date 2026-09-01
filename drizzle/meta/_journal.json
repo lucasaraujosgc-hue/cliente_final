@@ -50,6 +50,13 @@
       "when": 1788205737024,
       "tag": "0006_nfse",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788312000000,
+      "tag": "0007_nfse_reconciliacao",
+      "breakpoints": true
     }
   ]
 }

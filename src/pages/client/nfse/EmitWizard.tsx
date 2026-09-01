@@ -13,6 +13,7 @@ import {
 import {
   lookupCnpjTomador,
   emitirNfse,
+  sincronizarEmissao,
   viewDanfse,
   shareDanfse,
   centavosToBRL,
@@ -44,7 +45,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Step = 1 | 2 | 3 | "sending" | "success" | "error";
+type Step = 1 | 2 | 3 | "sending" | "success" | "error" | "processando";
 
 export function EmitWizard({ atividades, prefill, onClose }: Props) {
   const [step, setStep] = useState<Step>(prefill ? 3 : 1);
@@ -107,6 +108,8 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
     }
   };
 
+  const [syncing, setSyncing] = useState(false);
+
   const submit = async () => {
     setStep("sending");
     const r = await emitirNfse({
@@ -124,8 +127,26 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
     if (r.ok) {
       setResult({ id: r.id, numeroNota: r.numeroNota, chaveAcesso: r.chaveAcesso });
       setStep("success");
+    } else if (r.processando) {
+      setResult({ id: r.id, motivo: r.motivo });
+      setStep("processando");
     } else {
       setResult({ error: r.error, codigo: r.codigo, motivo: r.motivo });
+      setStep("error");
+    }
+  };
+
+  const verificarProcessamento = async () => {
+    if (!result?.id) return;
+    setSyncing(true);
+    const s = await sincronizarEmissao(result.id).catch(() => null);
+    setSyncing(false);
+    if (!s) return;
+    if (s.status === "emitida") {
+      setResult({ id: result.id, numeroNota: s.numeroNota ?? undefined, chaveAcesso: s.chaveAcesso ?? undefined });
+      setStep("success");
+    } else if (s.status === "rejeitada") {
+      setResult({ id: result.id, motivo: s.rejeicaoMotivo || "A nota foi rejeitada pelo Sefin Nacional." });
       setStep("error");
     }
   };
@@ -207,6 +228,37 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
           </button>
           <button onClick={onClose} className="mt-1 text-xs font-semibold text-muted hover:text-ink">
             Voltar às notas emitidas
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "processando") {
+    return (
+      <div className="space-y-5 py-6">
+        <Header title="Nota em processamento" onBack={onClose} />
+        <div className="flex items-start gap-3 rounded-2xl border border-warn/25 bg-warn-wash p-5">
+          <Loader2 className="mt-0.5 size-5 shrink-0 text-warn animate-spin" />
+          <div>
+            <p className="text-sm font-semibold text-ink">A nota foi enviada ao Sefin Nacional</p>
+            <p className="mt-1 text-sm text-muted">
+              {result?.motivo ||
+                "O Sefin ainda não confirmou. A nota aparecerá em “Notas emitidas” assim que for confirmada — não emita de novo."}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={verificarProcessamento}
+            disabled={syncing}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-40"
+          >
+            {syncing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            Verificar agora
+          </button>
+          <button onClick={onClose} className="rounded-lg border border-line bg-surface px-4 text-sm font-semibold text-ink">
+            Fechar
           </button>
         </div>
       </div>

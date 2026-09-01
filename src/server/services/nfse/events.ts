@@ -2,16 +2,18 @@ import { create } from "xmlbuilder2";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { clients, nfseEmissoes } from "../../schema";
-import { normalizeCnpj } from "../../../lib/cnpj";
+import { normalizeInscricao, isChaveAcesso } from "./inscricao";
 import type { NfseEmissaoRow } from "../../types";
 import { loadClientCertContext } from "./cert";
 import { signPedRegEvento } from "./sign";
+import { validatePedRegEvento } from "./validate";
 import { registrarEvento, type Ambiente } from "./client";
 import { NFSE_NS, DPS_VERSAO, VER_APLIC } from "./dps";
+import { nfseLog } from "./log";
 import { NfseError } from "./errors";
 
 // Cancelamento de NFS-e — evento e101101 (Pedido de Registro de Evento).
-// Schema: pedRegEvento_v1.01 / TCInfPedReg + TE101101.
+// Schema: pedRegEvento_v1.01 / TCInfPedReg + TE101101. Sucesso do POST = 201.
 
 const COD_EVENTO_CANCELAMENTO = "101101";
 
@@ -32,16 +34,16 @@ export async function cancelarNfse(
     .where(and(eq(nfseEmissoes.id, emissaoId), eq(nfseEmissoes.clientId, clientId)));
   if (!emissao) throw new NfseError("Nota não encontrada.", { status: 404 });
   if (emissao.status === "cancelada") throw new NfseError("Nota já cancelada.", { status: 400 });
-  if (emissao.status !== "emitida" || !emissao.chaveAcesso) {
+  if (emissao.status !== "emitida" || !isChaveAcesso((emissao.chaveAcesso || "").toUpperCase())) {
     throw new NfseError("Só é possível cancelar uma nota emitida com sucesso.", { status: 400 });
   }
 
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   const cert = await loadClientCertContext(clientId);
   const ambiente = (cert.config.ambiente === "producao" ? "producao" : "homologacao") as Ambiente;
-  const chave = emissao.chaveAcesso.replace(/\D/g, "");
-  const cnpjAutor = normalizeCnpj(client?.cnpj || cert.parsed.cnpj || "");
-  const xMotivo = motivo.trim().slice(0, 255).padEnd(15, " ");
+  const chave = normalizeInscricao(emissao.chaveAcesso || "");
+  const cnpjAutor = normalizeInscricao(client?.cnpj || cert.parsed.cnpj || "");
+  const xMotivo = motivo.trim().slice(0, 255);
   const idPedReg = `PRE${chave}${COD_EVENTO_CANCELAMENTO}`;
 
   const doc = create({ version: "1.0", encoding: "UTF-8" }).ele(NFSE_NS, "pedRegEvento", {
@@ -59,9 +61,20 @@ export async function cancelarNfse(
   ev.ele("xMotivo").txt(xMotivo);
 
   const xml = doc.end({ prettyPrint: false, headless: false });
+  validatePedRegEvento(xml);
   const assinado = signPedRegEvento(xml, idPedReg, cert.parsed.keyPem, cert.parsed.certPem);
+  validatePedRegEvento(assinado, { requireSignature: true });
 
-  await registrarEvento(cert.agent, ambiente, chave, assinado);
+  try {
+    await registrarEvento(cert.agent, ambiente, chave, assinado);
+  } catch (e) {
+    nfseLog("warn", "cancelamento.rejeitado", {
+      emissaoId,
+      ambiente,
+      msg: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
 
   const [row] = await db
     .update(nfseEmissoes)
@@ -73,5 +86,6 @@ export async function cancelarNfse(
     })
     .where(eq(nfseEmissoes.id, emissaoId))
     .returning();
+  nfseLog("info", "cancelamento.ok", { emissaoId, ambiente, chave });
   return row;
 }

@@ -36,6 +36,7 @@ import {
   loadClientCertContext,
   lookupCnpj,
   emitirNfse,
+  reconcileEmissao,
   cancelarNfse,
   getDanfsePdfPath,
   getConvenio,
@@ -53,6 +54,18 @@ import {
 // rejection code/motivo. Anything else propagates to the central handler.
 function sendNfseError(res: any, e: unknown): boolean {
   if (e instanceof NfseError) {
+    // 'processando' = a DPS foi enviada mas o Sefin ainda não confirmou; não é
+    // erro do usuário. O front trata como "aguardando" e não deve reemitir.
+    if (e.reason === "processando") {
+      res.status(e.status === 409 ? 409 : 202).json({
+        ok: false,
+        processando: true,
+        id: e.codigo ?? null,
+        error: e.message,
+        motivo: e.message,
+      });
+      return true;
+    }
     res.status(e.status).json({ error: e.message, codigo: e.codigo ?? null, motivo: e.motivo ?? null });
     return true;
   }
@@ -153,8 +166,20 @@ export function registerNfseRoutes(app: Express) {
           valor: b.valor,
           competencia: b.competencia || undefined,
         });
+        await logAudit(req, "nfse.emissao", {
+          targetType: "nfse_emissao",
+          targetId: emissao.id,
+          summary: `NFS-e ${emissao.status}${emissao.numeroNota ? ` nº ${emissao.numeroNota}` : ""}`,
+          metadata: {
+            status: emissao.status,
+            ambiente: emissao.ambiente,
+            idDps: emissao.idDps,
+            chaveAcesso: emissao.chaveAcesso,
+          },
+        });
         res.json({
-          ok: true,
+          ok: emissao.status === "emitida",
+          processando: emissao.status === "processando",
           id: emissao.id,
           status: emissao.status,
           chaveAcesso: emissao.chaveAcesso,
@@ -167,6 +192,26 @@ export function registerNfseRoutes(app: Express) {
     },
   );
 
+  // Reconciliação manual de uma emissão em 'processando' (consulta GET /dps +
+  // GET /nfse no Sefin; nunca reenvia a DPS).
+  app.post("/api/nfse/emissoes/:id/sincronizar", verifyClientAuth, nfseLookupLimiter, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    try {
+      const row = await reconcileEmissao(getClientId(req), req.params.id);
+      res.json({
+        ok: true,
+        id: row.id,
+        status: row.status,
+        chaveAcesso: row.chaveAcesso,
+        numeroNota: row.numeroNota,
+        rejeicaoMotivo: row.rejeicaoMotivo,
+      });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
   app.post(
     "/api/nfse/emissoes/:id/cancelar",
     verifyClientAuth,
@@ -176,6 +221,12 @@ export function registerNfseRoutes(app: Express) {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
       try {
         const row = await cancelarNfse(getClientId(req), req.params.id, req.body.motivo);
+        await logAudit(req, "nfse.cancelamento", {
+          targetType: "nfse_emissao",
+          targetId: row.id,
+          summary: `NFS-e nº ${row.numeroNota || row.id} cancelada`,
+          metadata: { chaveAcesso: row.chaveAcesso, motivo: req.body.motivo },
+        });
         res.json({ ok: true, status: row.status, canceladaEm: row.canceladaEm });
       } catch (e) {
         if (sendNfseError(res, e)) return;

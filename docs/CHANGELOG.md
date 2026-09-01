@@ -11,6 +11,55 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### NFS-e Nacional — auditoria + adequação ao contrato oficial
+
+Após auditoria confrontando o código com `docs/nfse-nacional/` e com os Swaggers
+oficiais do **Sefin Nacional** (agora salvos em `docs/nfse-nacional/01-api/`):
+
+- **Contrato do Sefin confirmado e alinhado** (`client.ts`): `POST /nfse` →
+  sucesso é **HTTP 201** com `NFSePostResponseSucesso`
+  (`idDps`/`chaveAcesso`/`nfseXmlGZipB64`/`alertas`); rejeição = 400
+  (`NFSePostResponseErro.erros[]`), certificado de transmissão = 403, falha
+  interna ambígua = 500. `GET|HEAD /dps/{id}`, `GET /nfse/{chave}` implementados.
+  Parâmetros municipais **migrados p/ o ADN `/parametrizacao`** (o Sefin responde
+  501); `consultarConvenio`/`consultarAliquota` apontam para o host certo.
+- **Julgamento do processamento** (`emitir.ts`): 2xx só vira `emitida` quando o
+  corpo traz a NFS-e, a chave tem 50 posições e `cStat` é 100. Sem isso →
+  `processando`; timeout / 500 / rede → `processando` + HTTP 202 (não reemitir).
+  `alertas`, `versaoAplicativo`, `idDps` persistidos.
+- **Reconciliação** (`reconcile.ts` + `POST /api/nfse/emissoes/:id/sincronizar`):
+  promove `processando` → `emitida`/`rejeitada` via `HEAD/GET /dps` + `GET /nfse`.
+  Nunca reenvia a DPS.
+- **Idempotência**: índice único `(client_id, id_dps)` + dedupe no `emitir.ts`
+  (reenvio idêntico enquanto há `processando` reconcilia em vez de gerar 2ª nota).
+- **CNPJ como string** (`inscricao.ts`): `TSCNPJ = [0-9A-Z]{14}` (CNPJ
+  alfanumérico, NT-009). `normalizeInscricao` substitui `normalizeCnpj` em todo o
+  caminho da NFS-e; `chave.ts` e `buildDpsId` preservam letras. `lib/cnpj.ts`
+  (login) intacto.
+- **Validação estrutural** (`validate.ts`): checa ordem dos elementos, tipos
+  simples, prefixo de namespace (E1228), encoding (E1229), versão (E1260) e os
+  Ids (`TSIdDPS`/`TSIdPedRegEvt`) antes de assinar e antes de enviar.
+- **DANFSe local** (`danfseRender.ts`): a API de geração do ADN foi sobrestada em
+  03/08/2026 (NT-008) — o DANFSe é gerado do XML da NFS-e (A4, blocos
+  obrigatórios da NT-008 §2.1, QR Code p/ a consulta pública, marcas d'água
+  CANCELADA / "SEM VALIDADE JURÍDICA"). **PENDENTE**: layout milimétrico do
+  Anexo I. Deps novas: `pdf-lib`, `qrcode`.
+- **Segurança**: envio de certificado A1 recusado (400) quando `SECRETS_KEY` não
+  está setado (senão o `.pfx` + senha ficariam em texto puro).
+- **Versão do leiaute configurável** (`NFSE_DPS_VERSAO`, default `1.00`) —
+  confirmar contra produção restrita. `xDescServ` truncado em 1000 (Anexo I).
+- **Log técnico** (`log.ts`, JSON single-line sem dados sensíveis) + `logAudit`
+  em `nfse.emissao` / `nfse.cancelamento`.
+- Migração `0007_nfse_reconciliacao` (aditiva): `alertas`, `versao_aplicativo`,
+  `sefin_processado_em`, `sync_tentativas` + índice único. Rodar `npm run
+  db:generate` para revalidar o snapshot antes de mergear.
+- Testes novos: `inscricao`, `validate`, `nfseXml` + `danfseRender`, `emitir`
+  (mocks: emitida / rejeitada / processando / anomalia 201 / dedupe / CNPJ
+  alfanumérico). Total: 165 testes.
+- **Ainda PENDENTE**: homologar em produção restrita com A1 real (algoritmo de
+  assinatura RSA-SHA1 vs SHA-256 não confirmado na doc); validação XSD completa
+  no CI; layout Anexo I do DANFSe; IBS/CBS (NT-009, sem cronograma).
+
 ### Emissor de NFS-e Nacional (integração direta gov.br)
 
 Emissão de NFS-e pelo cliente, integrando **direto com o Sistema Nacional NFS-e
@@ -83,6 +132,33 @@ dados fiscais no próprio servidor. Layout **DPS v1.01**.
   `req.destroy`) — chamada SERPRO travada não prende mais a requisição.
 - `SetupProfile` e o modal "Alterar Senha" validam `minLength` 8 da nova senha
   no cliente (antes só o Zod barrava, com erro "Dados inválidos.").
+
+### Consulta de pagamentos — API real do PAGTOWEB + pagamento manual em lote
+- `consultarPagamentoNoSerpro` (`services/paymentQuery.ts`) reescrita para a API
+  documentada do **PAGTOWEB "Consultar Pagamentos"** (`idServico PAGAMENTOS71`):
+  consulta por `numeroDocumentoLista` quando o número do documento é conhecido,
+  senão fallback por `intervaloDataArrecadacao` + `intervaloValorTotalDocumento`
+  (com `primeiroDaPagina`/`tamanhoDaPagina` obrigatórios). O serviço só devolve
+  documentos arrecadados; item com `dataArrecadacao` = pago. No modo fallback o
+  valor precisa casar (± R$0,50) para não dar falso-positivo.
+- **Número do documento** ("Número do Documento" da DARF/DAS, até 17 díg.) agora
+  é capturado: da resposta do SERPRO ao gerar DAS (`detalhamentoDas.numeroDocumento`,
+  antes descartada) e, para DCTFWeb / guias antigas, extraído do texto do PDF
+  (`extractDocNumberFromPdf` em `qrExtractor.ts`) com cache em
+  `documents.extracted_data.numeroDocumento` (backfill preguiçoso na 1ª consulta).
+  Também gravado em `guias_geradas.numero_documento` (coluna já existente). Sem
+  migration.
+- Novo `loadDocumentPdfBuffer` (`services/files.ts`) resolve o PDF de um
+  `documents` (data: URI / ponteiro de guia / `/uploads/<nome>`) para leitura
+  server-side.
+- **Pagamento manual em lote**: `markPaymentsManual` + `POST /api/accountant/
+  payments/mark-paid` — marca as guias selecionadas como pagas (`status = paid`,
+  `payment_checks` → `PAGO`, `paidSource = accountant`, trilha de auditoria
+  `payment.manual_mark`) **sem chamar o SERPRO e sem notificar o cliente**.
+  `markGuiaPaid` ganhou o parâmetro `notify`.
+- **Frontend `/admin/payments`**: filtro por **categoria do documento** (dropdown
+  com as categorias distintas da lista) + botão **"Informar pagamento manual"**
+  (confirmação em 2 cliques) ao lado de "Consultar selecionadas".
 
 ### Navegação mobile-first da área do cliente
 - `ClientLayout` agora tem **duas molduras** para a mesma lista de rotas, corte

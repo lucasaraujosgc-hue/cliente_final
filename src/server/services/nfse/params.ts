@@ -1,13 +1,9 @@
 import type https from "https";
-import {
-  consultarConvenio,
-  consultarParametrosServico,
-  type Ambiente,
-} from "./client";
+import { consultarConvenio, consultarAliquota, type Ambiente } from "./client";
 
-// Municipal parameters cache (convênio + alíquotas por serviço). In-memory,
-// TTL-based — same idea as the SERPRO token cache. Municipal parameters change
-// rarely; a stale read for a few hours is acceptable.
+// Cache dos parâmetros municipais (convênio + alíquota por serviço). Em memória,
+// TTL — mesma ideia do cache de token do SERPRO. Parâmetros municipais mudam
+// raramente; uma leitura defasada por algumas horas é aceitável.
 
 interface CacheEntry {
   at: number;
@@ -31,14 +27,18 @@ export function getConvenio(agent: https.Agent, amb: Ambiente, codigoMunicipio: 
   );
 }
 
-export function getParametrosServico(
+// Alíquota do ISSQN parametrizada pelo município para um código de serviço e
+// competência. `null` quando o município não parametriza (não conveniado) — aí
+// o emitente informa a alíquota na DPS.
+export function getAliquotaParametrizada(
   agent: https.Agent,
   amb: Ambiente,
   codigoMunicipio: string,
   codServico: string,
-) {
-  return memo(`serv:${amb}:${codigoMunicipio}:${codServico}`, () =>
-    consultarParametrosServico(agent, amb, codigoMunicipio, codServico),
+  competenciaIso: string,
+): Promise<number | null> {
+  return memo(`aliq:${amb}:${codigoMunicipio}:${codServico}:${competenciaIso}`, () =>
+    consultarAliquota(agent, amb, codigoMunicipio, codServico, competenciaIso),
   );
 }
 

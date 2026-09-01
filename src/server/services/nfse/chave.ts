@@ -22,11 +22,13 @@ export interface ChaveInfo {
 }
 
 export function parseChaveAcesso(raw: string): ChaveInfo | null {
-  const chave = String(raw || "").replace(/\D/g, "");
+  // A chave tem 50 posições; a inscrição federal (9..23) pode conter letras
+  // (CNPJ alfanumérico — NT-009), por isso [0-9A-Z], não só dígitos.
+  const chave = String(raw || "").toUpperCase().replace(/[^0-9A-Z]/g, "");
   if (chave.length !== 50) return null;
 
   const codigoMunicipio = chave.slice(0, 7);
-  const inscricaoFederalEmitente = chave.slice(9, 23).replace(/^0+(?=\d{11})/, "");
+  const inscricaoFederalEmitente = chave.slice(9, 23).replace(/^0+(?=[0-9A-Z]{11})/, "");
   const numero = String(parseInt(chave.slice(23, 36), 10) || 0) || null;
   const aa = chave.slice(36, 38);
   const mm = chave.slice(38, 40);

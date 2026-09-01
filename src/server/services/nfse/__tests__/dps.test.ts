@@ -124,6 +124,38 @@ describe("buildDpsXml", () => {
   });
 });
 
+describe("CNPJ alfanumérico (NT-009)", () => {
+  it("preserva letras no Id e no elemento CNPJ do prestador", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, cnpj: "12ABC678000D99" },
+    });
+    expect(built.idDps.slice(10, 11)).toBe("2");
+    expect(built.idDps.slice(11, 25)).toBe("12ABC678000D99");
+    expect(built.xml).toContain("<CNPJ>12ABC678000D99</CNPJ>");
+  });
+
+  it("aceita tomador com CNPJ alfanumérico", () => {
+    const built = buildDpsXml({
+      ...base,
+      tomador: { doc: "98XYZ432000A10", nome: "Tomador Alfa SA" },
+    });
+    expect(built.xml).toContain("<CNPJ>98XYZ432000A10</CNPJ>");
+  });
+});
+
+describe("regras de tamanho", () => {
+  it("trunca xDescServ em 1000 caracteres (Anexo I)", () => {
+    const built = buildDpsXml({ ...base, servico: { ...base.servico, descricao: "x".repeat(1500) } });
+    const m = built.xml.match(/<xDescServ>(x+)<\/xDescServ>/);
+    expect(m?.[1].length).toBe(1000);
+  });
+
+  it("rejeita número de DPS < 1", () => {
+    expect(() => buildDpsXml({ ...base, numero: 0 })).toThrow(/Número da DPS/i);
+  });
+});
+
 describe("parseChaveAcesso", () => {
   it("returns null for non-50-digit input", () => {
     expect(parseChaveAcesso("123")).toBeNull();

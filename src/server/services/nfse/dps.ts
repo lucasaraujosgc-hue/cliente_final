@@ -1,24 +1,39 @@
 import { create } from "xmlbuilder2";
-import { normalizeCnpj } from "../../../lib/cnpj";
 import { normalizeCodigoLC116 } from "../../../lib/listaServicosLC116";
 import { NfseError } from "./errors";
+import {
+  normalizeInscricao,
+  isCnpj,
+  isCpf,
+  tipoInscricao,
+  inscricaoParaId,
+} from "./inscricao";
 
-// Builds the DPS (Declaração de Prestação de Serviços) XML for the Sistema
-// Nacional NFS-e, layout v1.01 (schema: NFSe-ESQUEMAS_XSD-v1.01, tiposComplexos
-// TCInfDPS). The element ORDER matches the XSD sequence exactly — the national
-// validator is strict about it.
+// Monta o XML da DPS (Declaração de Prestação de Serviços) para o Sistema
+// Nacional NFS-e. A ORDEM dos elementos segue a sequência do XSD
+// (tiposComplexos_v1.01.xsd, TCInfDPS) exatamente — o validador nacional é
+// estrito quanto a isso. Ver services/nfse/validate.ts para a checagem local.
 //
-// v1 scope: prestador Simples Nacional / MEI / Normal, um serviço por nota, ISS
+// Escopo v1: prestador Simples Nacional / MEI / Normal, um serviço por nota, ISS
 // "operação tributável", retenção federal só nos campos monetários simples
 // (INSS/IRRF/CSLL). PIS/COFINS com CST, deduções, obra, comércio exterior e os
-// blocos IBSCBS (reforma) ficam para depois.
+// blocos IBSCBS (reforma — NT-009, cronograma ainda não publicado) ficam para
+// depois.
 
 export const NFSE_NS = "http://www.sped.fazenda.gov.br/nfse";
-export const DPS_VERSAO = "1.00";
-export const VER_APLIC = "portal-virgula-1";
+
+// Versão do leiaute da DPS. O XSD TVerNFSe aceita "1.00" ou "1.01"; o default
+// deve casar com o conjunto de XSD adotado para validação e com o que o ambiente
+// (produção restrita / produção) efetivamente aceita. Configurável por env.
+export const DPS_VERSAO = process.env.NFSE_DPS_VERSAO || "1.00";
+export const VER_APLIC = (process.env.NFSE_VER_APLIC || "portal-virgula-1").slice(0, 20);
+
+// xDescServ: o XSD (TSDesc2000) permite 2000, mas o Anexo I fixa 1000. Adotamos
+// o mais restritivo (regra de negócio) — decisão documentada na auditoria.
+const XDESC_MAX = 1000;
 
 export interface DpsPrestador {
-  cnpj: string; // digits (14)
+  cnpj: string; // inscrição federal (14, alfanumérico)
   inscricaoMunicipal?: string | null;
   nome?: string | null;
   regimeTributario: "simples_nacional" | "mei" | "normal";
@@ -35,7 +50,7 @@ export interface DpsEndereco {
 }
 
 export interface DpsTomador {
-  doc: string; // CPF (11) or CNPJ (14) digits
+  doc: string; // CPF (11 dígitos) ou CNPJ (14 alfanumérico)
   nome: string;
   email?: string | null;
   telefone?: string | null;
@@ -44,9 +59,9 @@ export interface DpsTomador {
 }
 
 export interface DpsServico {
-  cTribNac?: string | null; // 6 digits — authoritative
+  cTribNac?: string | null; // 6 dígitos — autoritativo
   cTribMun?: string | null;
-  itemListaServico?: string | null; // used only to derive cTribNac when missing
+  itemListaServico?: string | null; // usado só p/ derivar cTribNac quando ausente
   descricao: string;
 }
 
@@ -85,8 +100,12 @@ function moneyFromCentavos(c: number): string {
   return (Math.round(c) / 100).toFixed(2);
 }
 
-// cTribNac: 6 digits. When the accountant didn't fill it, derive a best guess
-// from the LC116 subitem ("4.16" -> "041600"). The accountant should override.
+function serie5(serie: string): string {
+  return String(serie).replace(/\D/g, "").padStart(5, "0").slice(-5);
+}
+
+// cTribNac: 6 dígitos. Quando o contador não preencheu, deriva um palpite a
+// partir do subitem LC116 ("4.16" -> "041600"). O contador deve sobrescrever.
 function resolveCTribNac(servico: DpsServico): string {
   const explicit = String(servico.cTribNac ?? "").replace(/\D/g, "");
   if (explicit.length === 6) return explicit;
@@ -105,7 +124,9 @@ function opSimpNac(regime: DpsPrestador["regimeTributario"]): "1" | "2" | "3" {
   return "1";
 }
 
-// Brasília is a stable UTC-3 (no DST since 2019).
+// Brasília é UTC-3 estável (sem horário de verão desde 2019). Municípios em
+// -02:00 (Fernando de Noronha) / -04:00 (Manaus) precisariam derivar o offset do
+// fuso — fora do escopo v1 (praça de emissão sempre continental sudeste/sul).
 function dhEmiUTC(d: Date): string {
   const b = new Date(d.getTime() - 3 * 3600 * 1000);
   const p = (n: number) => String(n).padStart(2, "0");
@@ -119,17 +140,17 @@ function dCompet(competencia: string): string {
 }
 
 export function buildDpsId(cLocEmi: string, prestadorDoc: string, serie: string, numero: number): string {
-  const doc = String(prestadorDoc).replace(/\D/g, "");
-  const tpInsc = doc.length === 14 ? "2" : "1";
-  const inscFed = doc.padStart(14, "0");
-  const serieP = String(serie).replace(/\D/g, "").padStart(5, "0").slice(-5);
+  const doc = normalizeInscricao(prestadorDoc);
+  const tpInsc = tipoInscricao(doc);
+  const inscFed = inscricaoParaId(doc);
   const numeroP = String(numero).padStart(15, "0").slice(-15);
-  return `DPS${cLocEmi}${tpInsc}${inscFed}${serieP}${numeroP}`;
+  return `DPS${cLocEmi}${tpInsc}${inscFed}${serie5(serie)}${numeroP}`;
 }
 
 export function buildDpsXml(input: BuildDpsInput): BuiltDps {
-  const cnpj = normalizeCnpj(input.prestador.cnpj);
-  if (cnpj.length !== 14) throw new NfseError("CNPJ do prestador inválido.", { status: 400 });
+  const inscPrest = normalizeInscricao(input.prestador.cnpj);
+  if (!isCnpj(inscPrest)) throw new NfseError("CNPJ do prestador inválido.", { status: 400 });
+
   const cLocEmi = String(input.cLocEmi || "").replace(/\D/g, "");
   if (cLocEmi.length !== 7) {
     throw new NfseError("Código IBGE do município emissor não configurado (7 dígitos).", {
@@ -138,10 +159,15 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     });
   }
 
-  const idDps = buildDpsId(cLocEmi, cnpj, input.serie, input.numero);
+  const numero = Math.trunc(Number(input.numero));
+  if (!Number.isFinite(numero) || numero < 1) {
+    throw new NfseError("Número da DPS inválido (deve ser ≥ 1).", { status: 500, reason: "ndps_invalido" });
+  }
+
+  const idDps = buildDpsId(cLocEmi, inscPrest, input.serie, numero);
   const cLocPrest = String(input.cLocPrestacao || cLocEmi).replace(/\D/g, "") || cLocEmi;
   const cTribNac = resolveCTribNac(input.servico);
-  const tomadorDoc = input.tomador ? normalizeCnpj(input.tomador.doc) : "";
+  const tomadorDoc = input.tomador ? normalizeInscricao(input.tomador.doc) : "";
 
   const doc = create({ version: "1.0", encoding: "UTF-8" }).ele(NFSE_NS, "DPS", { versao: DPS_VERSAO });
   const inf = doc.ele("infDPS", { Id: idDps });
@@ -149,28 +175,28 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   inf.ele("tpAmb").txt(input.ambiente === "producao" ? "1" : "2");
   inf.ele("dhEmi").txt(dhEmiUTC(input.dhEmi));
   inf.ele("verAplic").txt(VER_APLIC);
-  inf.ele("serie").txt(String(input.serie).replace(/\D/g, "").padStart(5, "0").slice(-5));
-  inf.ele("nDPS").txt(String(input.numero));
+  inf.ele("serie").txt(serie5(input.serie));
+  inf.ele("nDPS").txt(String(numero));
   inf.ele("dCompet").txt(dCompet(input.competencia));
   inf.ele("tpEmit").txt("1"); // 1 = emitido pelo prestador
   inf.ele("cLocEmi").txt(cLocEmi);
 
   // prest
   const prest = inf.ele("prest");
-  prest.ele("CNPJ").txt(cnpj);
+  prest.ele("CNPJ").txt(inscPrest);
   if (input.prestador.inscricaoMunicipal) prest.ele("IM").txt(String(input.prestador.inscricaoMunicipal));
-  if (input.prestador.nome) prest.ele("xNome").txt(input.prestador.nome);
+  if (input.prestador.nome) prest.ele("xNome").txt(input.prestador.nome.slice(0, 150));
   const regTrib = prest.ele("regTrib");
   regTrib.ele("opSimpNac").txt(opSimpNac(input.prestador.regimeTributario));
   regTrib.ele("regEspTrib").txt(String(input.prestador.regEspTrib ?? "0"));
 
   // toma (opcional)
-  if (input.tomador && tomadorDoc.length >= 11) {
+  if (input.tomador && (isCnpj(tomadorDoc) || isCpf(tomadorDoc))) {
     const toma = inf.ele("toma");
-    if (tomadorDoc.length === 14) toma.ele("CNPJ").txt(tomadorDoc);
-    else toma.ele("CPF").txt(tomadorDoc.padStart(11, "0").slice(-11));
+    if (isCnpj(tomadorDoc)) toma.ele("CNPJ").txt(tomadorDoc);
+    else toma.ele("CPF").txt(tomadorDoc.replace(/\D/g, "").padStart(11, "0").slice(-11));
     if (input.tomador.inscricaoMunicipal) toma.ele("IM").txt(String(input.tomador.inscricaoMunicipal));
-    toma.ele("xNome").txt(input.tomador.nome);
+    toma.ele("xNome").txt(input.tomador.nome.slice(0, 150));
 
     const e = input.tomador.endereco;
     const cMun = String(e?.codigoMunicipio || "").replace(/\D/g, "");
@@ -180,10 +206,10 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
       const endNac = end.ele("endNac");
       endNac.ele("cMun").txt(cMun);
       endNac.ele("CEP").txt(cep);
-      end.ele("xLgr").txt(e.logradouro);
-      end.ele("nro").txt(e.numero);
-      if (e.complemento) end.ele("xCpl").txt(e.complemento);
-      end.ele("xBairro").txt(e.bairro);
+      end.ele("xLgr").txt(e.logradouro.slice(0, 255));
+      end.ele("nro").txt(e.numero.slice(0, 60));
+      if (e.complemento) end.ele("xCpl").txt(e.complemento.slice(0, 156));
+      end.ele("xBairro").txt(e.bairro.slice(0, 60));
     }
     const fone = String(input.tomador.telefone || "").replace(/\D/g, "");
     if (fone.length >= 6) toma.ele("fone").txt(fone.slice(0, 20));
@@ -195,8 +221,8 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   serv.ele("locPrest").ele("cLocPrestacao").txt(cLocPrest.length === 7 ? cLocPrest : cLocEmi);
   const cServ = serv.ele("cServ");
   cServ.ele("cTribNac").txt(cTribNac);
-  if (input.servico.cTribMun) cServ.ele("cTribMun").txt(String(input.servico.cTribMun));
-  cServ.ele("xDescServ").txt(input.servico.descricao.slice(0, 2000));
+  if (input.servico.cTribMun) cServ.ele("cTribMun").txt(String(input.servico.cTribMun).replace(/\D/g, "").slice(0, 3));
+  cServ.ele("xDescServ").txt(input.servico.descricao.slice(0, XDESC_MAX));
 
   // valores
   const valores = inf.ele("valores");
@@ -222,5 +248,5 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   trib.ele("totTrib").ele("indTotTrib").txt("0"); // não informa os tributos totais
 
   const xml = doc.end({ prettyPrint: false, headless: false });
-  return { xml, idDps, numero: input.numero, serie: input.serie };
+  return { xml, idDps, numero, serie: input.serie };
 }

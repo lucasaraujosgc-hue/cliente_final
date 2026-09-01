@@ -2,7 +2,13 @@ import fs from "fs";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { clients, nfseAtividades, nfseConfig, nfseEmissoes } from "../../schema";
-import { encryptBytes, encryptSecret, decryptSecret, decryptBytes } from "../secretbox";
+import {
+  encryptBytes,
+  encryptSecret,
+  decryptSecret,
+  decryptBytes,
+  secretsEncryptionEnabled,
+} from "../secretbox";
 import { formatCnpj } from "../../../lib/cnpj";
 import { normalizeCodigoLC116 } from "../../../lib/listaServicosLC116";
 import { parsePfx, cnpjRaizMatches, clearAgentCache } from "./cert";
@@ -70,6 +76,16 @@ export async function upsertClientConfig(
 
   // New certificate file → validate + encrypt in place.
   if (certFilePath) {
+    // O certificado A1 (com a chave privada) e a senha só podem ser guardados
+    // se a cifra em repouso estiver ligada. Sem SECRETS_KEY, encryptBytes /
+    // encryptSecret viram no-op e o .pfx + senha ficariam em texto puro.
+    if (!secretsEncryptionEnabled()) {
+      await fs.promises.unlink(certFilePath).catch(() => {});
+      throw new NfseError(
+        "Armazenamento de certificado indisponível: defina a variável SECRETS_KEY no servidor antes de enviar o certificado A1.",
+        { status: 400, reason: "secrets_key_missing" },
+      );
+    }
     const senhaParaAbrir = senhaInformada
       ? input.certSenha!.trim()
       : decryptSecret(existing?.certSenha) || "";
@@ -166,9 +182,14 @@ export async function upsertClientConfig(
       .where(eq(nfseConfig.clientId, clientId))
       .returning();
   } else {
+    const ambienteDefault = update.ambiente
+      ? undefined
+      : process.env.NFSE_AMBIENTE_DEFAULT === "producao"
+        ? "producao"
+        : undefined; // schema default = 'homologacao'
     [config] = await db
       .insert(nfseConfig)
-      .values({ clientId, ...update })
+      .values({ clientId, ...update, ...(ambienteDefault ? { ambiente: ambienteDefault } : {}) })
       .returning();
   }
 

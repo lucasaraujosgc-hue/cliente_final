@@ -2,9 +2,23 @@ import https from "https";
 import zlib from "zlib";
 import { NfseError } from "./errors";
 
-// HTTP client for the Sefin Nacional NFS-e API. Native https (mirrors
-// services/serpro.ts httpsPost) with the per-client mTLS agent. Bodies are JSON;
-// the signed XML travels gzip+base64 INSIDE a JSON field, not as Content-Encoding.
+// Cliente HTTP para as APIs do Sistema Nacional NFS-e. `https` nativo (espelha
+// services/serpro.ts httpsPost) com o agente mTLS por cliente. Corpo em JSON; o
+// XML assinado trafega gzip+base64 DENTRO de um campo JSON (não como
+// Content-Encoding).
+//
+// Contrato confirmado nos Swaggers oficiais salvos em
+// docs/nfse-nacional/01-api/:
+//   - swagger-sefin-nacional-producao.json          (host sefin.nfse.gov.br)
+//   - swagger-sefin-nacional-producao-restrita.json (host sefin.producaorestrita.nfse.gov.br)
+//   - swagger-adn-parametros-municipais.json         (adn .../parametrizacao)
+//   - swagger-adn-danfse.json                        (adn .../danfse)
+//
+// Emissão/consulta/eventos: POST /nfse, GET /nfse/{chave}, GET|HEAD /dps/{id},
+// POST /nfse/{chave}/eventos, GET /nfse/{chave}/eventos/{tipo}/{seq}.
+// Sucesso do POST = HTTP 201. Rejeição = 400; certificado de transmissão = 403;
+// falha interna (ambígua) = 500. Parâmetros municipais e DANFSe foram movidos
+// do Sefin para o ADN (o Sefin responde 501 nesses paths).
 
 const TIMEOUT_MS = 30_000;
 
@@ -17,10 +31,26 @@ export function sefinBase(amb: Ambiente): string {
         "https://sefin.producaorestrita.nfse.gov.br/SefinNacional";
 }
 
-export function adnBase(amb: Ambiente): string {
+// Parâmetros municipais (convênio, alíquotas, regimes, retenções, benefícios) —
+// movidos do Sefin para o ADN "/parametrizacao".
+export function paramBase(amb: Ambiente): string {
   return amb === "producao"
-    ? process.env.NFSE_ADN_BASE_PROD || "https://adn.nfse.gov.br"
-    : process.env.NFSE_ADN_BASE_RESTRITA || "https://adn.producaorestrita.nfse.gov.br";
+    ? process.env.NFSE_PARAM_BASE_PROD || "https://adn.nfse.gov.br/parametrizacao"
+    : process.env.NFSE_PARAM_BASE_RESTRITA ||
+        "https://adn.producaorestrita.nfse.gov.br/parametrizacao";
+}
+
+// DANFSe — movido do Sefin para o ADN "/danfse". Ver NT-008: a partir de
+// 03/08/2026 este serviço está sobrestado e o emissor deve gerar o DANFSe
+// localmente (services/nfse/danfseRender.ts). Mantido como tentativa oportunista.
+export function danfseBase(amb: Ambiente): string {
+  return amb === "producao"
+    ? process.env.NFSE_ADN_BASE_PROD
+      ? `${process.env.NFSE_ADN_BASE_PROD}/danfse`
+      : "https://adn.nfse.gov.br/danfse"
+    : process.env.NFSE_ADN_BASE_RESTRITA
+      ? `${process.env.NFSE_ADN_BASE_RESTRITA}/danfse`
+      : "https://adn.producaorestrita.nfse.gov.br/danfse";
 }
 
 export function gzipB64(xml: string): string {
@@ -28,11 +58,11 @@ export function gzipB64(xml: string): string {
 }
 
 export function ungzipB64(b64: string): string {
-  const raw = Buffer.from(b64, "base64");
+  const raw = Buffer.from(String(b64 || ""), "base64");
   try {
     return zlib.gunzipSync(raw).toString("utf8");
   } catch {
-    // Some endpoints return plain (un-gzipped) base64.
+    // Algumas rotas devolvem base64 puro (sem gzip).
     return raw.toString("utf8");
   }
 }
@@ -91,40 +121,59 @@ function request(
   });
 }
 
-// Best-effort extraction of a rejection code/message from a Sefin error body.
-function parseRejeicao(res: RawResponse): { codigo?: string; motivo?: string } {
+// MensagemProcessamento { mensagem, codigo, descricao, complemento }
+export interface MensagemSefin {
+  codigo: string | null;
+  mensagem: string | null;
+}
+
+function msg(m: any): MensagemSefin {
+  if (!m || typeof m !== "object") return { codigo: null, mensagem: m ? String(m) : null };
+  const codigo = String(m.codigo ?? m.Codigo ?? "").trim() || null;
+  const mensagem =
+    String(m.descricao ?? m.Descricao ?? m.mensagem ?? m.Mensagem ?? "").trim() || null;
+  const complemento = String(m.complemento ?? m.Complemento ?? "").trim();
+  return { codigo, mensagem: complemento && mensagem ? `${mensagem} — ${complemento}` : mensagem };
+}
+
+// Extrai a lista de mensagens (erros ou alertas) de um corpo do Sefin, tolerando
+// as duas formas do Swagger: `erros: MensagemProcessamento[]` (POST) e
+// `erro: MensagemProcessamento` (GET / ResponseErro).
+function extractMensagens(body: any, key: "erros" | "alertas"): MensagemSefin[] {
+  if (!body || typeof body !== "object") return [];
+  const arr = body[key] ?? body[key === "erros" ? "Erros" : "Alertas"];
+  if (Array.isArray(arr)) return arr.map(msg);
+  const single = body.erro ?? body.Erro;
+  if (key === "erros" && single) return [msg(single)];
+  if (key === "erros" && (body.mensagem || body.descricao)) return [msg(body)];
+  return [];
+}
+
+function firstErro(res: RawResponse): { codigo?: string; motivo: string } {
   let body: any;
   try {
     body = res.json();
   } catch {
     return { motivo: res.text().slice(0, 400) || `HTTP ${res.status}` };
   }
-  const first =
-    (Array.isArray(body?.erros) && body.erros[0]) ||
-    (Array.isArray(body?.Erros) && body.Erros[0]) ||
-    body?.erro ||
-    body;
-  const codigo = String(first?.codigo ?? first?.Codigo ?? first?.code ?? body?.tipo ?? "").trim() || undefined;
-  const motivo =
-    String(
-      first?.mensagem ??
-        first?.Mensagem ??
-        first?.descricao ??
-        first?.message ??
-        body?.mensagem ??
-        body?.title ??
-        "",
-    ).trim() || `HTTP ${res.status}`;
-  return { codigo, motivo };
+  const erros = extractMensagens(body, "erros");
+  const e = erros[0];
+  return { codigo: e?.codigo || undefined, motivo: e?.mensagem || `HTTP ${res.status}` };
 }
 
+// ---- POST /nfse ------------------------------------------------------------
+
 export interface EmitirResult {
+  status: number;
   chaveAcesso: string;
+  idDps: string;
   nfseXml: string;
+  alertas: MensagemSefin[];
+  versaoAplicativo: string | null;
+  processadoEm: string | null;
   raw: any;
 }
 
-// POST /nfse — geração síncrona.
 export async function emitirNfse(
   agent: https.Agent,
   amb: Ambiente,
@@ -133,50 +182,118 @@ export async function emitirNfse(
   const res = await request(agent, "POST", `${sefinBase(amb)}/nfse`, {
     dpsXmlGZipB64: gzipB64(dpsXmlAssinado),
   });
-  if (!res.ok) {
-    const { codigo, motivo } = parseRejeicao(res);
-    throw new NfseError(motivo || "NFS-e rejeitada pela Sefin Nacional.", {
-      status: res.status === 422 || res.status === 400 ? 422 : 502,
-      codigo,
+
+  if (res.status === 201 || res.ok) {
+    let body: any = {};
+    try {
+      body = res.json();
+    } catch {
+      /* corpo não-JSON num 2xx — anomalia; tratada em emitir.ts */
+    }
+    const b64 = body?.nfseXmlGZipB64 ?? body?.NfseXmlGZipB64 ?? body?.nfse;
+    return {
+      status: res.status,
+      chaveAcesso: String(body?.chaveAcesso ?? body?.ChaveAcesso ?? "").trim().toUpperCase(),
+      idDps: String(body?.idDps ?? body?.idDPS ?? body?.IdDps ?? "").trim(),
+      nfseXml: b64 ? ungzipB64(b64) : "",
+      alertas: extractMensagens(body, "alertas"),
+      versaoAplicativo: String(body?.versaoAplicativo ?? "").trim() || null,
+      processadoEm: String(body?.dataHoraProcessamento ?? "").trim() || null,
+      raw: body,
+    };
+  }
+
+  // Certificado de transmissão inválido / fora do padrão — não é rejeição de
+  // regra de negócio; o operador precisa reenviar um A1 válido.
+  if (res.status === 403) {
+    const { motivo } = firstErro(res);
+    throw new NfseError(
+      motivo || "Certificado digital de transmissão inválido ou fora do padrão da NFS-e.",
+      { status: 502, reason: "cert_transmissao", motivo },
+    );
+  }
+
+  // Falha interna do Sefin: pode ou não ter gerado a NFS-e. Ambíguo — o caller
+  // grava 'processando' e reconcilia por GET /dps/{id}.
+  if (res.status >= 500) {
+    let idDps = "";
+    try {
+      idDps = String(res.json()?.idDPS ?? res.json()?.idDps ?? "").trim();
+    } catch {
+      /* ignore */
+    }
+    const { motivo } = firstErro(res);
+    throw new NfseError(motivo || "Falha no processamento da DPS pelo Sefin Nacional.", {
+      status: 502,
+      reason: "sefin_indisponivel",
       motivo,
-      reason: "rejeitada",
+      codigo: idDps || undefined,
     });
   }
-  const body = res.json();
-  const nfseXmlGZipB64 = body?.nfseXmlGZipB64 || body?.NfseXmlGZipB64 || body?.nfse;
-  return {
-    chaveAcesso: String(body?.chaveAcesso || body?.ChaveAcesso || "").replace(/\D/g, ""),
-    nfseXml: nfseXmlGZipB64 ? ungzipB64(nfseXmlGZipB64) : "",
-    raw: body,
-  };
+
+  // 400 e demais 4xx: rejeição por regra de negócio / esquema.
+  const { codigo, motivo } = firstErro(res);
+  throw new NfseError(motivo || "NFS-e rejeitada pela Sefin Nacional.", {
+    status: 422,
+    codigo,
+    motivo,
+    reason: "rejeitada",
+  });
 }
 
-// GET /nfse/{chave}
-export async function consultarNfse(agent: https.Agent, amb: Ambiente, chave: string): Promise<string> {
+// ---- GET /nfse/{chave} ----------------------------------------------------
+
+export async function consultarNfse(
+  agent: https.Agent,
+  amb: Ambiente,
+  chave: string,
+): Promise<{ nfseXml: string; raw: any } | null> {
   const res = await request(agent, "GET", `${sefinBase(amb)}/nfse/${chave}`);
+  if (res.status === 404) return null;
+  if (res.status === 403) {
+    throw new NfseError("Consulta desta NFS-e não é permitida para este certificado.", {
+      status: 403,
+      reason: "consulta_negada",
+    });
+  }
   if (!res.ok) {
-    const { codigo, motivo } = parseRejeicao(res);
+    const { codigo, motivo } = firstErro(res);
     throw new NfseError(motivo, { status: 502, codigo, motivo });
   }
   const body = res.json();
-  const b64 = body?.nfseXmlGZipB64 || body?.NfseXmlGZipB64;
-  return b64 ? ungzipB64(b64) : res.text();
+  const b64 = body?.nfseXmlGZipB64 ?? body?.NfseXmlGZipB64;
+  return { nfseXml: b64 ? ungzipB64(b64) : "", raw: body };
 }
 
-// GET /dps/{id} → chave de acesso
-export async function consultarDps(agent: https.Agent, amb: Ambiente, idDps: string): Promise<string | null> {
+// ---- GET / HEAD /dps/{id} -----------------------------------------------
+
+export async function consultarDps(
+  agent: https.Agent,
+  amb: Ambiente,
+  idDps: string,
+): Promise<string | null> {
   const res = await request(agent, "GET", `${sefinBase(amb)}/dps/${idDps}`);
   if (res.status === 404) return null;
   if (!res.ok) return null;
   try {
     const body = res.json();
-    return String(body?.chaveAcesso || body?.ChaveAcesso || "").replace(/\D/g, "") || null;
+    return String(body?.chaveAcesso ?? body?.ChaveAcesso ?? "").trim().toUpperCase() || null;
   } catch {
     return null;
   }
 }
 
-// POST /nfse/{chave}/eventos — pedido de registro de evento (cancelamento etc).
+// HEAD — atende qualquer certificado válido, sem sigilo fiscal. Usado para saber
+// se um número de DPS já gerou NFS-e (idempotência / reconciliação).
+export async function headDps(agent: https.Agent, amb: Ambiente, idDps: string): Promise<boolean> {
+  const res = await request(agent, "HEAD", `${sefinBase(amb)}/dps/${idDps}`);
+  if (res.status === 200) return true;
+  if (res.status === 404) return false;
+  throw new NfseError(`Consulta HEAD /dps falhou (HTTP ${res.status}).`, { status: 502 });
+}
+
+// ---- POST /nfse/{chave}/eventos ----------------------------------------
+
 export async function registrarEvento(
   agent: https.Agent,
   amb: Ambiente,
@@ -186,70 +303,96 @@ export async function registrarEvento(
   const res = await request(agent, "POST", `${sefinBase(amb)}/nfse/${chave}/eventos`, {
     pedidoRegistroEventoXmlGZipB64: gzipB64(pedidoXmlAssinado),
   });
-  if (!res.ok) {
-    const { codigo, motivo } = parseRejeicao(res);
+  if (res.status !== 201 && !res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new NfseError("Certificado sem permissão para registrar eventos desta NFS-e.", {
+        status: 403,
+        reason: "evento_negado",
+      });
+    }
+    const { codigo, motivo } = firstErro(res);
     throw new NfseError(motivo || "Evento rejeitado pela Sefin Nacional.", {
-      status: res.status === 422 || res.status === 400 ? 422 : 502,
+      status: res.status >= 500 ? 502 : 422,
       codigo,
       motivo,
       reason: "evento_rejeitado",
     });
   }
   const body = res.json();
-  const b64 = body?.eventoXmlGZipB64 || body?.EventoXmlGZipB64;
+  const b64 = body?.eventoXmlGZipB64 ?? body?.EventoXmlGZipB64;
   return { raw: body, eventoXml: b64 ? ungzipB64(b64) : "" };
 }
 
-// GET {adn}/danfse/{chave} → PDF bytes.
+// ---- GET {adn}/danfse/{chave} → PDF bytes -----------------------------
+
 export async function baixarDanfse(
   agent: https.Agent | undefined,
   amb: Ambiente,
   chave: string,
 ): Promise<Buffer> {
-  const res = await request(agent, "GET", `${adnBase(amb)}/danfse/${chave}`);
-  if (!res.ok || res.buffer.length === 0) {
-    throw new NfseError("DANFSE não disponível para esta chave.", { status: 502, reason: "danfse_unavailable" });
+  const res = await request(agent, "GET", `${danfseBase(amb)}/${chave}`);
+  // 501 = serviço sobrestado (NT-008); 404 = ainda não disponível.
+  if (res.status === 501 || res.status === 404 || !res.ok || res.buffer.length === 0) {
+    throw new NfseError("DANFSe não disponível pela API — será gerado localmente.", {
+      status: 502,
+      reason: "danfse_indisponivel",
+    });
   }
   return res.buffer;
 }
 
-// GET /parametros_municipais/{cod}/convenio
+// ---- Parâmetros municipais (ADN /parametrizacao) ---------------------
+
+// GET /{cod}/convenio → ResultadoConsultaConfiguracoesConvenio
 export async function consultarConvenio(
   agent: https.Agent,
   amb: Ambiente,
   codigoMunicipio: string,
 ): Promise<{ aderente: boolean; raw: any }> {
-  const res = await request(agent, "GET", `${sefinBase(amb)}/parametros_municipais/${codigoMunicipio}/convenio`);
+  const res = await request(
+    agent,
+    "GET",
+    `${paramBase(amb)}/${codigoMunicipio}/convenio`,
+  );
   if (res.status === 404) return { aderente: false, raw: null };
   if (!res.ok) {
-    const { motivo } = parseRejeicao(res);
+    const { motivo } = firstErro(res);
     throw new NfseError(motivo, { status: 502, reason: "convenio_erro" });
   }
   const raw = res.json();
-  // Different shapes seen; treat any 2xx with a payload as "conveniado".
+  const pc = raw?.parametrosConvenio ?? raw?.ParametrosConvenio ?? {};
+  // TipoSimNao: 1 = Sim. "aderenteEmissorNacional" = o convênio permite que os
+  // contribuintes do município usem os emissores públicos nacionais.
   const aderente =
-    raw?.aderente ??
-    raw?.municipioAderente ??
-    (raw?.parametrosConvenio ? true : undefined) ??
-    true;
-  return { aderente: Boolean(aderente), raw };
+    Number(pc?.aderenteEmissorNacional) === 1 ||
+    Number(pc?.aderenteAmbienteNacional) === 1;
+  return { aderente, raw };
 }
 
-// GET /parametros_municipais/{cod}/{codServico}
-export async function consultarParametrosServico(
+// GET /{cod}/{codServico}/{competencia}/aliquota → ResultadoConsultaAliquotas
+export async function consultarAliquota(
   agent: https.Agent,
   amb: Ambiente,
   codigoMunicipio: string,
   codServico: string,
-): Promise<any> {
+  competenciaIso: string, // "AAAA-MM-DD"
+): Promise<number | null> {
   const res = await request(
     agent,
     "GET",
-    `${sefinBase(amb)}/parametros_municipais/${codigoMunicipio}/${codServico}`,
+    `${paramBase(amb)}/${codigoMunicipio}/${codServico}/${competenciaIso}/aliquota`,
   );
   if (!res.ok) return null;
   try {
-    return res.json();
+    const raw = res.json();
+    const groups = raw?.aliquotas ?? raw?.Aliquotas ?? {};
+    for (const key of Object.keys(groups)) {
+      const list = groups[key];
+      const first = Array.isArray(list) ? list[0] : null;
+      const aliq = Number(first?.Aliq ?? first?.aliq);
+      if (Number.isFinite(aliq)) return aliq;
+    }
+    return null;
   } catch {
     return null;
   }

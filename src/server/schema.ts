@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const clients = pgTable('clients', {
@@ -214,6 +214,11 @@ export const nfseEmissoes = pgTable('nfse_emissoes', {
   // rascunho | processando | emitida | rejeitada | cancelada
   status: text('status').notNull().default('rascunho'),
   ambiente: text('ambiente'), // homologacao | producao (fixado no momento da emissão)
+  // Resposta da Sefin Nacional (Swagger: NFSePostResponseSucesso / *Erro).
+  alertas: jsonb('alertas'), // MensagemProcessamento[] devolvida junto da NFS-e
+  versaoAplicativo: text('versao_aplicativo'), // versaoAplicativo da resposta
+  sefinProcessadoEm: timestamp('sefin_processado_em', { withTimezone: true }), // dataHoraProcessamento
+  syncTentativas: integer('sync_tentativas').default(0).notNull(), // reconciliações de 'processando'
   competencia: text('competencia'), // MM/YYYY
   valorServicos: integer('valor_servicos'), // centavos
   aliquotaIss: real('aliquota_iss'),
@@ -248,7 +253,11 @@ export const nfseEmissoes = pgTable('nfse_emissoes', {
   substituiChave: text('substitui_chave'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => ({
+  // Idempotência: um mesmo Id de DPS nunca gera duas linhas. NULLs (rascunhos)
+  // permanecem distintos (NULLS DISTINCT, padrão do Postgres).
+  clientIdDpsUq: uniqueIndex('nfse_emissoes_client_id_dps_uq').on(t.clientId, t.idDps),
+}));
 
 export const billingDataRelations = relations(billingData, ({ one }) => ({
 	client: one(clients, {

@@ -191,6 +191,7 @@ export interface EmitirNfseInput {
 
 export interface EmitirNfseResult {
   ok: boolean;
+  processando?: boolean; // DPS enviada, aguardando confirmação do Sefin
   id?: string;
   status?: string;
   chaveAcesso?: string;
@@ -207,9 +208,37 @@ export async function emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResu
     body: JSON.stringify(input),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  // 202 / body.processando = a nota foi enviada mas o Sefin ainda não confirmou.
+  if (data.processando || res.status === 202) {
+    return {
+      ok: false,
+      processando: true,
+      id: data.id,
+      status: "processando",
+      error: data.error || data.motivo,
+      motivo: data.motivo || data.error,
+    };
+  }
+  if (!res.ok || data.ok === false) {
     return { ok: false, error: data.error || "Falha ao emitir a nota.", codigo: data.codigo, motivo: data.motivo };
   }
+  return { ok: true, ...data };
+}
+
+export interface SincronizarResult {
+  ok: boolean;
+  status?: string;
+  chaveAcesso?: string | null;
+  numeroNota?: string | null;
+  rejeicaoMotivo?: string | null;
+  error?: string;
+}
+
+// Reconcilia uma emissão em 'processando' (consulta o Sefin; nunca reemite).
+export async function sincronizarEmissao(id: string): Promise<SincronizarResult> {
+  const res = await apiFetch(`/api/nfse/emissoes/${id}/sincronizar`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error || "Falha ao consultar o Sefin." };
   return { ok: true, ...data };
 }
 
