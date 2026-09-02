@@ -1,6 +1,7 @@
 import https from "https";
 import zlib from "zlib";
-import { NfseError } from "./errors";
+import { NfseError, type NfseErrorDebug } from "./errors";
+import { nfseLog } from "./log";
 
 // Cliente HTTP para as APIs do Sistema Nacional NFS-e. `https` nativo (espelha
 // services/serpro.ts httpsPost) com o agente mTLS por cliente. Corpo em JSON; o
@@ -189,12 +190,24 @@ export interface EmitirResult {
   raw: any;
 }
 
+// Coleta o corpo cru + status + headers relevantes de uma resposta de erro do
+// Sefin, para o log de diagnóstico. A mensagem de erro do Sefin não é sigilosa.
+function debugFrom(res: RawResponse, url: string): NfseErrorDebug {
+  const headers: Record<string, string> = {};
+  for (const k of ["content-type", "date", "x-correlationid", "x-request-id"]) {
+    const v = res.headers[k];
+    if (v) headers[k] = Array.isArray(v) ? v.join(", ") : String(v);
+  }
+  return { url, httpStatus: res.status, rawBody: res.text().slice(0, 8000), headers };
+}
+
 export async function emitirNfse(
   agent: https.Agent,
   amb: Ambiente,
   dpsXmlAssinado: string,
 ): Promise<EmitirResult> {
-  const res = await request(agent, "POST", `${sefinBase(amb)}/nfse`, {
+  const url = `${sefinBase(amb)}/nfse`;
+  const res = await request(agent, "POST", url, {
     dpsXmlGZipB64: gzipB64(dpsXmlAssinado),
   });
 
@@ -218,13 +231,22 @@ export async function emitirNfse(
     };
   }
 
+  const debug = debugFrom(res, url);
+  // Sempre logamos a resposta de erro do Sefin no stdout (EasyPanel captura).
+  nfseLog("warn", "sefin.post_nfse_erro", {
+    url,
+    httpStatus: res.status,
+    contentType: debug.headers?.["content-type"],
+    body: debug.rawBody,
+  });
+
   // Certificado de transmissão inválido / fora do padrão — não é rejeição de
   // regra de negócio; o operador precisa reenviar um A1 válido.
   if (res.status === 403) {
     const { motivo } = firstErro(res);
     throw new NfseError(
       motivo || "Certificado digital de transmissão inválido ou fora do padrão da NFS-e.",
-      { status: 502, reason: "cert_transmissao", motivo },
+      { status: 502, reason: "cert_transmissao", motivo, debug },
     );
   }
 
@@ -243,6 +265,7 @@ export async function emitirNfse(
       reason: "sefin_indisponivel",
       motivo,
       codigo: idDps || undefined,
+      debug,
     });
   }
 
@@ -253,6 +276,7 @@ export async function emitirNfse(
     codigo,
     motivo,
     reason: "rejeitada",
+    debug,
   });
 }
 

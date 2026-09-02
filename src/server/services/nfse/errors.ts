@@ -5,15 +5,29 @@
 //
 // Same shape as the SERPRO helpers (`Object.assign(new Error, { status, reason })`).
 
+export interface NfseErrorDebug {
+  url?: string;
+  httpStatus?: number;
+  rawBody?: string; // corpo cru da resposta do Sefin (mensagem de erro — não sigiloso)
+  headers?: Record<string, string>;
+}
+
 export class NfseError extends Error {
   status: number;
   codigo?: string;
   motivo?: string;
   reason?: string;
+  debug?: NfseErrorDebug;
 
   constructor(
     message: string,
-    opts: { status?: number; codigo?: string; motivo?: string; reason?: string } = {},
+    opts: {
+      status?: number;
+      codigo?: string;
+      motivo?: string;
+      reason?: string;
+      debug?: NfseErrorDebug;
+    } = {},
   ) {
     super(message);
     this.name = "NfseError";
@@ -21,6 +35,7 @@ export class NfseError extends Error {
     this.codigo = opts.codigo;
     this.motivo = opts.motivo;
     this.reason = opts.reason;
+    this.debug = opts.debug;
   }
 }
 

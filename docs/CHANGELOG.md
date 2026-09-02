@@ -13,6 +13,15 @@ lista exata de commits.)
 
 ### NFS-e — diagnóstico de rejeição + saneamento de texto
 
+- **Log de rejeição** (`emitir.ts` `dumpRejeicao`): a cada recusa do Sefin,
+  imprime no stdout (EasyPanel/Cloud Run capturam) um bloco delimitado com
+  ambiente, idDps, URL, HTTP status e a **resposta crua do Sefin**. Com
+  `NFSE_DEBUG=1`, inclui também a **DPS assinada completa**. A resposta do Sefin
+  também vai para `erro_msg` (visível na aba "Notas emitidas"). `nfseLog`
+  não trunca mais o corpo da resposta.
+- **`nfse boot`**: uma linha no log ao subir, com `dpsVersao`, `verAplic`,
+  `ibsCbsEnviar`, `nfseDebug` e as bases do Sefin — pra confirmar qual versão
+  está no ar.
 - **`NFSE_DPS_VERSAO` default `1.00` → `1.01`**: o pacote de esquemas em produção
   (gov.br/nfse/.../documentacao-atual) é o `NFSe-ESQUEMAS_XSD-v1.01-20260209` —
   o `versao="1.00"` que a DPS carregava não é o vigente. Sobrescrevível por env.

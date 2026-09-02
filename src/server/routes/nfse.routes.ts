@@ -41,6 +41,9 @@ import {
   cancelarNfse,
   getDanfsePdfPath,
   getConvenio,
+  nfseLog,
+  DPS_VERSAO,
+  sefinBase,
   NfseError,
 } from "../services/nfse";
 import {
@@ -92,6 +95,17 @@ function blank(v: unknown): string | undefined {
 }
 
 export function registerNfseRoutes(app: Express) {
+  // Uma linha no boot pra confirmar, pelo log do serviço, qual configuração de
+  // NFS-e está no ar.
+  nfseLog("info", "boot", {
+    dpsVersao: DPS_VERSAO,
+    verAplic: process.env.NFSE_VER_APLIC || "portal-virgula-1",
+    ibsCbsEnviar: process.env.NFSE_IBSCBS_ENVIAR === "1",
+    nfseDebug: process.env.NFSE_DEBUG === "1",
+    sefinProd: sefinBase("producao"),
+    sefinRestrita: sefinBase("homologacao"),
+  });
+
   // ---- Reference data (both audiences) ------------------------------------
   app.get("/api/nfse/lista-servicos", verifyAnyAuth, (_req, res) => {
     res.json({ servicos: LISTA_SERVICOS_LC116 });

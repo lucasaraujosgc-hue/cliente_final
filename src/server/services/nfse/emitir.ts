@@ -23,6 +23,40 @@ import { NfseError, notConfigured } from "./errors";
 //   'rejeitada'    — 400 (regra de negócio / esquema) ou certificado inválido
 // Nunca reenvia a DPS automaticamente.
 
+// Imprime a rejeição no stdout (EasyPanel/Cloud Run capturam) num bloco
+// delimitado, fácil de copiar. A resposta do Sefin (mensagem de erro) sai
+// sempre; a DPS assinada só quando NFSE_DEBUG=1 (contém o certificado público
+// e todos os dados da nota).
+function dumpRejeicao(
+  err: NfseError,
+  ctx: { idDps: string; ambiente: string; dpsAssinada: string },
+): void {
+  const L = "═".repeat(64);
+  const parts = [
+    `\n${L}`,
+    `  NFS-e REJEITADA · ${new Date().toISOString()}`,
+    `  ambiente : ${ctx.ambiente}`,
+    `  idDps    : ${ctx.idDps}`,
+    `  url      : ${err.debug?.url ?? "-"}`,
+    `  http     : ${err.debug?.httpStatus ?? "-"}`,
+    `  reason   : ${err.reason ?? "-"}   codigo: ${err.codigo ?? "-"}`,
+    `  motivo   : ${err.motivo || err.message}`,
+    `${"─".repeat(64)}`,
+    `  RESPOSTA DO SEFIN (corpo cru):`,
+    err.debug?.rawBody || "(sem corpo / não capturado — atualize o deploy)",
+  ];
+  if (process.env.NFSE_DEBUG === "1") {
+    parts.push(`${"─".repeat(64)}`, `  DPS ASSINADA ENVIADA:`, ctx.dpsAssinada);
+  } else {
+    parts.push(
+      `${"─".repeat(64)}`,
+      `  (defina NFSE_DEBUG=1 no serviço para incluir o XML da DPS aqui)`,
+    );
+  }
+  parts.push(`${L}\n`);
+  console.error(parts.join("\n"));
+}
+
 export interface EmitirInput {
   atividadeId: string;
   tomador: {
@@ -297,6 +331,10 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
   } catch (e) {
     const err = e instanceof NfseError ? e : new NfseError(String((e as any)?.message || e), { status: 502 });
 
+    // Dump completo no stdout (EasyPanel) — bloco delimitado, fácil de copiar.
+    // Sempre imprime a resposta do Sefin; a DPS assinada só com NFSE_DEBUG=1.
+    dumpRejeicao(err, { idDps: built.idDps, ambiente, dpsAssinada });
+
     // Rejeição definitiva (regra de negócio / esquema) ou certificado de
     // transmissão inválido: persiste 'rejeitada' e propaga.
     if (err.reason === "rejeitada" || err.reason === "cert_transmissao" || err.status === 422) {
@@ -305,13 +343,15 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
         status: "rejeitada",
         rejeicaoCodigo: err.codigo || null,
         rejeicaoMotivo: err.motivo || err.message,
-        erroMsg: err.message,
+        erroMsg: [err.message, err.debug?.rawBody].filter(Boolean).join("\n\n--- resposta Sefin ---\n"),
       });
       nfseLog("warn", "emissao.rejeitada", {
         idDps: built.idDps,
         ambiente,
         reason: err.reason,
         codigo: err.codigo,
+        httpStatus: err.debug?.httpStatus,
+        body: err.debug?.rawBody,
       });
       throw err;
     }
