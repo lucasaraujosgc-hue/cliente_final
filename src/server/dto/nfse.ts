@@ -79,6 +79,7 @@ export function nfseEmissaoListDTO(e: NfseEmissaoRow) {
   return {
     id: e.id,
     status: e.status,
+    origem: e.origem, // 'sistema' | 'distribuicao'
     tomadorNome: e.tomadorNome ?? null,
     tomadorDoc: e.tomadorDoc ?? null,
     valorServicos: e.valorServicos ?? null,
@@ -105,6 +106,7 @@ export function nfseEmissaoDetailDTO(e: NfseEmissaoRow) {
     serieDps: e.serieDps ?? null,
     numeroDps: e.numeroDps ?? null,
     idDps: e.idDps ?? null,
+    nsu: e.nsu ?? null,
     tomadorEmail: e.tomadorEmail ?? null,
     tomadorTelefone: e.tomadorTelefone ?? null,
     tomadorEndereco: e.tomadorEndereco ?? null,

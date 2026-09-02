@@ -38,6 +38,7 @@ import {
   lookupCnpj,
   emitirNfse,
   reconcileEmissao,
+  sincronizarDistribuicao,
   cancelarNfse,
   getDanfsePdfPath,
   getConvenio,
@@ -207,6 +208,20 @@ export function registerNfseRoutes(app: Express) {
     },
   );
 
+  // Busca no portal nacional (ADN) as NFS-e do prestador que não foram emitidas
+  // por aqui — geradas pela prefeitura ou por outro sistema.
+  app.post("/api/nfse/sincronizar-dfe", verifyClientAuth, nfseLookupLimiter, async (req, res) => {
+    const status = await nfseStatusForClient(getClientId(req));
+    if (!status.enabled) return res.status(403).json({ error: "Emissão de NFS-e não habilitada." });
+    try {
+      const r = await sincronizarDistribuicao(getClientId(req));
+      res.json({ ok: true, ...r });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
   // Reconciliação manual de uma emissão em 'processando' (consulta GET /dps +
   // GET /nfse no Sefin; nunca reenvia a DPS).
   app.post("/api/nfse/emissoes/:id/sincronizar", verifyClientAuth, nfseLookupLimiter, async (req, res) => {
@@ -284,6 +299,29 @@ export function registerNfseRoutes(app: Express) {
       emissoes: rows.map((e) => ({ ...nfseEmissaoDetailDTO(e), clientId: e.clientId })),
     });
   });
+
+  // Contador: dispara a busca de DF-e (portal nacional) para um cliente.
+  app.post(
+    "/api/nfse/admin/clients/:id/sincronizar-dfe",
+    verifyAccountantAuth,
+    async (req, res) => {
+      const client = await loadClientOr404(req.params.id, res);
+      if (!client) return;
+      try {
+        const r = await sincronizarDistribuicao(client.id);
+        await logAudit(req, "nfse.distribuicao", {
+          targetType: "client",
+          targetId: client.id,
+          summary: `Distribuição de DF-e: ${r.novas} nova(s), ${r.atualizadas} atualizada(s), ${r.eventos} evento(s)`,
+          metadata: r,
+        });
+        res.json({ ok: true, ...r });
+      } catch (e) {
+        if (sendNfseError(res, e)) return;
+        throw e;
+      }
+    },
+  );
 
   // Diagnóstico: baixa o XML da DPS assinada (?tipo=dps) ou da NFS-e (?tipo=nfse)
   // de uma emissão. Só o contador; útil para investigar rejeição.

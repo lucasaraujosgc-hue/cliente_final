@@ -64,6 +64,13 @@
       "when": 1788315600000,
       "tag": "0008_nfse_atividade_rtc",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788319200000,
+      "tag": "0009_nfse_distribuicao",
+      "breakpoints": true
     }
   ]
 }

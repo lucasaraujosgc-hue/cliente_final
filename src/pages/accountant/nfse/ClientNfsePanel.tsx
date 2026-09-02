@@ -19,6 +19,7 @@ import {
   adminUpdateAtividade,
   adminDeleteAtividade,
   adminTestNfseConfig,
+  adminSincronizarDistribuicao,
   type AdminClientNfse,
   type NfseAtividade,
   type NfseTestResult,
@@ -136,6 +137,28 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
       setTest(await adminTestNfseConfig(clientId));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const [syncing, setSyncing] = useState(false);
+  const buscarPortal = async () => {
+    setSyncing(true);
+    setMsg(null);
+    try {
+      const r = await adminSincronizarDistribuicao(clientId);
+      if (!r.ok) {
+        setMsg({ tone: "err", text: r.error || "Falha ao consultar o portal nacional." });
+      } else {
+        const total = (r.novas ?? 0) + (r.atualizadas ?? 0) + (r.eventos ?? 0);
+        setMsg({
+          tone: "ok",
+          text: total
+            ? `Portal nacional: ${r.novas ?? 0} nova(s), ${r.atualizadas ?? 0} vinculada(s), ${r.eventos ?? 0} evento(s).`
+            : "Nenhuma nota nova no portal nacional.",
+        });
+      }
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -294,6 +317,9 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           </button>
           <button type="button" onClick={runTest} disabled={testing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
             {testing ? "Testando…" : "Testar certificado"}
+          </button>
+          <button type="button" onClick={buscarPortal} disabled={syncing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+            {syncing ? "Buscando…" : "Buscar notas no portal nacional"}
           </button>
         </div>
 

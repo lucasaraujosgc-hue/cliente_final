@@ -66,6 +66,7 @@ export {
 
 export { emitirNfse, type EmitirInput } from "./emitir";
 export { reconcileEmissao, pendingEmissoes } from "./reconcile";
+export { sincronizarDistribuicao, type SincronizacaoResultado } from "./distribuicao";
 export { cancelarNfse } from "./events";
 export { getDanfsePdfPath } from "./danfse";
 export { renderDanfsePdf } from "./danfseRender";
@@ -82,6 +83,8 @@ export {
   sefinBase,
   paramBase,
   danfseBase,
+  contribuintesBase,
+  distribuirDFe,
   type Ambiente,
 } from "./client";
 export { nfseLog } from "./log";

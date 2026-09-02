@@ -20,6 +20,7 @@ export interface NfseStatus {
 export interface NfseEmissao {
   id: string;
   status: string;
+  origem: "sistema" | "distribuicao";
   tomadorNome: string | null;
   tomadorDoc: string | null;
   valorServicos: number | null; // centavos
@@ -55,6 +56,7 @@ export interface NfseEmissaoDetail extends NfseEmissao {
   tomadorTelefone: string | null;
   tomadorEndereco: NfseEndereco | null;
   idDps: string | null;
+  nsu: number | null;
   rejeicaoCodigo: string | null;
   erroMsg: string | null;
   alertas: { codigo: string | null; mensagem: string | null }[] | null;
@@ -264,6 +266,30 @@ export async function sincronizarEmissao(id: string): Promise<SincronizarResult>
   const res = await apiFetch(`/api/nfse/emissoes/${id}/sincronizar`, { method: "POST" });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: data.error || "Falha ao consultar o Sefin." };
+  return { ok: true, ...data };
+}
+
+export interface DistribuicaoResult {
+  ok: boolean;
+  novas?: number;
+  atualizadas?: number;
+  eventos?: number;
+  ultimoNsu?: number;
+  error?: string;
+}
+
+// Busca no portal nacional as NFS-e do prestador não emitidas por aqui.
+export async function sincronizarDistribuicao(): Promise<DistribuicaoResult> {
+  const res = await apiFetch("/api/nfse/sincronizar-dfe", { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error || data.motivo || "Falha ao consultar o portal nacional." };
+  return { ok: true, ...data };
+}
+
+export async function adminSincronizarDistribuicao(clientId: string): Promise<DistribuicaoResult> {
+  const res = await apiFetch(`/api/nfse/admin/clients/${clientId}/sincronizar-dfe`, { method: "POST" }, "accountant");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error || data.motivo || "Falha ao consultar o portal nacional." };
   return { ok: true, ...data };
 }
 

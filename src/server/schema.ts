@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, uuid, json, jsonb, serial, real, index, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const clients = pgTable('clients', {
@@ -176,6 +176,8 @@ export const nfseConfig = pgTable('nfse_config', {
   serieDps: text('serie_dps').default('00001').notNull(),
   // Contador local do número da DPS (incrementado atomicamente na emissão).
   proxNumeroDps: integer('prox_numero_dps').default(1).notNull(),
+  // Cursor da distribuição de DF-e do ADN (GET /DFe/{NSU}).
+  ultimoNsu: bigint('ultimo_nsu', { mode: 'number' }).default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -230,6 +232,9 @@ export const nfseEmissoes = pgTable('nfse_emissoes', {
   atividadeId: uuid('atividade_id').references(() => nfseAtividades.id, { onDelete: 'set null' }),
   // rascunho | processando | emitida | rejeitada | cancelada
   status: text('status').notNull().default('rascunho'),
+  // 'sistema' = emitida por aqui | 'distribuicao' = recebida do ADN (portal nacional)
+  origem: text('origem').default('sistema').notNull(),
+  nsu: bigint('nsu', { mode: 'number' }), // NSU da distribuição (quando origem='distribuicao')
   ambiente: text('ambiente'), // homologacao | producao (fixado no momento da emissão)
   // Resposta da Sefin Nacional (Swagger: NFSePostResponseSucesso / *Erro).
   alertas: jsonb('alertas'), // MensagemProcessamento[] devolvida junto da NFS-e

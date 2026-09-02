@@ -41,6 +41,18 @@ export function paramBase(amb: Ambiente): string {
         "https://adn.producaorestrita.nfse.gov.br/parametrizacao";
 }
 
+// ADN Contribuinte — distribuição de DF-e (GET /DFe/{NSU}). Swagger em
+// docs/nfse-nacional/01-api/swagger.json. Base .../contribuintes.
+export function contribuintesBase(amb: Ambiente): string {
+  return amb === "producao"
+    ? process.env.NFSE_ADN_BASE_PROD
+      ? `${process.env.NFSE_ADN_BASE_PROD}/contribuintes`
+      : "https://adn.nfse.gov.br/contribuintes"
+    : process.env.NFSE_ADN_BASE_RESTRITA
+      ? `${process.env.NFSE_ADN_BASE_RESTRITA}/contribuintes`
+      : "https://adn.producaorestrita.nfse.gov.br/contribuintes";
+}
+
 // DANFSe — movido do Sefin para o ADN "/danfse". Ver NT-008: a partir de
 // 03/08/2026 este serviço está sobrestado e o emissor deve gerar o DANFSe
 // localmente (services/nfse/danfseRender.ts). Mantido como tentativa oportunista.
@@ -406,6 +418,76 @@ export async function consultarConvenio(
     Number(pc?.aderenteEmissorNacional) === 1 ||
     Number(pc?.aderenteAmbienteNacional) === 1;
   return { aderente, raw };
+}
+
+// ---- ADN Contribuinte — distribuição de DF-e ------------------------
+
+export type TipoDocDistribuicao = "NENHUM" | "DPS" | "PEDIDO_REGISTRO_EVENTO" | "NFSE" | "EVENTO" | "CNC";
+
+export interface DistribuicaoDoc {
+  nsu: number;
+  chaveAcesso: string | null;
+  tipoDocumento: TipoDocDistribuicao;
+  tipoEvento: string | null;
+  xml: string; // já descompactado
+  dataHoraGeracao: string | null;
+}
+
+export interface DistribuicaoLote {
+  status: "REJEICAO" | "NENHUM_DOCUMENTO_LOCALIZADO" | "DOCUMENTOS_LOCALIZADOS";
+  docs: DistribuicaoDoc[];
+  ultimoNsu: number; // maior NSU do lote (ou o informado, se vazio)
+  alertas: MensagemSefin[];
+  erros: MensagemSefin[];
+  raw: any;
+}
+
+// GET /DFe/{NSU}?cnpjConsulta={cnpj}&lote=true — devolve os DF-e com NSU > {NSU}.
+export async function distribuirDFe(
+  agent: https.Agent,
+  amb: Ambiente,
+  cnpjConsulta: string,
+  nsu: number,
+): Promise<DistribuicaoLote> {
+  const url = `${contribuintesBase(amb)}/DFe/${nsu}?cnpjConsulta=${encodeURIComponent(cnpjConsulta)}&lote=true`;
+  const res = await request(agent, "GET", url);
+  if (!res.ok && res.status !== 200) {
+    const { motivo } = firstErro(res);
+    throw new NfseError(motivo || `Falha na distribuição de DF-e (HTTP ${res.status}).`, {
+      status: 502,
+      reason: "distribuicao_erro",
+      debug: debugFrom(res, url),
+    });
+  }
+  let body: any = {};
+  try {
+    body = res.json();
+  } catch {
+    /* ignore */
+  }
+  const lote: any[] = Array.isArray(body?.LoteDFe) ? body.LoteDFe : Array.isArray(body?.loteDFe) ? body.loteDFe : [];
+  const docs: DistribuicaoDoc[] = lote.map((d) => {
+    const b64 = d?.ArquivoXml ?? d?.arquivoXml ?? "";
+    return {
+      nsu: Number(d?.NSU ?? d?.nsu ?? 0),
+      chaveAcesso: String(d?.ChaveAcesso ?? d?.chaveAcesso ?? "").trim().toUpperCase() || null,
+      tipoDocumento: String(d?.TipoDocumento ?? d?.tipoDocumento ?? "NENHUM") as TipoDocDistribuicao,
+      tipoEvento: String(d?.TipoEvento ?? d?.tipoEvento ?? "").trim() || null,
+      xml: b64 ? ungzipB64(b64) : "",
+      dataHoraGeracao: String(d?.DataHoraGeracao ?? d?.dataHoraGeracao ?? "").trim() || null,
+    };
+  });
+  const status = String(body?.StatusProcessamento ?? body?.statusProcessamento ?? "NENHUM_DOCUMENTO_LOCALIZADO") as
+    DistribuicaoLote["status"];
+  const ultimoNsu = docs.length ? Math.max(...docs.map((x) => x.nsu)) : nsu;
+  return {
+    status,
+    docs: docs.sort((a, b) => a.nsu - b.nsu),
+    ultimoNsu,
+    alertas: extractMensagens(body, "alertas"),
+    erros: extractMensagens(body, "erros"),
+    raw: body,
+  };
 }
 
 // GET /{cod}/{codServico}/{competencia}/aliquota → ResultadoConsultaAliquotas

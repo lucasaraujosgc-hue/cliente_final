@@ -184,7 +184,7 @@ Postgres via Drizzle. Schema em `src/server/schema.ts` (**única fonte de verdad
 | `payment_checks` | rastreio de pagamento de guia | 1 linha/guia (`document_id` unique). `paid_source` = `serpro`\|`accountant`. FK cascade. Ver §5.7. |
 | `nfse_config` | config de NFS-e (1/cliente) | certificado A1 (`cert_path` cifrado, `cert_senha` `enc:v1:`), `codigo_municipio` (IBGE), `regime_tributario`, `serie_dps`, `prox_numero_dps`, `ativo`. FK cascade. **DTO obrigatório** (`dto/nfse.ts`). |
 | `nfse_atividades` | atividades pré-configuradas pelo contador | item LC 116, `cod_tributacao_nac/mun`, `c_nbs`, `trib_issqn`, `aliquota_iss`, `iss_retido`, `municipio_incidencia`, `reg_ap_trib_sn`, `cod_atividade_sn`, retenções federais, `pis_cofins_cst`+alíquotas, `ibs_cbs_cst/class_trib/cind_op/ind_dest`. FK cascade. |
-| `nfse_emissoes` | notas emitidas / rascunhos / rejeições | `chave_acesso` (50), `xml_dps`/`xml_nfse`, `danfse_pdf_path`, `rejeicao_codigo/motivo`, `cancelada_em`. FK cascade. |
+| `nfse_emissoes` | notas emitidas / rascunhos / rejeições / recebidas | `chave_acesso` (50), `xml_dps`/`xml_nfse`, `danfse_pdf_path`, `rejeicao_codigo/motivo`, `cancelada_em`, `origem` (`sistema`\|`distribuicao`), `nsu`. FK cascade. |
 
 Migrations: `drizzle/0000_baseline.sql` … `0006_nfse.sql` + `drizzle/reconcile-legacy.sql`
 (bridge para bancos antigos). Runner: `scripts/migrate.ts` (`npm run db:migrate`),

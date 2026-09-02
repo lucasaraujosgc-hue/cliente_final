@@ -188,10 +188,17 @@ function EmissoesTab() {
                     <p className="truncate font-semibold text-slate-800 dark:text-white">
                       {e.tomadorNome || e.tomadorDoc || "—"}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      {e.numeroNota ? `Nota ${e.numeroNota}` : "sem número"} ·{" "}
-                      {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
-                      {e.ambiente ? ` · ${e.ambiente}` : ""}
+                    <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                      <span>
+                        {e.numeroNota ? `Nota ${e.numeroNota}` : "sem número"} ·{" "}
+                        {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
+                        {e.ambiente ? ` · ${e.ambiente}` : ""}
+                      </span>
+                      {e.origem === "distribuicao" && (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
+                          portal nacional
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>

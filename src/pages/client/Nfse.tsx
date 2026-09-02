@@ -8,6 +8,7 @@ import {
   Eye,
   Loader2,
   Ban,
+  RefreshCw,
 } from "lucide-react";
 import {
   getNfseStatus,
@@ -17,6 +18,7 @@ import {
   viewDanfse,
   shareDanfse,
   cancelarNfse,
+  sincronizarDistribuicao,
   centavosToBRL,
   nfseStatusLabel,
   type NfseStatus,
@@ -37,6 +39,29 @@ export function ClientNfse() {
   });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  const buscarPortal = async () => {
+    setSyncing(true);
+    setFlash("");
+    try {
+      const r = await sincronizarDistribuicao();
+      if (!r.ok) {
+        setFlash(r.error || "Não foi possível consultar o portal nacional.");
+      } else if ((r.novas ?? 0) + (r.atualizadas ?? 0) + (r.eventos ?? 0) === 0) {
+        setFlash("Nenhuma nota nova no portal nacional.");
+      } else {
+        setFlash(
+          `Portal nacional: ${r.novas ?? 0} nota(s) nova(s)` +
+            ((r.eventos ?? 0) ? `, ${r.eventos} atualização(ões)` : "") +
+            ".",
+        );
+        await load();
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const load = async () => {
     const s = await getNfseStatus().catch(() => null);
@@ -180,12 +205,22 @@ export function ClientNfse() {
           </h1>
           <p className="mt-1 text-sm text-muted">Emita a NFS-e da sua empresa direto pelo portal.</p>
         </div>
-        <button
-          onClick={() => setWizard({ open: true, prefill: null })}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-strong"
-        >
-          <Plus className="size-4" /> Emitir nova nota
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={buscarPortal}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3.5 py-2.5 text-sm font-semibold text-ink hover:bg-sunken disabled:opacity-50"
+          >
+            {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            Buscar no portal nacional
+          </button>
+          <button
+            onClick={() => setWizard({ open: true, prefill: null })}
+            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-strong"
+          >
+            <Plus className="size-4" /> Emitir nova nota
+          </button>
+        </div>
       </header>
 
       {flash && (
@@ -216,9 +251,16 @@ export function ClientNfse() {
                       <p className="truncate text-sm font-semibold text-ink">
                         {e.tomadorNome || (e.tomadorDoc ? formatCnpj(e.tomadorDoc) : "—")}
                       </p>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
-                        {e.numeroNota ? ` · nº ${e.numeroNota}` : ""}
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                        <span>
+                          {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
+                          {e.numeroNota ? ` · nº ${e.numeroNota}` : ""}
+                        </span>
+                        {e.origem === "distribuicao" && (
+                          <span className="rounded bg-sunken px-1.5 py-0.5 text-[10px] font-semibold text-faint">
+                            do portal nacional
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

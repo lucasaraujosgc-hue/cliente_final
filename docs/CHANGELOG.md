@@ -11,6 +11,27 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### NFS-e — busca as notas do portal nacional (distribuição de DF-e)
+
+O sistema passa a puxar do **ADN Contribuinte** (`GET /DFe/{NSU}`,
+`docs/nfse-nacional/01-api/swagger.json`) as NFS-e do prestador que **não foram
+emitidas por aqui** — geradas pela prefeitura ou por outro sistema — e a
+refleti-las em `nfse_emissoes`.
+
+- `services/nfse/distribuicao.ts` `sincronizarDistribuicao(clientId)`: usa o
+  certificado do prestador (mTLS + `cnpjConsulta`), pagina por NSU a partir de
+  `nfse_config.ultimo_nsu`, e para cada `TipoDocumento=NFSE` insere a nota com
+  `origem='distribuicao'` (dedupe pela chave — se já existe, só amarra o NSU);
+  eventos de cancelamento marcam a nota como `cancelada`.
+- `client.ts` `distribuirDFe()` + `contribuintesBase()` (ADN `/contribuintes`).
+- Migração `0009_nfse_distribuicao` (aditiva): `nfse_emissoes.origem`
+  (`sistema`/`distribuicao`) + `.nsu`; `nfse_config.ultimo_nsu`.
+- Rotas: `POST /api/nfse/sincronizar-dfe` (cliente) e
+  `POST /api/nfse/admin/clients/:id/sincronizar-dfe` (contador, com audit).
+- UI: botão **"Buscar no portal nacional"** na tela do cliente e no painel do
+  contador; badge "do portal nacional" nas notas de origem distribuição.
+- Testes: `distribuicao.test.ts` (insere / dedupe / evento de cancelamento).
+
 ### NFS-e — "Dados inválidos." era validação local, não o Sefin
 
 O `POST /api/nfse/emissoes` voltava **400 em ~15 ms, sem chamar o Sefin**: o
