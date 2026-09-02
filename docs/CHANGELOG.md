@@ -11,6 +11,24 @@ Estado alvo desta branch: endurecimento de segurança + migração para Drizzle
 como fonte de verdade do schema + doc técnica. (Ver `git log main..HEAD` para a
 lista exata de commits.)
 
+### NFS-e — "Dados inválidos." era validação local, não o Sefin
+
+O `POST /api/nfse/emissoes` voltava **400 em ~15 ms, sem chamar o Sefin**: o
+`validateBody(nfseEmitSchema)` rejeitava o corpo. A consulta de CNPJ (BrasilAPI/
+ReceitaWS) devolve **`null`** em vários campos de endereço (`complemento`,
+`numero`, `cep`…), e o wizard mandava o objeto cru — o schema só aceitava
+`string`/`undefined`. Mensagem genérica "Dados inválidos." + header "A Sefin
+Nacional recusou a nota" davam a impressão de rejeição remota.
+
+- `nfseEmitSchema`: campos opcionais do tomador/endereço agora **toleram `null`**
+  (viram `undefined`); e-mail malformado da consulta é **descartado** em vez de
+  rejeitar a nota; documento do tomador é normalizado (tira pontuação); `valor`
+  é arredondado.
+- `validateBody`: loga no stdout o método + rota + campos que falharam
+  (`[validateBody] 400 POST … — tomador.endereco.numero: Expected string…`).
+- Frontend: o erro de validação lista os campos; o wizard mostra "Revise os
+  dados da nota" em vez de "A Sefin recusou".
+
 ### NFS-e — diagnóstico de rejeição + saneamento de texto
 
 - **Log de rejeição** (`emitir.ts` `dumpRejeicao`): a cada recusa do Sefin,

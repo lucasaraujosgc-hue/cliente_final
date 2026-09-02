@@ -237,38 +237,70 @@ export const nfseCnpjLookupSchema = z.object({
   cnpj: z.string().min(11, "CNPJ inválido.").max(18),
 });
 
+// Campo de texto opcional que TOLERA null (a consulta de CNPJ devolve muitos
+// null) e "". Normaliza tudo isso para undefined; corta no tamanho máximo em
+// vez de rejeitar.
+const soft = (max = 300) =>
+  z
+    .any()
+    .transform((v) => {
+      if (v === null || v === undefined) return undefined;
+      const s = String(v).trim();
+      return s ? s.slice(0, max) : undefined;
+    })
+    .optional();
+
 const nfseEnderecoSchema = z
   .object({
-    logradouro: optStr(150),
-    numero: optStr(20),
-    complemento: optStr(80),
-    bairro: optStr(80),
-    codigoMunicipio: optStr(10),
-    municipio: optStr(120),
-    uf: optStr(2),
-    cep: optStr(12),
+    logradouro: soft(150),
+    numero: soft(20),
+    complemento: soft(80),
+    bairro: soft(80),
+    codigoMunicipio: soft(10),
+    municipio: soft(120),
+    uf: soft(2),
+    cep: soft(12),
   })
   .partial()
-  .optional();
+  .nullish()
+  .transform((v) => v ?? undefined);
 
-// Client: emit a new NFS-e (JSON). `valor` is in centavos.
+// Client: emit a new NFS-e (JSON). `valor` is in centavos. O cliente só informa
+// tomador + descrição + valor — o resto vem da atividade pré-configurada.
 export const nfseEmitSchema = z.object({
   atividadeId: z.string().uuid("Selecione uma atividade."),
   tomador: z.object({
-    doc: z.string().min(11, "Documento do tomador inválido.").max(18),
-    nome: z.string().min(1, "Razão social do tomador é obrigatória.").max(200),
-    email: z.string().email("E-mail inválido.").max(200).optional().or(z.literal("")),
-    telefone: optStr(20),
-    inscricaoMunicipal: optStr(20),
+    doc: z
+      .string()
+      .transform((s) => s.replace(/[^0-9A-Za-z]/g, "").toUpperCase())
+      .pipe(z.string().min(11, "Documento do tomador inválido.").max(14)),
+    nome: z.string().trim().min(1, "Razão social do tomador é obrigatória.").max(200),
+    // E-mail da consulta de CNPJ pode vir malformado / múltiplo / null —
+    // aproveita só se parecer um e-mail, senão descarta.
+    email: z
+      .any()
+      .transform((v) => {
+        const s = String(v ?? "").trim();
+        return /^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]{2,}$/.test(s) ? s.slice(0, 200) : undefined;
+      })
+      .optional(),
+    telefone: soft(20),
+    inscricaoMunicipal: soft(20),
     endereco: nfseEnderecoSchema,
   }),
-  descricao: z.string().min(1, "Descrição do serviço é obrigatória.").max(2000),
-  valor: z.number().int("Valor inválido.").positive("Valor deve ser maior que zero.").max(99_999_999_99),
+  descricao: z.string().trim().min(1, "Descrição do serviço é obrigatória.").max(2000),
+  valor: z
+    .number()
+    .finite("Valor inválido.")
+    .transform((n) => Math.round(n))
+    .pipe(z.number().int().positive("Valor deve ser maior que zero.").max(99_999_999_99)),
   competencia: z
-    .string()
-    .regex(/^\d{2}\/\d{4}$/, "Competência no formato MM/AAAA.")
-    .optional()
-    .or(z.literal("")),
+    .any()
+    .transform((v) => {
+      const s = String(v ?? "").trim();
+      return /^\d{2}\/\d{4}$/.test(s) ? s : undefined;
+    })
+    .optional(),
 });
 
 export const nfseCancelSchema = z.object({

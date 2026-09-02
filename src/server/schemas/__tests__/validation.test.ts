@@ -11,6 +11,7 @@ import {
   integrationSyncClientSchema,
   serproConfigSchema,
   docStatusSchema,
+  nfseEmitSchema,
 } from "../validation";
 
 describe("validation schemas", () => {
@@ -105,5 +106,45 @@ describe("validation schemas", () => {
     expect(serproConfigSchema.safeParse({ ambiente: "producao" }).success).toBe(true);
     expect(serproConfigSchema.safeParse({ ambiente: "" }).success).toBe(true);
     expect(serproConfigSchema.safeParse({ ambiente: "prod" }).success).toBe(false);
+  });
+
+  describe("nfseEmitSchema — tolera o retorno da consulta de CNPJ", () => {
+    const uuid = "11111111-1111-4111-8111-111111111111";
+    const base = { atividadeId: uuid, tomador: { doc: "98765432000110", nome: "Tomadora SA" }, descricao: "Serviço", valor: 25000 };
+
+    it("aceita endereço com campos null (BrasilAPI)", () => {
+      const r = nfseEmitSchema.safeParse({
+        ...base,
+        tomador: {
+          ...base.tomador,
+          email: null,
+          telefone: null,
+          endereco: { logradouro: "Rua X", numero: null, complemento: null, bairro: "Centro", codigoMunicipio: "3550308", municipio: "São Paulo", uf: "SP", cep: null },
+        },
+      });
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.tomador.endereco?.numero).toBeUndefined();
+        expect(r.data.tomador.email).toBeUndefined();
+      }
+    });
+
+    it("descarta e-mail malformado em vez de rejeitar", () => {
+      const r = nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, email: "FULANO@;GMAIL" } });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.tomador.email).toBeUndefined();
+    });
+
+    it("normaliza o documento do tomador (tira pontuação)", () => {
+      const r = nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, doc: "98.765.432/0001-10" } });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.tomador.doc).toBe("98765432000110");
+    });
+
+    it("ainda exige atividade, nome e valor > 0", () => {
+      expect(nfseEmitSchema.safeParse({ ...base, atividadeId: "x" }).success).toBe(false);
+      expect(nfseEmitSchema.safeParse({ ...base, valor: 0 }).success).toBe(false);
+      expect(nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, nome: "" } }).success).toBe(false);
+    });
   });
 });

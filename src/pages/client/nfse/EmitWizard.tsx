@@ -266,16 +266,21 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
   }
 
   if (step === "error") {
+    const validacao = !result?.codigo && result?.error === "Dados inválidos.";
     return (
       <div className="space-y-5 py-6">
-        <Header title="Nota rejeitada" onBack={() => setStep(3)} />
+        <Header title={validacao ? "Revise os dados da nota" : "Nota rejeitada"} onBack={() => setStep(3)} />
         <div className="flex items-start gap-3 rounded-2xl border border-danger/25 bg-danger-wash p-5">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" />
           <div>
             <p className="text-sm font-semibold text-ink">
-              {result?.codigo ? `Código ${result.codigo}` : "A Sefin Nacional recusou a nota"}
+              {result?.codigo
+                ? `A Sefin Nacional recusou a nota · código ${result.codigo}`
+                : validacao
+                  ? "Confira os campos abaixo"
+                  : "A Sefin Nacional recusou a nota"}
             </p>
-            <p className="mt-1 text-sm text-muted">{result?.motivo || result?.error}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{result?.motivo || result?.error}</p>
           </div>
         </div>
         <div className="flex gap-2">

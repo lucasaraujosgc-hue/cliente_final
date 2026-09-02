@@ -237,7 +237,15 @@ export async function emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResu
     };
   }
   if (!res.ok || data.ok === false) {
-    return { ok: false, error: data.error || "Falha ao emitir a nota.", codigo: data.codigo, motivo: data.motivo };
+    const campos = Array.isArray(data.details)
+      ? data.details.map((d: { field: string; message: string }) => `${d.field}: ${d.message}`).join("; ")
+      : "";
+    return {
+      ok: false,
+      error: data.error || "Falha ao emitir a nota.",
+      codigo: data.codigo,
+      motivo: [data.motivo, campos].filter(Boolean).join(" — ") || undefined,
+    };
   }
   return { ok: true, ...data };
 }
