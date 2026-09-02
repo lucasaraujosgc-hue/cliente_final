@@ -14,7 +14,13 @@ const cert = { config: { ambiente: "homologacao", certCnpj: "52613515000160" }, 
 vi.mock("../cert", () => ({ loadClientCertContext: async () => cert }));
 
 const distribuir = vi.fn();
-vi.mock("../client", () => ({ distribuirDFe: (...a: any[]) => distribuir(...a) }));
+vi.mock("../client", () => ({
+  distribuirDFe: (...a: any[]) => distribuir(...a),
+  contribuintesBase: (amb: string) =>
+    amb === "producao"
+      ? "https://adn.nfse.gov.br/contribuintes"
+      : "https://adn.producaorestrita.nfse.gov.br/contribuintes",
+}));
 
 const { sincronizarDistribuicao } = await import("../distribuicao");
 const { clients, nfseConfig, nfseEmissoes } = schema;

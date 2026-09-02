@@ -450,10 +450,30 @@ export async function distribuirDFe(
   nsu: number,
 ): Promise<DistribuicaoLote> {
   const url = `${contribuintesBase(amb)}/DFe/${nsu}?cnpjConsulta=${encodeURIComponent(cnpjConsulta)}&lote=true`;
-  const res = await request(agent, "GET", url);
+
+  let res: RawResponse;
+  try {
+    res = await request(agent, "GET", url);
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    nfseLog("error", "distribuicao.conexao", { url, code: err.code, msg: err.message });
+    throw new NfseError(
+      `Não foi possível contatar o portal nacional (${err.code || err.message}). URL: ${url}`,
+      { status: 502, reason: "distribuicao_conexao" },
+    );
+  }
+
   if (!res.ok && res.status !== 200) {
+    nfseLog("warn", "distribuicao.http_erro", {
+      url,
+      httpStatus: res.status,
+      contentType: Array.isArray(res.headers["content-type"])
+        ? res.headers["content-type"].join(",")
+        : res.headers["content-type"],
+      body: res.text().slice(0, 2000),
+    });
     const { motivo } = firstErro(res);
-    throw new NfseError(motivo || `Falha na distribuição de DF-e (HTTP ${res.status}).`, {
+    throw new NfseError(motivo || `Falha na distribuição de DF-e (HTTP ${res.status}). URL: ${url}`, {
       status: 502,
       reason: "distribuicao_erro",
       debug: debugFrom(res, url),

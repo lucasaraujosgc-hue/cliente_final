@@ -218,7 +218,14 @@ export function registerNfseRoutes(app: Express) {
       res.json({ ok: true, ...r });
     } catch (e) {
       if (sendNfseError(res, e)) return;
-      throw e;
+      // Erro fora do contrato NfseError (DB, migração faltando, bug) — registra o
+      // motivo cru no log do serviço antes de virar 500 genérico.
+      nfseLog("error", "distribuicao.falha", {
+        clientId: getClientId(req),
+        msg: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack?.split("\n").slice(0, 4).join(" | ") : undefined,
+      });
+      res.status(502).json({ error: e instanceof Error ? e.message : "Falha ao sincronizar com o portal nacional." });
     }
   });
 
@@ -318,7 +325,12 @@ export function registerNfseRoutes(app: Express) {
         res.json({ ok: true, ...r });
       } catch (e) {
         if (sendNfseError(res, e)) return;
-        throw e;
+        nfseLog("error", "distribuicao.falha", {
+          clientId: client.id,
+          msg: e instanceof Error ? e.message : String(e),
+          stack: e instanceof Error ? e.stack?.split("\n").slice(0, 4).join(" | ") : undefined,
+        });
+        res.status(502).json({ error: e instanceof Error ? e.message : "Falha ao sincronizar com o portal nacional." });
       }
     },
   );

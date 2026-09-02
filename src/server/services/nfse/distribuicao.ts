@@ -3,7 +3,7 @@ import { db } from "../../db";
 import { nfseConfig, nfseEmissoes } from "../../schema";
 import { normalizeInscricao } from "./inscricao";
 import { loadClientCertContext } from "./cert";
-import { distribuirDFe, type Ambiente, type DistribuicaoDoc } from "./client";
+import { contribuintesBase, distribuirDFe, type Ambiente, type DistribuicaoDoc } from "./client";
 import { parseNfseXml } from "./nfseXml";
 import { nfseLog } from "./log";
 import { NfseError } from "./errors";
@@ -120,6 +120,14 @@ export async function sincronizarDistribuicao(
 
   let nsu = config.ultimoNsu ?? 0;
   const res: SincronizacaoResultado = { novas: 0, atualizadas: 0, eventos: 0, ultimoNsu: nsu, lotes: 0 };
+
+  nfseLog("info", "distribuicao.inicio", {
+    clientId,
+    ambiente,
+    cnpj,
+    nsu,
+    base: contribuintesBase(ambiente),
+  });
 
   for (let i = 0; i < maxLotes; i++) {
     const lote = await distribuirDFe(cert.agent, ambiente, cnpj, nsu);
