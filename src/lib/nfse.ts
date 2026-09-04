@@ -286,8 +286,16 @@ export async function sincronizarDistribuicao(): Promise<DistribuicaoResult> {
   return { ok: true, ...data };
 }
 
-export async function adminSincronizarDistribuicao(clientId: string): Promise<DistribuicaoResult> {
-  const res = await apiFetch(`/api/nfse/admin/clients/${clientId}/sincronizar-dfe`, { method: "POST" }, "accountant");
+export async function adminSincronizarDistribuicao(
+  clientId: string,
+  reiniciar = false,
+): Promise<DistribuicaoResult> {
+  const qs = reiniciar ? "?reiniciar=1" : "";
+  const res = await apiFetch(
+    `/api/nfse/admin/clients/${clientId}/sincronizar-dfe${qs}`,
+    { method: "POST" },
+    "accountant",
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: data.error || data.motivo || "Falha ao consultar o portal nacional." };
   return { ok: true, ...data };
@@ -301,6 +309,25 @@ export async function cancelarNfse(id: string, motivo: string): Promise<{ ok: bo
   });
   const data = await res.json().catch(() => ({}));
   return res.ok ? { ok: true } : { ok: false, error: data.error || "Falha ao cancelar." };
+}
+
+// Apaga uma tentativa rejeitada (nunca virou documento fiscal).
+export async function excluirEmissao(id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await apiFetch(`/api/nfse/emissoes/${id}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true } : { ok: false, error: data.error || "Falha ao excluir." };
+}
+
+export async function limparRejeitadas(): Promise<{ ok: boolean; removidas?: number; error?: string }> {
+  const res = await apiFetch("/api/nfse/emissoes/limpar-rejeitadas", { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true, removidas: data.removidas } : { ok: false, error: data.error || "Falha ao limpar." };
+}
+
+export async function adminExcluirEmissao(id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await apiFetch(`/api/nfse/admin/emissoes/${id}`, { method: "DELETE" }, "accountant");
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true } : { ok: false, error: data.error || "Falha ao excluir." };
 }
 
 let servicosCache: ServicoLC116[] | null = null;

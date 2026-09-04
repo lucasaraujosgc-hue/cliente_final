@@ -214,7 +214,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             {text("nome", "Nome da atividade")}
             {text("itemListaServico", "Item LC 116", "ex.: 4.16")}
             {text("codTributacaoNac", "Cód. tributação nacional", "6 dígitos", "Aba MUN.INCID_INFO.SERV. do Anexo I. Se em branco, derivado do item LC 116.")}
-            {text("codTributacaoMun", "Cód. tributação municipal", "3 dígitos")}
+            {text("codTributacaoMun", "Cód. tributação municipal", "deixe em branco", "Só preencha se o município de incidência publicou os próprios códigos no Sistema Nacional. Código inexistente lá → rejeição E0314. Na dúvida, deixe vazio.")}
             {text("cnae", "CNAE", "7 dígitos")}
             {text("cNbs", "Código NBS", "9 dígitos", "Nomenclatura Brasileira de Serviços 2.0 — Anexo B.")}
           </div>

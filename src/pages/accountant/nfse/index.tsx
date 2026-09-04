@@ -8,12 +8,14 @@ import {
   Circle,
   AlertTriangle,
   Download,
+  Trash2,
 } from "lucide-react";
 import { cnpjMatches } from "../../../lib/cnpj";
 import {
   adminListNfseClients,
   adminListNfseEmissoes,
   adminDownloadEmissaoXml,
+  adminExcluirEmissao,
   centavosToBRL,
   nfseStatusLabel,
   type NfseClientOverview,
@@ -166,6 +168,14 @@ function EmissoesTab() {
     }
   };
 
+  const excluir = async (id: string) => {
+    if (!window.confirm("Excluir esta tentativa rejeitada? Ela some da lista definitivamente.")) return;
+    setXmlErr("");
+    const r = await adminExcluirEmissao(id);
+    if (!r.ok) return setXmlErr(r.error || "Falha ao excluir.");
+    setRows((prev) => prev.filter((x) => x.id !== id));
+  };
+
   if (loading) return <p className="p-8 text-center text-sm text-slate-400">Carregando…</p>;
   if (rows.length === 0) return <p className="p-8 text-center text-sm text-slate-400">Nenhuma nota emitida ainda.</p>;
 
@@ -261,6 +271,11 @@ function EmissoesTab() {
                     {e.hasXmlNfse && (
                       <button onClick={() => baixar(e.id, "nfse")} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
                         <Download className="h-3.5 w-3.5" /> XML da NFS-e
+                      </button>
+                    )}
+                    {e.status === "rejeitada" && (
+                      <button onClick={() => excluir(e.id)} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-2.5 py-1.5 font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-900/20">
+                        <Trash2 className="h-3.5 w-3.5" /> Excluir tentativa
                       </button>
                     )}
                   </div>

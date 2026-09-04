@@ -39,6 +39,8 @@ import {
   emitirNfse,
   reconcileEmissao,
   sincronizarDistribuicao,
+  excluirEmissao,
+  excluirEmissoesDescartaveis,
   cancelarNfse,
   getDanfsePdfPath,
   getConvenio,
@@ -272,6 +274,25 @@ export function registerNfseRoutes(app: Express) {
     },
   );
 
+  // Descarta uma tentativa rejeitada (nunca virou documento fiscal). O serviço
+  // recusa qualquer status != 'rejeitada'.
+  app.delete("/api/nfse/emissoes/:id", verifyClientAuth, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    try {
+      await excluirEmissao(req.params.id, { clientId: getClientId(req) });
+      res.json({ ok: true });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
+  // Limpa de uma vez todas as rejeitadas do cliente.
+  app.post("/api/nfse/emissoes/limpar-rejeitadas", verifyClientAuth, async (req, res) => {
+    const n = await excluirEmissoesDescartaveis(getClientId(req));
+    res.json({ ok: true, removidas: n });
+  });
+
   app.get("/api/nfse/emissoes/:id/danfse", verifyClientAuth, async (req, res) => {
     if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
     const emissao = await getEmissao(getClientId(req), req.params.id);
@@ -307,6 +328,25 @@ export function registerNfseRoutes(app: Express) {
     });
   });
 
+  // Contador: apaga uma tentativa rejeitada de qualquer cliente.
+  app.delete("/api/nfse/admin/emissoes/:id", verifyAccountantAuth, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    try {
+      const row = await getEmissaoById(req.params.id);
+      await excluirEmissao(req.params.id);
+      await logAudit(req, "nfse.emissao.excluida", {
+        targetType: "nfse_emissao",
+        targetId: req.params.id,
+        summary: `Tentativa rejeitada descartada (${row?.rejeicaoCodigo || "sem código"})`,
+        metadata: { clientId: row?.clientId, competencia: row?.competencia },
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
   // Contador: dispara a busca de DF-e (portal nacional) para um cliente.
   app.post(
     "/api/nfse/admin/clients/:id/sincronizar-dfe",
@@ -314,8 +354,9 @@ export function registerNfseRoutes(app: Express) {
     async (req, res) => {
       const client = await loadClientOr404(req.params.id, res);
       if (!client) return;
+      const reiniciar = req.query.reiniciar === "1" || req.body?.reiniciar === true;
       try {
-        const r = await sincronizarDistribuicao(client.id);
+        const r = await sincronizarDistribuicao(client.id, { reiniciar });
         await logAudit(req, "nfse.distribuicao", {
           targetType: "client",
           targetId: client.id,

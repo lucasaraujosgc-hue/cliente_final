@@ -9,6 +9,7 @@ import {
   Loader2,
   Ban,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import {
   getNfseStatus,
@@ -18,6 +19,7 @@ import {
   viewDanfse,
   shareDanfse,
   cancelarNfse,
+  excluirEmissao,
   sincronizarDistribuicao,
   centavosToBRL,
   nfseStatusLabel,
@@ -127,6 +129,19 @@ export function ClientNfse() {
       setTimeout(() => setFlash(""), 3000);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const doExcluir = async (e: NfseEmissao) => {
+    if (!window.confirm("Excluir esta tentativa rejeitada? Ela some da lista definitivamente.")) return;
+    setBusyId(e.id);
+    try {
+      const r = await excluirEmissao(e.id);
+      if (!r.ok) setFlash(r.error || "Falha ao excluir.");
+      await load();
+    } finally {
+      setBusyId(null);
+      setTimeout(() => setFlash(""), 3000);
     }
   };
 
@@ -321,6 +336,15 @@ export function ClientNfse() {
                         className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger-wash disabled:opacity-50"
                       >
                         <Ban className="size-3.5" /> Cancelar
+                      </button>
+                    )}
+                    {e.status === "rejeitada" && (
+                      <button
+                        disabled={busyId === e.id}
+                        onClick={() => doExcluir(e)}
+                        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger-wash disabled:opacity-50"
+                      >
+                        <Trash2 className="size-3.5" /> Excluir
                       </button>
                     )}
                   </div>

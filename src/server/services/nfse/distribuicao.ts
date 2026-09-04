@@ -106,7 +106,7 @@ async function aplicarEvento(clientId: string, doc: DistribuicaoDoc): Promise<bo
 
 export async function sincronizarDistribuicao(
   clientId: string,
-  opts: { maxLotes?: number } = {},
+  opts: { maxLotes?: number; reiniciar?: boolean } = {},
 ): Promise<SincronizacaoResultado> {
   const maxLotes = Math.min(Math.max(opts.maxLotes ?? 20, 1), 50);
 
@@ -118,7 +118,8 @@ export async function sincronizarDistribuicao(
   const cnpj = normalizeInscricao(cert.config.certCnpj || "");
   if (!cnpj) throw new NfseError("Não foi possível identificar o CNPJ do certificado.", { status: 400 });
 
-  let nsu = config.ultimoNsu ?? 0;
+  // reiniciar=true varre desde o NSU 0 (diagnóstico / troca de ambiente).
+  let nsu = opts.reiniciar ? 0 : (config.ultimoNsu ?? 0);
   const res: SincronizacaoResultado = { novas: 0, atualizadas: 0, eventos: 0, ultimoNsu: nsu, lotes: 0 };
 
   nfseLog("info", "distribuicao.inicio", {

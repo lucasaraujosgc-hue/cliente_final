@@ -68,7 +68,16 @@ export async function upsertClientConfig(
   if (input.regimeEspecialTrib !== undefined) update.regimeEspecialTrib = input.regimeEspecialTrib || null;
   if (input.optanteSimplesNacional !== undefined) update.optanteSimplesNacional = input.optanteSimplesNacional;
   if (input.incentivoFiscal !== undefined) update.incentivoFiscal = input.incentivoFiscal;
-  if (input.ambiente !== undefined) update.ambiente = input.ambiente;
+  if (input.ambiente !== undefined) {
+    update.ambiente = input.ambiente;
+    // O cursor de distribuição (ultimo_nsu) é uma sequência PRÓPRIA de cada
+    // ambiente — o NSU 136 da homologação não tem relação com o da produção.
+    // Ao trocar de ambiente, zera o cursor para varrer o novo do início.
+    if (existing && existing.ambiente && existing.ambiente !== input.ambiente) {
+      update.ultimoNsu = 0;
+      warnings.push("Ambiente alterado: a busca no portal nacional recomeça do zero.");
+    }
+  }
   if (input.serieDps !== undefined) update.serieDps = String(input.serieDps).slice(0, 5) || "00001";
 
   const senhaInformada = typeof input.certSenha === "string" && input.certSenha.length > 0;

@@ -141,11 +141,11 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
   };
 
   const [syncing, setSyncing] = useState(false);
-  const buscarPortal = async () => {
+  const buscarPortal = async (reiniciar = false) => {
     setSyncing(true);
     setMsg(null);
     try {
-      const r = await adminSincronizarDistribuicao(clientId);
+      const r = await adminSincronizarDistribuicao(clientId, reiniciar);
       if (!r.ok) {
         setMsg({ tone: "err", text: r.error || "Falha ao consultar o portal nacional." });
       } else {
@@ -318,8 +318,11 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           <button type="button" onClick={runTest} disabled={testing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
             {testing ? "Testando…" : "Testar certificado"}
           </button>
-          <button type="button" onClick={buscarPortal} disabled={syncing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+          <button type="button" onClick={() => buscarPortal(false)} disabled={syncing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
             {syncing ? "Buscando…" : "Buscar notas no portal nacional"}
+          </button>
+          <button type="button" onClick={() => buscarPortal(true)} disabled={syncing || !cfg?.hasCert} title="Recomeça a busca do NSU 0 — use ao trocar de ambiente ou se desconfiar que faltam notas" className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+            {syncing ? "…" : "Rebuscar do início"}
           </button>
         </div>
 
