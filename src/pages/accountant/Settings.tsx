@@ -20,6 +20,10 @@ export function Settings() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [hasSavedCert, setHasSavedCert] = useState(false);
   const [certMissing, setCertMissing] = useState(false);
+  // Credentials are write-only — the API only tells us whether each is set.
+  const [hasKey, setHasKey] = useState(false);
+  const [hasSecret, setHasSecret] = useState(false);
+  const [hasCertSenha, setHasCertSenha] = useState(false);
 
   useEffect(() => {
     fetchConfig();
@@ -34,9 +38,10 @@ export function Settings() {
       const data = await res.json();
       if (data.config) {
         setFormData({
-          consumerKey: data.config.consumerKey || "",
-          consumerSecret: data.config.consumerSecret || "",
-          certSenha: data.config.certSenha || "",
+          // Credentials are never returned by the API — kept blank ("mantém a atual").
+          consumerKey: "",
+          consumerSecret: "",
+          certSenha: "",
           cnpjContratante: data.config.cnpjContratante || "",
           ambiente: data.config.ambiente || "trial",
           whatsappSupport: data.config.whatsappSupport || "",
@@ -44,9 +49,15 @@ export function Settings() {
         });
         setHasSavedCert(!!data.config.hasCert);
         setCertMissing(!!data.config.certMissing);
+        setHasKey(!!data.config.hasKey);
+        setHasSecret(!!data.config.hasSecret);
+        setHasCertSenha(!!data.config.hasCertSenha);
       } else {
         setHasSavedCert(false);
         setCertMissing(false);
+        setHasKey(false);
+        setHasSecret(false);
+        setHasCertSenha(false);
       }
     } catch (e: any) {
       console.error(e);
@@ -137,11 +148,11 @@ export function Settings() {
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Consumer Key (OAuth2)</label>
                 <input
                   type="text"
-                  required
+                  required={!hasKey}
                   value={formData.consumerKey}
                   onChange={e => setFormData({ ...formData, consumerKey: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                  placeholder="Ex: a1b2c3d4..."
+                  placeholder={hasKey ? "•••••••• (deixe em branco para manter)" : "Ex: a1b2c3d4..."}
                 />
               </div>
 
@@ -149,11 +160,12 @@ export function Settings() {
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Consumer Secret</label>
                 <input
                   type="password"
-                  required
+                  required={!hasSecret}
+                  autoComplete="off"
                   value={formData.consumerSecret}
                   onChange={e => setFormData({ ...formData, consumerSecret: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                  placeholder="Ex: x9y8z7..."
+                  placeholder={hasSecret ? "•••••••• (deixe em branco para manter)" : "Ex: x9y8z7..."}
                 />
               </div>
 
@@ -216,10 +228,11 @@ export function Settings() {
                   <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Senha do Certificado</label>
                   <input
                     type="password"
+                    autoComplete="off"
                     value={formData.certSenha}
                     onChange={e => setFormData({ ...formData, certSenha: e.target.value })}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                    placeholder="Somente se houver certificado"
+                    placeholder={hasCertSenha ? "•••••••• (deixe em branco para manter)" : "Somente se houver certificado"}
                   />
                 </div>
               </div>

@@ -1,8 +1,6 @@
 import { Express } from "express";
 import fs from "fs";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-import { eq, desc, inArray, or } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "../db";
 import {
   clients,
@@ -13,18 +11,136 @@ import {
   guiasGeradas,
   serproConfig,
   scheduledNotifications,
+  auditLog,
+  paymentChecks,
 } from "../schema";
-import { upload, uploadCert } from "../services/upload";
+import {
+  checkPaymentsForDocuments,
+  isFederalGuia,
+  markPaymentsManual,
+} from "../services/paymentQuery";
+import { upload, uploadCert, validateUploadedFileContent } from "../services/upload";
+import { resolveUploadPath } from "../services/files";
+import { encryptSecret, encryptBytes } from "../services/secretbox";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
+import { upsertBilling } from "../services/billing";
+import { logAudit } from "../services/audit";
+import {
+  generateIntegrationToken,
+  setIntegrationToken,
+  clearIntegrationToken,
+} from "../services/integrationToken";
+import {
+  revokeAllSessionsForSubject,
+  deleteSessionsForSubject,
+} from "../services/session";
+import { clientAdminDTO } from "../dto/client";
+import { normalizeCnpj } from "../../lib/cnpj";
 import { verifyAccountantAuth } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import {
+  accountantCreateClientSchema,
+  accountantUpdateClientSchema,
+  accountantMessageSchema,
+  accountantBulkMessageSchema,
+  accountantEditMessageSchema,
+  accountantUploadDocSchema,
+  accountantUpdateDocSchema,
+  accountantResolveSolicitacaoSchema,
+  docStatusSchema,
+  serproConfigSchema,
+  billingUpdateSchema,
+  billingBulkSchema,
+  accountantPaymentCheckSchema,
+  accountantPaymentCheckClientSchema,
+} from "../schemas/validation";
+
+// Best-effort on-disk / inline size of a stored document, for the gallery
+// totals. Never throws, never touches a path outside the uploads dir, never
+// blocks the event loop.
+async function fileSizeFor(fileUrl: string | null): Promise<number> {
+  if (!fileUrl) return 0;
+  if (fileUrl.startsWith("data:")) {
+    const b64 = fileUrl.split(",")[1];
+    return b64 ? Math.floor((b64.length * 3) / 4) : 0;
+  }
+  const abs = resolveUploadPath(fileUrl);
+  if (!abs) return 0;
+  try {
+    return (await fs.promises.stat(abs)).size;
+  } catch {
+    return 0;
+  }
+}
 
 // Routes used by the accountant-facing admin panel: client CRUD, file
 // management, inbox/messages, billing, and SERPRO integration settings.
 export function registerAccountantRoutes(app: Express) {
   app.get("/api/accountant/clients", verifyAccountantAuth, async (req, res) => {
     const allClients = await db.select().from(clients);
-    res.json({ clients: allClients });
+    res.json({ clients: allClients.map(clientAdminDTO) });
+  });
+
+  // High-level counters for the accountant home screen.
+  app.get("/api/accountant/overview", verifyAccountantAuth, async (req, res) => {
+    try {
+      const [allClients, allDocs] = await Promise.all([
+        db.select().from(clients),
+        db.select().from(documents),
+      ]);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const in7 = new Date(today);
+      in7.setDate(in7.getDate() + 7);
+
+      const parseDue = (s: string | null) => {
+        if (!s) return null;
+        const iso = s.includes("/")
+          ? s.split("/").reverse().join("-")
+          : s.split("T")[0];
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      let overdue = 0;
+      let dueSoon = 0;
+      for (const d of allDocs) {
+        if (d.status === "paid") continue;
+        const due = parseDue(d.dueDate);
+        if (!due) continue;
+        if (due < today) overdue++;
+        else if (due <= in7) dueSoon++;
+      }
+
+      res.json({
+        clients: allClients.length,
+        clientsIrregular: allClients.filter((c) => c.regularityStatus !== "green").length,
+        inbox: allDocs.filter(
+          (d) => d.uploadedBy === "client" || d.status === "waiting_accountant",
+        ).length,
+        waitingRecalc: allDocs.filter((d) => d.status === "waiting_accountant").length,
+        overdue,
+        dueSoon,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/accountant/audit", verifyAccountantAuth, async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(limit);
+      res.json({ entries: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get("/api/accountant/solicitacoes", verifyAccountantAuth, async (req, res) => {
@@ -53,6 +169,8 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/solicitacoes/:id",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
+    validateBody(accountantResolveSolicitacaoSchema),
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -105,6 +223,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/clients",
     verifyAccountantAuth,
+    validateBody(accountantCreateClientSchema),
     async (req, res) => {
       const {
         cnpj,
@@ -114,21 +233,32 @@ export function registerAccountantRoutes(app: Express) {
         accountantCategory,
       } = req.body;
       try {
+        const cnpjDigits = normalizeCnpj(cnpj);
+        if (cnpjDigits.length < 11) {
+          return res.status(400).json({ error: "CNPJ inválido." });
+        }
         const [newClient] = await db
           .insert(clients)
           .values({
-            cnpj,
+            cnpj: cnpjDigits,
             name,
-            // Default password is the client's own CNPJ; they're expected
-            // to change it on first access. Stored as a bcrypt hash, never
-            // in plaintext.
-            passwordHash: await hashPassword(String(cnpj)),
+            // Default password is the client's own CNPJ (digits-only); they're
+            // expected to change it on first access. bcrypt hash, never plaintext.
+            passwordHash: await hashPassword(cnpjDigits),
             regularityStatus: regularityStatus || "green",
-            integrationHash: integrationHash || null,
+            // A pasted integration token is stored hashed, never in plaintext.
+            ...(typeof integrationHash === "string" && integrationHash.trim()
+              ? setIntegrationToken(integrationHash.trim())
+              : {}),
             accountantCategory: accountantCategory || null,
           })
           .returning();
-        res.json({ success: true, client: newClient });
+        await logAudit(req, "client.create", {
+          targetType: "client",
+          targetId: newClient.id,
+          summary: `Criou o cliente ${newClient.name} (${newClient.cnpj})`,
+        });
+        res.json({ success: true, client: clientAdminDTO(newClient) });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
       }
@@ -151,12 +281,19 @@ export function registerAccountantRoutes(app: Express) {
         const cleanCnpj = client.cnpj.replace(/\D/g, "");
         
         await db.update(clients)
-          .set({ 
+          .set({
              passwordHash: await hashPassword(cleanCnpj),
              firstAccessDone: false
           })
           .where(eq(clients.id, id));
-          
+        // Force the client out of every active session.
+        await revokeAllSessionsForSubject("client", id);
+
+        await logAudit(req, "client.reset_password", {
+          targetType: "client",
+          targetId: id,
+          summary: `Redefiniu a senha de ${client.name} para o CNPJ`,
+        });
         res.json({ success: true });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -167,21 +304,34 @@ export function registerAccountantRoutes(app: Express) {
   app.put(
     "/api/accountant/client/:id",
     verifyAccountantAuth,
+    validateBody(accountantUpdateClientSchema),
     async (req, res) => {
       const { name, regularityStatus, integrationHash, accountantCategory } =
         req.body;
       try {
+        const patch: Record<string, unknown> = {
+          name,
+          regularityStatus,
+          accountantCategory: accountantCategory || null,
+        };
+        // The integration token is only ever touched here when the accountant
+        // explicitly pasted one — it's stored hashed (see setIntegrationToken).
+        // Managed independently by generate-token / revoke-token.
+        if (typeof integrationHash === "string" && integrationHash.trim()) {
+          Object.assign(patch, setIntegrationToken(integrationHash.trim()));
+        }
         const [updated] = await db
           .update(clients)
-          .set({
-            name,
-            regularityStatus,
-            integrationHash: integrationHash || null,
-            accountantCategory: accountantCategory || null,
-          })
+          .set(patch)
           .where(eq(clients.id, req.params.id))
           .returning();
-        res.json({ success: true, client: updated });
+        await logAudit(req, "client.update", {
+          targetType: "client",
+          targetId: req.params.id,
+          summary: `Atualizou o cliente ${updated?.name ?? req.params.id}`,
+          metadata: { regularityStatus, accountantCategory },
+        });
+        res.json({ success: true, client: updated ? clientAdminDTO(updated) : null });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
       }
@@ -194,6 +344,7 @@ export function registerAccountantRoutes(app: Express) {
     async (req, res) => {
       try {
         const clientId = req.params.id;
+        const [victim] = await db.select().from(clients).where(eq(clients.id, clientId));
         // Delete dependencies
         await db.delete(guiasGeradas).where(eq(guiasGeradas.clientId, clientId));
         await db.delete(scheduledNotifications).where(eq(scheduledNotifications.clientId, clientId));
@@ -201,9 +352,15 @@ export function registerAccountantRoutes(app: Express) {
         await db.delete(documents).where(eq(documents.clientId, clientId));
         await db.delete(billingData).where(eq(billingData.clientId, clientId));
         await db.delete(messages).where(eq(messages.clientId, clientId));
+        await deleteSessionsForSubject("client", clientId);
 
         // Delete client
         await db.delete(clients).where(eq(clients.id, clientId));
+        await logAudit(req, "client.delete", {
+          targetType: "client",
+          targetId: clientId,
+          summary: `Excluiu o cliente ${victim?.name ?? clientId} e todos os seus dados`,
+        });
         res.json({ success: true });
       } catch (e: any) {
         console.error(e);
@@ -239,7 +396,7 @@ export function registerAccountantRoutes(app: Express) {
         .where(eq(billingData.clientId, clientId));
 
       res.json({
-        client,
+        client: clientAdminDTO(client),
         documents: docs.map((d) => ({
           ...d,
           createdAt: d.createdAt.toISOString(),
@@ -259,26 +416,8 @@ export function registerAccountantRoutes(app: Express) {
     async (req, res) => {
       try {
         const allDocs = await db.select().from(documents);
-        let totalSize = 0;
-        for (const doc of allDocs) {
-          if (doc.fileUrl) {
-            if (doc.fileUrl.startsWith("data:")) {
-              const base64str = doc.fileUrl.split(",")[1];
-              if (base64str) {
-                totalSize += Math.floor((base64str.length * 3) / 4);
-              }
-            } else if (doc.fileUrl.startsWith("/uploads/")) {
-              const filePath = path.join(process.cwd(), doc.fileUrl);
-              try {
-                if (fs.existsSync(filePath)) {
-                  const stat = fs.statSync(filePath);
-                  totalSize += stat.size;
-                }
-              } catch (e) {}
-            }
-          }
-        }
-        res.json({ totalSize });
+        const sizes = await Promise.all(allDocs.map((doc) => fileSizeFor(doc.fileUrl)));
+        res.json({ totalSize: sizes.reduce((a, b) => a + b, 0) });
       } catch (e: any) {
         res.status(500).json({ error: e.message });
       }
@@ -293,40 +432,23 @@ export function registerAccountantRoutes(app: Express) {
         .orderBy(desc(documents.createdAt));
       const allClients = await db.select().from(clients);
 
-      const filesWithMetadata = allDocs.map((doc) => {
-        const cl = allClients.find((c) => c.id === doc.clientId);
-        let size = 0;
-
-        if (doc.fileUrl) {
-          if (doc.fileUrl.startsWith("data:")) {
-            const base64str = doc.fileUrl.split(",")[1];
-            if (base64str) {
-              size = Math.floor((base64str.length * 3) / 4);
-            }
-          } else if (doc.fileUrl.startsWith("/uploads/")) {
-            const filePath = path.join(process.cwd(), doc.fileUrl);
-            try {
-              if (fs.existsSync(filePath)) {
-                const stat = fs.statSync(filePath);
-                size = stat.size;
-              }
-            } catch (e) {}
-          }
-        }
-
-        return {
-          id: doc.id,
-          title: doc.title,
-          category: doc.category,
-          status: doc.status,
-          createdAt: doc.createdAt.toISOString(),
-          fileUrl: doc.fileUrl,
-          size,
-          clientName: cl?.name || "Desconhecido",
-          clientId: doc.clientId,
-          uploadedBy: doc.uploadedBy,
-        };
-      });
+      const filesWithMetadata = await Promise.all(
+        allDocs.map(async (doc) => {
+          const cl = allClients.find((c) => c.id === doc.clientId);
+          return {
+            id: doc.id,
+            title: doc.title,
+            category: doc.category,
+            status: doc.status,
+            createdAt: doc.createdAt.toISOString(),
+            fileUrl: doc.fileUrl,
+            size: await fileSizeFor(doc.fileUrl),
+            clientName: cl?.name || "Desconhecido",
+            clientId: doc.clientId,
+            uploadedBy: doc.uploadedBy,
+          };
+        }),
+      );
 
       res.json({ files: filesWithMetadata });
     } catch (e: any) {
@@ -349,18 +471,19 @@ export function registerAccountantRoutes(app: Express) {
           .from(documents)
           .where(inArray(documents.id, fileIds));
 
-        for (const doc of docsToDelete) {
-          if (doc.fileUrl && doc.fileUrl.startsWith("/uploads/")) {
-            const filePath = path.join(process.cwd(), doc.fileUrl);
-            try {
-              if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-              }
-            } catch (e) {}
-          }
-        }
+        await Promise.all(
+          docsToDelete.map(async (doc) => {
+            const abs = resolveUploadPath(doc.fileUrl);
+            if (abs) await fs.promises.unlink(abs).catch(() => {});
+          }),
+        );
 
         await db.delete(documents).where(inArray(documents.id, fileIds));
+        await logAudit(req, "files.bulk_delete", {
+          targetType: "document",
+          summary: `Excluiu ${docsToDelete.length} arquivo(s)`,
+          metadata: { fileIds },
+        });
         res.json({ success: true });
       } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -392,6 +515,8 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/upload-doc",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
+    validateBody(accountantUploadDocSchema),
     async (req, res) => {
       const { clientId, title, category, dueDate, competence } = req.body;
 
@@ -423,6 +548,8 @@ export function registerAccountantRoutes(app: Express) {
     "/api/accountant/document/:id",
     verifyAccountantAuth,
     upload.single("file"),
+    validateUploadedFileContent,
+    validateBody(accountantUpdateDocSchema),
     async (req, res) => {
       try {
         const docId = req.params.id;
@@ -486,6 +613,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/message",
     verifyAccountantAuth,
+    validateBody(accountantMessageSchema),
     async (req, res) => {
       const { clientId, content } = req.body;
 
@@ -502,12 +630,9 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/message/bulk",
     verifyAccountantAuth,
+    validateBody(accountantBulkMessageSchema),
     async (req, res) => {
       const { clientIds, content } = req.body;
-
-      if (!Array.isArray(clientIds) || clientIds.length === 0) {
-        return res.status(400).json({ error: "Nenhum cliente selecionado" });
-      }
 
       const newMessages = clientIds.map((id: string) => ({
         clientId: id,
@@ -523,6 +648,7 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/document/:id/status",
     verifyAccountantAuth,
+    validateBody(docStatusSchema),
     async (req, res) => {
       try {
         const { status } = req.body;
@@ -553,6 +679,7 @@ export function registerAccountantRoutes(app: Express) {
   app.put(
     "/api/accountant/message/:id",
     verifyAccountantAuth,
+    validateBody(accountantEditMessageSchema),
     async (req, res) => {
       try {
         const { content } = req.body;
@@ -579,12 +706,18 @@ export function registerAccountantRoutes(app: Express) {
       if (clientList.length === 0)
         return res.status(404).json({ error: "Client not found" });
 
-      const newToken = "hash_" + uuidv4().replace(/-/g, "");
+      const newToken = generateIntegrationToken();
       await db
         .update(clients)
-        .set({ integrationHash: newToken })
+        .set(setIntegrationToken(newToken))
         .where(eq(clients.id, clientId));
 
+      await logAudit(req, "token.generate", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Gerou um token de integração para ${clientList[0].name}`,
+      });
+      // Only time the plaintext token is ever returned.
       res.json({ token: newToken });
     },
   );
@@ -603,9 +736,14 @@ export function registerAccountantRoutes(app: Express) {
 
       await db
         .update(clients)
-        .set({ integrationHash: null })
+        .set(clearIntegrationToken())
         .where(eq(clients.id, clientId));
 
+      await logAudit(req, "token.revoke", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Revogou o token de integração de ${clientList[0].name}`,
+      });
       res.json({ success: true });
     },
   );
@@ -614,46 +752,10 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/client/:id/update-billing",
     verifyAccountantAuth,
+    validateBody(billingUpdateSchema),
     async (req, res) => {
-      const clientId = req.params.id;
-      const {
-        month,
-        servicesRevenue,
-        salesRevenue,
-        totalIncomes,
-        servicesTaken,
-      } = req.body;
-
       try {
-        const existing = await db
-          .select()
-          .from(billingData)
-          .where(eq(billingData.clientId, clientId));
-        const target = existing.find((b) => b.month === month);
-
-        const updatePayload = {
-          servicesRevenue: servicesRevenue || 0,
-          salesRevenue: salesRevenue || 0,
-          totalIncomes: totalIncomes || 0,
-          servicesTaken: servicesTaken || 0,
-          // Legacy fallback
-          revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-          expenses: servicesTaken || 0,
-          payroll: 0,
-        };
-
-        if (target) {
-          await db
-            .update(billingData)
-            .set(updatePayload)
-            .where(eq(billingData.id, target.id));
-        } else {
-          await db.insert(billingData).values({
-            ...updatePayload,
-            clientId,
-            month,
-          });
-        }
+        await upsertBilling(req.params.id, req.body);
         res.json({ success: true });
       } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -665,48 +767,11 @@ export function registerAccountantRoutes(app: Express) {
   app.post(
     "/api/accountant/client/:id/bulk-billing",
     verifyAccountantAuth,
+    validateBody(billingBulkSchema),
     async (req, res) => {
-      const clientId = req.params.id;
-      const { data } = req.body; // Array of items
-
       try {
-        for (const item of data) {
-          const {
-            month,
-            servicesRevenue,
-            salesRevenue,
-            totalIncomes,
-            servicesTaken,
-          } = item;
-          const existing = await db
-            .select()
-            .from(billingData)
-            .where(eq(billingData.clientId, clientId));
-          const target = existing.find((b) => b.month === month);
-
-          const updatePayload = {
-            servicesRevenue: servicesRevenue || 0,
-            salesRevenue: salesRevenue || 0,
-            totalIncomes: totalIncomes || 0,
-            servicesTaken: servicesTaken || 0,
-            // Legacy fallback
-            revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-            expenses: servicesTaken || 0,
-            payroll: 0,
-          };
-
-          if (target) {
-            await db
-              .update(billingData)
-              .set(updatePayload)
-              .where(eq(billingData.id, target.id));
-          } else {
-            await db.insert(billingData).values({
-              ...updatePayload,
-              clientId,
-              month,
-            });
-          }
+        for (const item of req.body.data) {
+          await upsertBilling(req.params.id, item);
         }
         res.json({ success: true });
       } catch (e: any) {
@@ -742,16 +807,16 @@ export function registerAccountantRoutes(app: Express) {
           }
         }
         
-        // Sanitiza dados confidenciais antes de retornar
+        // Never return any credential to the browser — only whether each is set.
         const sanitizedConfig = {
           id: config[0].id,
           usuarioId: config[0].usuarioId,
-          consumerKey: config[0].consumerKey,
           cnpjContratante: config[0].cnpjContratante,
           ambiente: config[0].ambiente,
           whatsappSupport: config[0].whatsappSupport,
           multipleFilesText: config[0].multipleFilesText,
           updatedAt: config[0].updatedAt,
+          hasKey: !!config[0].consumerKey,
           hasSecret: !!config[0].consumerSecret,
           hasCert: certExists,
           certMissing: !!certPath && !certExists,
@@ -769,6 +834,7 @@ export function registerAccountantRoutes(app: Express) {
     "/api/pendencies/sitfis/config",
     verifyAccountantAuth,
     uploadCert.single("cert"),
+    validateBody(serproConfigSchema),
     async (req, res) => {
       try {
         const {
@@ -781,17 +847,23 @@ export function registerAccountantRoutes(app: Express) {
           multipleFilesText,
         } = req.body;
 
-        const updateData: any = {
-          consumerKey,
-          consumerSecret,
+        const updateData: Record<string, unknown> = {
           cnpjContratante,
           ambiente,
           whatsappSupport,
           multipleFilesText,
         };
-
-        if (certSenha) updateData.certSenha = certSenha;
-        if (req.file) updateData.certPath = req.file.path;
+        // Credentials are write-only: only touched when a non-empty value is
+        // sent ("leave blank to keep"). Secrets are stored encrypted at rest.
+        if (typeof consumerKey === "string" && consumerKey.trim()) {
+          updateData.consumerKey = consumerKey.trim();
+        }
+        if (typeof consumerSecret === "string" && consumerSecret.trim()) {
+          updateData.consumerSecret = encryptSecret(consumerSecret.trim());
+        }
+        if (typeof certSenha === "string" && certSenha.trim()) {
+          updateData.certSenha = encryptSecret(certSenha.trim());
+        }
 
         let config = await db
           .select()
@@ -799,11 +871,22 @@ export function registerAccountantRoutes(app: Express) {
           .where(eq(serproConfig.usuarioId, 1))
           .limit(1);
 
+        if (req.file) {
+          // multer wrote the raw .pfx to disk — replace it with an encrypted
+          // copy at the same path.
+          try {
+            const raw = await fs.promises.readFile(req.file.path);
+            await fs.promises.writeFile(req.file.path, encryptBytes(raw));
+          } catch (err) {
+            console.error("Falha ao cifrar o certificado:", err);
+          }
+          updateData.certPath = req.file.path;
+        }
+
         // Se houver certificado anterior no banco e um novo arquivo foi enviado, exclui o anterior
-        if (config.length > 0 && config[0].certPath && req.file) {
+        if (config.length > 0 && config[0].certPath && req.file && config[0].certPath !== req.file.path) {
           try {
             await fs.promises.unlink(config[0].certPath);
-            console.log("Certificado anterior excluído com sucesso:", config[0].certPath);
           } catch (err) {
             console.error("Falha ao excluir certificado anterior:", err);
           }
@@ -824,10 +907,134 @@ export function registerAccountantRoutes(app: Express) {
         res.json({ success: true });
       } catch (e: any) {
         console.error("ERRO SERPRO POST:", e);
-        res
-          .status(500)
-          .json({ error: e.message, stack: e.stack, detail: e.toString() });
+        res.status(500).json({ error: "Falha ao salvar a configuração do Integra Contador." });
       }
+    },
+  );
+
+  // --- Consulta de pagamentos (manual / lote) -------------------------------
+
+  // Lista as guias pendentes (não pagas, com vencimento, federais) + o estado
+  // atual do rastreio de pagamento. `clientId` opcional filtra por empresa.
+  app.get("/api/accountant/payments", verifyAccountantAuth, async (req, res) => {
+    const clientId = typeof req.query.clientId === "string" ? req.query.clientId : null;
+
+    const docRows = await db
+      .select({
+        id: documents.id,
+        clientId: documents.clientId,
+        title: documents.title,
+        category: documents.category,
+        competence: documents.competence,
+        dueDate: documents.dueDate,
+        status: documents.status,
+        extractedData: documents.extractedData,
+      })
+      .from(documents)
+      .where(
+        clientId
+          ? and(eq(documents.clientId, clientId), isNotNull(documents.dueDate))
+          : isNotNull(documents.dueDate),
+      );
+
+    const pending = docRows.filter(
+      (d) => d.status !== "paid" && d.status !== "ok" && isFederalGuia(d),
+    );
+
+    const clientRows = await db.select({ id: clients.id, name: clients.name }).from(clients);
+    const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
+
+    const ids = pending.map((d) => d.id);
+    const checks = ids.length
+      ? await db.select().from(paymentChecks).where(inArray(paymentChecks.documentId, ids))
+      : [];
+    const checkByDoc = new Map(checks.map((c) => [c.documentId, c]));
+
+    res.json({
+      clients: clientRows,
+      guias: pending.map((d) => {
+        const c = checkByDoc.get(d.id);
+        const val = (d.extractedData as any)?.extractedValue;
+        return {
+          documentId: d.id,
+          clientId: d.clientId,
+          clientName: clientName.get(d.clientId) || "—",
+          title: d.title,
+          category: d.category,
+          competence: d.competence,
+          dueDate: d.dueDate,
+          value: typeof val === "number" ? val : null,
+          paymentStatus: c?.status ?? "SEM_CONSULTA",
+          lastCheckedAt: c?.lastCheckedAt?.toISOString() ?? null,
+          nextCheckAt: c?.nextCheckAt?.toISOString() ?? null,
+          checkAttempts: c?.checkAttempts ?? 0,
+        };
+      }),
+    });
+  });
+
+  // Consulta agora um conjunto de guias (selecionadas na tela). Processamento
+  // no backend, com concorrência limitada (não dispara centenas de chamadas).
+  app.post(
+    "/api/accountant/payments/check",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckSchema),
+    async (req, res) => {
+      const result = await checkPaymentsForDocuments(req.body.documentIds);
+      await logAudit(req, "payment.batch_check", {
+        summary: `Consulta de pagamento em lote: ${result.checked} guia(s), ${result.paid} paga(s)`,
+        metadata: { selected: result.selected, paid: result.paid, errors: result.errors },
+      });
+      res.json(result);
+    },
+  );
+
+  // Informa pagamento manual em lote — marca as guias selecionadas como pagas
+  // sem chamar o SERPRO e sem notificar o cliente.
+  app.post(
+    "/api/accountant/payments/mark-paid",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckSchema),
+    async (req, res) => {
+      const result = await markPaymentsManual(req.body.documentIds);
+      await logAudit(req, "payment.manual_mark", {
+        summary: `Pagamento manual em lote: ${result.marked} guia(s) marcada(s) como paga(s)`,
+        metadata: { selected: result.selected, marked: result.marked, skipped: result.skipped },
+      });
+      res.json(result);
+    },
+  );
+
+  // Consulta todas as guias pendentes de uma empresa.
+  app.post(
+    "/api/accountant/payments/check-client",
+    verifyAccountantAuth,
+    validateBody(accountantPaymentCheckClientSchema),
+    async (req, res) => {
+      const { clientId } = req.body;
+      const docRows = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.clientId, clientId), isNotNull(documents.dueDate)));
+      const ids = docRows
+        .filter((d) => d.status !== "paid" && d.status !== "ok" && isFederalGuia(d))
+        .map((d) => d.id);
+
+      if (ids.length === 0) {
+        return res.json({
+          selected: 0, checked: 0, paid: 0, notFound: 0, errors: 0, notApplicable: 0,
+          ranAt: new Date().toISOString(), results: [],
+        });
+      }
+
+      const result = await checkPaymentsForDocuments(ids);
+      await logAudit(req, "payment.client_check", {
+        targetType: "client",
+        targetId: clientId,
+        summary: `Consulta de pagamento do cliente: ${result.checked} guia(s), ${result.paid} paga(s)`,
+        metadata: { paid: result.paid, errors: result.errors },
+      });
+      res.json(result);
     },
   );
 }

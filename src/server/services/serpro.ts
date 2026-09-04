@@ -1,7 +1,82 @@
 import https from "https";
+import fs from "fs";
+import { db } from "../db";
+import { serproConfig } from "../schema";
+import { decryptSecret, decryptBytes } from "./secretbox";
 
 export function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+export interface SerproContext {
+  config: any; // serpro_config row with consumerSecret/certSenha decrypted
+  cnpjContratante: string;
+  baseUrl: string;
+  certAgent?: https.Agent;
+}
+
+// Reads serpro_config once, decrypts the secrets in memory, resolves the
+// trial/prod base URL and (in production) builds the mTLS agent from the stored
+// .pfx. Used by both "gerar guia" and "consultar pagamento" so the SERPRO wiring
+// lives in one place. Throws a tagged error the callers turn into a 4xx / a
+// "not_configured" outcome.
+export async function buildSerproContext(): Promise<SerproContext> {
+  const rows = await db.select().from(serproConfig).limit(1);
+  if (rows.length === 0 || !rows[0].consumerKey) {
+    throw Object.assign(new Error("Integra Contador não configurado. Acesse as configurações."), {
+      status: 400,
+      reason: "not_configured",
+    });
+  }
+
+  const config = {
+    ...rows[0],
+    consumerSecret: decryptSecret(rows[0].consumerSecret),
+    certSenha: decryptSecret(rows[0].certSenha),
+  };
+
+  const cnpjContratante = config.cnpjContratante
+    ? config.cnpjContratante.replace(/\D/g, "")
+    : "00000000000100";
+
+  const baseUrl =
+    config.ambiente === "producao"
+      ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
+      : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
+
+  let certAgent: https.Agent | undefined;
+  if (config.ambiente === "producao") {
+    if (!config.certPath) {
+      throw Object.assign(
+        new Error(
+          "Certificado digital não configurado. Reenvie o arquivo .pfx/.p12 nas configurações do Integra Contador.",
+        ),
+        { status: 400, reason: "cert_missing" },
+      );
+    }
+    try {
+      const pfx = decryptBytes(await fs.promises.readFile(config.certPath));
+      certAgent = new https.Agent({
+        pfx,
+        passphrase: config.certSenha || "",
+        rejectUnauthorized: true,
+      });
+    } catch (err: any) {
+      console.error("Certificado SERPRO configurado não pode ser lido:", {
+        path: config.certPath,
+        code: err?.code,
+        message: err?.message,
+      });
+      throw Object.assign(
+        new Error(
+          "Certificado digital não encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configurações do Integra Contador.",
+        ),
+        { status: 400, reason: "cert_missing" },
+      );
+    }
+  }
+
+  return { config, cnpjContratante, baseUrl, certAgent };
 }
 
 interface TokenCache {
@@ -10,6 +85,10 @@ interface TokenCache {
   expiresAt: number;
 }
 const serproTokenCache: { [key: string]: TokenCache } = {};
+
+// Upper bound on any single SERPRO HTTP call. Without it a hung SERPRO endpoint
+// keeps the Express request (and its DB work) pending indefinitely.
+const SERPRO_HTTP_TIMEOUT_MS = 30_000;
 
 // Helper HTTP nativo (evita problemas com node-fetch ESM)
 function httpsPost(
@@ -27,6 +106,7 @@ function httpsPost(
       path: url.pathname + url.search,
       method: "POST",
       headers: { ...headers, "Content-Length": bodyBuf.byteLength },
+      timeout: SERPRO_HTTP_TIMEOUT_MS,
     };
     if (agent) opts.agent = agent;
 
@@ -44,6 +124,15 @@ function httpsPost(
       });
     });
     req.on("error", reject);
+    // 'timeout' fires on socket inactivity but does not abort — do it here so
+    // the promise rejects instead of hanging forever.
+    req.on("timeout", () => {
+      req.destroy(
+        new Error(
+          `Tempo limite de ${SERPRO_HTTP_TIMEOUT_MS / 1000}s excedido ao contatar ${url.hostname}`,
+        ),
+      );
+    });
     req.write(bodyBuf);
     req.end();
   });

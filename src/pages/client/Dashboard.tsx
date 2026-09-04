@@ -1,25 +1,28 @@
 import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef } from "react";
-import { 
-  Bell, 
-  Upload, 
-  FileCheck, 
-  Edit3, 
+import {
+  Bell,
+  Upload,
+  FileCheck,
+  Edit3,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Settings,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
-import { handleFileAction } from "../../lib/utils";
 import { PwaBanner } from "./dashboard/PwaBanner";
 import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
-import { KpiCards } from "./dashboard/KpiCards";
 import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
 import { NotificationPreferencesModal } from "./dashboard/NotificationPreferencesModal";
+import { StatusHeroCard } from "./dashboard/StatusHeroCard";
+import { FeatureGrid } from "./dashboard/FeatureGrid";
+import { NfseCallout } from "./dashboard/NfseCallout";
+import { ClientDashboardSkeleton } from "../../components/Skeleton";
 
 export function ClientDashboard() {
   const location = useLocation();
@@ -30,6 +33,7 @@ export function ClientDashboard() {
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [paidFlashId, setPaidFlashId] = useState<string | null>(null);
   const [isCapacitorApp, setIsCapacitorApp] = useState(false);
   const [pushGranted, setPushGranted] = useState(false);
 
@@ -56,6 +60,8 @@ export function ClientDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
+  const guiasRef = useRef<HTMLDivElement>(null);
+  const chartsRef = useRef<HTMLDivElement>(null);
   let user = {};
   try {
     user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
@@ -148,15 +154,6 @@ export function ClientDashboard() {
     }
   }, [selectedCompetence]);
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
-
   const subscribeToPush = async () => {
     try {
       const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
@@ -244,8 +241,15 @@ export function ClientDashboard() {
 
   useEffect(() => {
     loadData();
-    subscribeToPush();
-    
+
+    // Only refresh the push subscription automatically when the user has
+    // already granted permission — never prompt on mount. The "Ativar
+    // Notificações" button handles the opt-in flow explicitly.
+    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+    if (!isCapacitor && "Notification" in window && Notification.permission === "granted") {
+      subscribeToPush();
+    }
+
     const checkPushState = async () => {
       const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
       setIsCapacitorApp(isCapacitor);
@@ -368,6 +372,8 @@ export function ClientDashboard() {
         body: JSON.stringify({ status: "paid" })
       });
       if (res.ok) {
+        setPaidFlashId(docId);
+        setTimeout(() => setPaidFlashId((cur) => (cur === docId ? null : cur)), 2800);
         loadData();
       }
     } catch (err) {
@@ -406,12 +412,7 @@ export function ClientDashboard() {
   };
 
   if (!data) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <RefreshCw className="w-8 h-8 text-virgula-green animate-spin" />
-        <p className="text-slate-500 text-sm font-medium animate-pulse">Carregando painel contábil...</p>
-      </div>
-    );
+    return <ClientDashboardSkeleton />;
   }
 
   // Parse Brazilian Date String (DD/MM/YYYY) or ISO (YYYY-MM-DD) to standard Date object
@@ -433,43 +434,33 @@ export function ClientDashboard() {
   };
 
   // Check the status of each expiration based on standard system date June 22, 2026
-  const getDocDueStatus = (doc: any) => {
-    if (doc.status === "paid") {
-      return { label: "Pago", colorClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", badgeColor: "bg-emerald-500", priority: 3 };
-    }
-    if (doc.status === "late") {
-      return { label: "Atrasado 🔴", colorClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/50 shadow-sm", badgeColor: "bg-rose-500", priority: 0, isOverdue: true };
-    }
-    
+  const getDocDueStatus = (doc: any): DocDueStatus => {
+    const base: DocDueStatus = {
+      label: "Pendente",
+      colorClass: "",
+      badgeColor: "",
+      priority: 2,
+      isOverdue: false,
+      isSoon: false,
+    };
+    if (doc.status === "paid") return { ...base, label: "Pago", priority: 3 };
+    if (doc.status === "late") return { ...base, label: "Atrasada", priority: 0, isOverdue: true };
+
     const isSpecialCategory = ["contracheque", "notas fiscais", "nota fiscal", "outros", "payroll"].includes(doc.category?.toLowerCase() || "");
+    if (!doc.dueDate || isSpecialCategory) return { ...base, label: "Disponível", priority: 4 };
 
-    if (!doc.dueDate || isSpecialCategory) {
-      return { label: "Disponível ✓", colorClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", badgeColor: "bg-emerald-500", priority: 4 };
-    }
-
-    const todayDate = new Date(); // Use actual current date
+    const todayDate = new Date();
     const parsedDue = parseDueDateString(doc.dueDate);
+    if (!parsedDue) return base;
 
-    if (!parsedDue) {
-      return { label: "Pendente", colorClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400", badgeColor: "bg-amber-500", priority: 2 };
-    }
-
-    // Reset times
-    todayDate.setHours(0,0,0,0);
-    parsedDue.setHours(0,0,0,0);
-
+    todayDate.setHours(0, 0, 0, 0);
+    parsedDue.setHours(0, 0, 0, 0);
     const diffDays = differenceInDays(parsedDue, todayDate);
 
-    if (diffDays < 0) {
-      return { label: `Atrasado [${Math.abs(diffDays)}d] 🔴`, colorClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/50 blink shadow-sm", badgeColor: "bg-rose-500", priority: 0, isOverdue: true };
-    } else if (diffDays === 0) {
-      return { label: `Vence hoje ⚠️`, colorClass: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-700/50 animate-pulse", badgeColor: "bg-amber-500", priority: 1, isSoon: true };
-    } else if (diffDays <= 4) {
-      return { label: `Vence em breve [${diffDays}d] ⚠️`, colorClass: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-700/50 animate-pulse", badgeColor: "bg-amber-500", priority: 1, isSoon: true };
-    } else {
-      const formattedDue = doc.dueDate?.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate;
-      return { label: `Vence em ${formattedDue}`, colorClass: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400", badgeColor: "bg-blue-500", priority: 2 };
-    }
+    if (diffDays < 0) return { ...base, label: `Atrasada ${Math.abs(diffDays)}d`, priority: 0, isOverdue: true };
+    if (diffDays === 0) return { ...base, label: "Vence hoje", priority: 1, isSoon: true };
+    if (diffDays <= 4) return { ...base, label: `Vence em ${diffDays}d`, priority: 1, isSoon: true };
+    return base;
   };
 
   // Find all documents for the selected competence or with important upcoming maturities
@@ -497,24 +488,56 @@ export function ClientDashboard() {
     return sum + (typeof val === 'number' ? val : 0);
   }, 0);
 
-  // Filter pending ones explicitly
-  const pendingDocs = allCurrentDocs.filter((d: any) => 
-    d.status !== "paid" && 
-    d.dueDate && 
-    !['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())
-  );
-
-  const totalPendingValue = pendingDocs.reduce((sum: number, doc: any) => {
-    const val = doc.extractedData?.extractedValue;
-    return sum + (typeof val === 'number' ? val : 0);
-  }, 0);
-
   // Sort documents: Overdue first, followed by soon-to-expire, standard pending, and paid
   const sortedExpirations = [...allCurrentDocs].sort((a: any, b: any) => {
     const statusA = getDocDueStatus(a);
     const statusB = getDocDueStatus(b);
     return statusA.priority - statusB.priority;
   });
+
+  // --- Cross-competence guia view — drives the status hero + the chronological strip ---
+  const isGuiaLikeDoc = (d: any) => {
+    const c = (d.category || "").toLowerCase();
+    if (["bank_statement", "sitfis_receita", "sitfis", "contracheque", "outros", "payroll", "company", "upload"].includes(c)) return false;
+    return Boolean(d.dueDate) || Boolean(d.pixCode);
+  };
+  const guiaDueTime = (d: any) => {
+    const parsed = parseDueDateString(d.dueDate);
+    return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
+  };
+
+  const unpaidGuias = data.documents.filter(
+    (d: any) => isGuiaLikeDoc(d) && d.status !== "paid" && d.status !== "ok" && d.dueDate,
+  );
+  const upcomingGuias = [...unpaidGuias].sort((a: any, b: any) => guiaDueTime(a) - guiaDueTime(b));
+
+  const pendingGuiasNotOverdue = upcomingGuias.filter((d: any) => !getDocDueStatus(d).isOverdue);
+  const totalPendingGuiasValue = pendingGuiasNotOverdue.reduce((sum: number, doc: any) => {
+    const val = doc.extractedData?.extractedValue;
+    return sum + (typeof val === "number" ? val : 0);
+  }, 0);
+  const hasAnyGuia = data.documents.some(isGuiaLikeDoc);
+
+  // Jump to (and scroll to) the guia list. If the guia that needs attention
+  // lives in another competence — e.g. a guia recalculated months ago whose
+  // due date moved — switch the competence selector to it first, otherwise the
+  // list would be empty.
+  const goToGuias = () => {
+    const target = (pendingGuiasNotOverdue[0] || upcomingGuias[0])?.competence;
+    if (target && target !== selectedCompetence && availableCompetences.includes(target)) {
+      setSelectedCompetence(target);
+    }
+    setTimeout(() => guiasRef.current?.scrollIntoView({ block: "start" }), 80);
+  };
+  const scrollToCharts = () => chartsRef.current?.scrollIntoView({ block: "start" });
+
+  // Counts for the feature grid — same filters the target pages use.
+  const vaultCount = data.documents.filter(
+    (d: any) => d.uploadedBy === "accountant",
+  ).length;
+  const uploadsCount = data.documents.filter(
+    (d: any) => d.category === "upload",
+  ).length;
 
   const monthsTotalBilling = billingForm.servicesRevenue + billingForm.salesRevenue;
   const hasBankStatement = data.documents.some((d: any) => d.category === "bank_statement" && d.competence === selectedCompetence);
@@ -534,174 +557,171 @@ export function ClientDashboard() {
     };
   });
 
-  return (
-    <div className="space-y-6 pb-24 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-7xl mx-auto">
-      
-      {/* 📱 PWA SMART HELPER BANNER */}
-      {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
+  const iconBtn =
+    "grid size-9 place-items-center rounded-lg border border-line bg-surface text-muted shadow-xs transition-colors hover:bg-sunken hover:text-ink disabled:opacity-50";
 
-      {/* HEADER SECTION */}
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-3">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
-              Painel PWA Ativo
-            </span>
-            {!pushGranted && (
-              <button 
-                onClick={() => subscribeToPush().then(() => setPushGranted(true))}
-                className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition-colors cursor-pointer"
-              >
-                Ativar Notificações
-              </button>
-            )}
-            {isRefreshing && (
-              <span className="text-slate-400 text-xs flex items-center animate-pulse">
-                <RefreshCw className="w-3 h-3 animate-spin mr-1 text-slate-500" /> Sincronizando...
-              </span>
-            )}
-          </div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white mt-1">
+  return (
+    <div className="space-y-5">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="font-serif text-xl font-semibold leading-tight text-ink sm:text-[1.75rem]">
             Olá, {data.client.name}
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Gerenciamento contábil e obrigações fiscais em tempo real.
+          <p className="mt-1 hidden items-center gap-2 text-sm text-muted sm:flex">
+            O que você deve e quando vence.
+            {isRefreshing && (
+              <span className="flex items-center gap-1 text-xs text-faint">
+                <RefreshCw className="size-3 animate-spin" /> atualizando
+              </span>
+            )}
           </p>
         </div>
-        
-        <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
-          <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden h-10 w-[200px]">
-            <button 
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex h-9 items-center overflow-hidden rounded-lg border border-line bg-surface shadow-xs">
+            <button
               onClick={handlePrevCompetence}
               disabled={availableCompetences.indexOf(selectedCompetence) === availableCompetences.length - 1}
-              className="px-3 h-full flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors"
+              className="grid h-full w-8 place-items-center text-muted transition-colors hover:bg-sunken disabled:opacity-30"
+              aria-label="Competência anterior"
             >
-               <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="size-4" />
             </button>
-            <div className="flex-1 flex flex-col items-center justify-center">
-               <span className="text-[10px] font-semibold text-slate-400 leading-none mb-0.5">Competência</span>
-               <span className="text-sm font-black text-slate-800 dark:text-white leading-none">{selectedCompetence}</span>
-            </div>
-            <button 
+            <span className="min-w-[86px] px-1 text-center text-sm font-semibold text-ink tabular-nums">
+              {selectedCompetence}
+            </span>
+            <button
               onClick={handleNextCompetence}
               disabled={availableCompetences.indexOf(selectedCompetence) === 0}
-              className="px-3 h-full flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors"
+              className="grid h-full w-8 place-items-center text-muted transition-colors hover:bg-sunken disabled:opacity-30"
+              aria-label="Próxima competência"
             >
-               <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="size-4" />
             </button>
           </div>
 
-          <button 
-            disabled={isRefreshing}
-            onClick={loadData}
-            className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all text-xs flex items-center justify-center h-10 w-10 disabled:opacity-50"
-            title="Atualizar dados"
-            id="refresh-dashboard-btn"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <button disabled={isRefreshing} onClick={loadData} className={iconBtn} title="Atualizar" id="refresh-dashboard-btn">
+            <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} strokeWidth={1.9} />
+          </button>
+          <button onClick={() => setShowPrefsModal(true)} className={iconBtn} title="Notificações">
+            <Bell className="size-4" strokeWidth={1.9} />
+          </button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))} className={iconBtn} title="Alterar senha">
+            <Settings className="size-4" strokeWidth={1.9} />
           </button>
         </div>
       </header>
 
-      <div className="space-y-6 mt-6">
-        {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
-          {data.messages && data.messages.filter((m: any) => !m.read && m.direction !== 'client_to_accountant').map((msg: any) => (
-            <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
-              <Bell className="text-indigo-500 dark:text-indigo-400 w-5 h-5 mt-0.5 mr-3 shrink-0" />
-              <div>
-                <h4 className="font-bold text-indigo-950 dark:text-indigo-300 text-sm">Mensagem do Contador</h4>
-                <p className="text-slate-600 dark:text-slate-300 text-xs mt-1 leading-relaxed">{msg.content}</p>
-                <span className="text-[10px] text-slate-400 mt-2 block font-mono">{format(parseISO(msg.createdAt), "dd MMM, HH:mm", { locale: ptBR })}</span>
-              </div>
+      <StatusHeroCard
+        overdueCount={allOverdueDocs.length}
+        overdueTotal={totalOverdueValue}
+        pendingCount={pendingGuiasNotOverdue.length}
+        pendingTotal={totalPendingGuiasValue}
+        hasAnyGuia={hasAnyGuia}
+        onSeeGuias={goToGuias}
+      />
+
+      {!data.client?.firstAccessDone && (
+        <div className="flex flex-col gap-3 rounded-xl border border-warn/25 bg-warn-wash px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Edit3 className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={1.9} />
+            <div>
+              <p className="text-sm font-semibold text-ink">Sua senha ainda é o CNPJ</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                Troque por uma senha sua e cadastre um e-mail de contato.
+              </p>
             </div>
-          ))}
-
-
-          {/* 🚨 DEDICATED HIGH-VISIBILITY DUE DATE SECTION (VENCIMENTOS) */}
-          <DueDatesCard
-            docs={sortedExpirations}
-            selectedCompetence={selectedCompetence}
-            clientId={data.client.id}
-            copiedId={copiedId}
-            getDocDueStatus={getDocDueStatus}
-            getAuthenticatedFileUrl={getAuthenticatedFileUrl}
-            onCopyCode={handleCopyCode}
-            onMarkAsPaid={handleMarkAsPaid}
-            onReloadData={loadData}
-          />
-
-          {/* ⚡ TACTILE QUICK KPI STATS CARDS */}
-          <KpiCards
-            selectedCompetence={selectedCompetence}
-            monthsTotalBilling={monthsTotalBilling}
-            pendingDocsCount={pendingDocs.length}
-            totalPendingValue={totalPendingValue}
-            overdueDocsCount={allOverdueDocs.length}
-            totalOverdueValue={totalOverdueValue}
-          />
-
-      {/* SECURITY / PASSWORD RESET NOTIFICATION BOX */}
-      <div className="bg-gradient-to-r from-slate-50 to-indigo-50 dark:from-slate-800/30 dark:to-slate-800/10 border border-slate-200/50 dark:border-slate-700/50 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-        <div className="flex items-start sm:items-center">
-          <div className="p-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl mr-3 shrink-0">
-            <Edit3 className="w-5 h-5 animate-pulse" />
           </div>
-          <div>
-            <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Configuração de Acesso</h4>
-            <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5 leading-relaxed">
-              O login e a senha inicial do portal do cliente cadastrados são o seu CNPJ. Altere de forma segura clicando ao lado.
-            </p>
-          </div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))}
+            className="shrink-0 self-start rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-brand-strong sm:self-center"
+          >
+            Alterar agora
+          </button>
         </div>
-        <button 
-          onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))}
-          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white shadow-sm transition-transform active:scale-95 flex items-center justify-center shrink-0 self-start sm:self-center"
-        >
-          Alterar Senha de Acesso
-        </button>
+      )}
+
+      {data.messages
+        ?.filter((m: any) => !m.read && m.direction !== "client_to_accountant")
+        .map((msg: any) => (
+          <div key={msg.id} className="rounded-xl border border-line bg-sunken px-4 py-3.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
+                Mensagem do escritório
+              </p>
+              <span className="text-[11px] text-faint tabular-nums">
+                {format(parseISO(msg.createdAt), "dd MMM · HH:mm", { locale: ptBR })}
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink">{msg.content}</p>
+          </div>
+        ))}
+
+      <div ref={guiasRef} className="scroll-mt-4">
+        <DueDatesCard
+          docs={sortedExpirations}
+          selectedCompetence={selectedCompetence}
+          clientId={data.client.id}
+          copiedId={copiedId}
+          paidFlashId={paidFlashId}
+          getDocDueStatus={getDocDueStatus}
+          onCopyCode={handleCopyCode}
+          onMarkAsPaid={handleMarkAsPaid}
+          onReloadData={loadData}
+        />
       </div>
 
-      {/* MAIN LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        
-        {/* COLUMN 1 & 2 */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* UPLOAD & DATA ENTRY AREA */}
-          <div className="bg-white/85 dark:bg-slate-800/95 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-center">
-            <h3 className="font-bold text-slate-800 dark:text-white mb-1">Inserir Dados da Competência {selectedCompetence}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">Selecione o extrato bancário do seu negócio. Apenas formato PDF ou OFX.</p>
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-               {hasBankStatement ? (
-                  <div className="flex-1 min-h-[44px] flex justify-center items-center text-emerald-600 font-bold bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20 text-sm">
-                    <FileCheck className="w-5 h-5 mr-2 text-emerald-500" /> Extrato Bancário Anexado
-                  </div>
-                ) : (
-                  <div className="flex-1">
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.ofx" onChange={handleUploadBankStatement}/>
-                    <button 
-                      disabled={isUploading} 
-                      onClick={() => fileInputRef.current?.click()} 
-                      className="w-full min-h-[44px] px-4 py-3 bg-slate-900 dark:bg-slate-700 text-white text-sm font-bold rounded-2xl shadow-sm hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors flex items-center justify-center disabled:opacity-50"
-                    >
-                      <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando extrato..." : "Upload Extrato Bancário (PDF/OFX)"}
-                    </button>
-                  </div>
-                )}
-             </div>
+      <NfseCallout />
+
+      <FeatureGrid
+        pendingCount={pendingGuiasNotOverdue.length}
+        pendingTotal={totalPendingGuiasValue}
+        overdueCount={allOverdueDocs.length}
+        vaultCount={vaultCount}
+        uploadsCount={uploadsCount}
+        billingTotal={monthsTotalBilling}
+        notificationsOn={pushGranted}
+        onGoGuias={goToGuias}
+        onGoCharts={scrollToCharts}
+        onOpenNotifications={() => setShowPrefsModal(true)}
+        onEnableNotifications={() => subscribeToPush().then(() => setPushGranted(true))}
+      />
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
+          <h3 className="font-serif text-base font-semibold text-ink">
+            Extrato bancário — {selectedCompetence}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted">Envie o extrato do mês em PDF ou OFX.</p>
+          <div className="mt-4">
+            {hasBankStatement ? (
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-brand/25 bg-brand-wash py-3 text-sm font-semibold text-brand-fg">
+                <FileCheck className="size-4" strokeWidth={1.9} /> Extrato anexado
+              </div>
+            ) : (
+              <>
+                <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.ofx" onChange={handleUploadBankStatement} />
+                <button
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50"
+                >
+                  <Upload className="size-4" strokeWidth={1.9} />
+                  {isUploading ? "Enviando..." : "Enviar extrato (PDF/OFX)"}
+                </button>
+              </>
+            )}
           </div>
-
-
         </div>
 
-        {/* COLUMN 3 */}
         <SupportCards whatsappSupport={whatsappSupport} />
       </div>
 
-      {/* 📊 ACCUMULATED HISTORIC GRAPH AREA SECTION */}
-      <BillingHistoryCharts chartData={chartData} />
+      <div ref={chartsRef} className="scroll-mt-4">
+        <BillingHistoryCharts chartData={chartData} />
       </div>
+
+      {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
 
       {/* MODAL CONFIG NOTIFICAÇÕES */}
       <NotificationPreferencesModal

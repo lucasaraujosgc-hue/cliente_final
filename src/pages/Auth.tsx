@@ -1,21 +1,45 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calculator } from "lucide-react";
-import { apiFetch } from "../lib/apiClient";
+import { Logo } from "../components/Logo";
+import { apiFetch, saveSession } from "../lib/apiClient";
+import { MfaCodeForm } from "../components/MfaCodeForm";
+import { RateLimitNotice, lockUntilFrom } from "../components/RateLimitNotice";
+
+function storeClientUser(user: unknown, remember: boolean) {
+  const json = JSON.stringify(user);
+  try {
+    (remember ? localStorage : sessionStorage).setItem("clientUser", json);
+    (remember ? sessionStorage : localStorage).removeItem("clientUser");
+  } catch {
+    /* private mode */
+  }
+}
+
+// Shared auth-screen primitives.
+const FIELD =
+  "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
+const LABEL =
+  "block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5";
+const PRIMARY_BTN =
+  "w-full rounded-lg bg-brand text-white font-semibold py-3 text-[15px] shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50";
 
 export function Login() {
   const [cnpj, setCnpj] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
 
   const [showForgotPwd, setShowForgotPwd] = useState(false);
   const [resetStep, setResetStep] = useState(1); // 1: request, 2: reset
   const [resetCnpj, setResetCnpj] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetMsg, setResetMsg] = useState({ text: "", type: "" });
   const [isResetLoading, setIsResetLoading] = useState(false);
+
+  // Set when an admin signs in from this form and 2FA is required.
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -36,28 +60,44 @@ export function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockUntil && lockUntil > Date.now()) return;
+    setError("");
     try {
       const res = await apiFetch("/api/auth/client/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj, password })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok) {
+        // Admin from the client form, 2FA on → go to the code step.
+        if (data.mfaRequired && data.challengeId) {
+          setMfaChallengeId(data.challengeId);
+          return;
+        }
         if (data.role === "accountant") {
-           localStorage.setItem("accountantToken", data.token);
+           saveSession({
+             kind: "accountant",
+             token: data.token,
+             refreshToken: data.refreshToken,
+             remember: true,
+           });
            navigate("/admin");
            return;
         }
 
-        if (rememberMe) {
-           localStorage.setItem("clientToken", data.token);
-           localStorage.setItem("clientUser", JSON.stringify(data.client));
-        } else {
-           sessionStorage.setItem("clientToken", data.token);
-           sessionStorage.setItem("clientUser", JSON.stringify(data.client));
-        }
-        
+        saveSession({
+          kind: "client",
+          token: data.token,
+          refreshToken: data.refreshToken,
+          remember: rememberMe,
+        });
+        storeClientUser(data.client, rememberMe);
+
         if (data.client.firstAccessDone !== true) {
            navigate("/setup-profile");
         } else {
@@ -84,9 +124,17 @@ export function Login() {
       const data = await res.json();
       if (res.ok) {
         setResetStep(2);
-        setResetMsg({ text: "Código enviado para o e-mail cadastrado.", type: "success" });
+        setResetMsg({
+          text:
+            data.message ||
+            "Se este CNPJ estiver cadastrado com um e-mail, enviamos um código de recuperação.",
+          type: "success",
+        });
       } else {
-        setResetMsg({ text: data.error, type: "error" });
+        setResetMsg({
+          text: data.error || "Não foi possível processar a solicitação.",
+          type: "error",
+        });
       }
     } catch {
       setResetMsg({ text: "Erro no servidor", type: "error" });
@@ -102,7 +150,7 @@ export function Login() {
       const res = await apiFetch("/api/auth/client/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cnpj: resetCnpj, token: resetToken, newPassword: resetNewPassword })
+        body: JSON.stringify({ cnpj: resetCnpj, code: resetCode, newPassword: resetNewPassword })
       });
       const data = await res.json();
       if (res.ok) {
@@ -111,7 +159,7 @@ export function Login() {
           setShowForgotPwd(false);
           setResetStep(1);
           setResetCnpj("");
-          setResetToken("");
+          setResetCode("");
           setResetNewPassword("");
           setResetMsg({ text: "", type: "" });
         }, 2500);
@@ -124,192 +172,223 @@ export function Login() {
     setIsResetLoading(false);
   };
 
-  return (
-    <div className="min-h-screen bg-[#f8fafc] dark:bg-slate-900 flex flex-col relative overflow-hidden transition-colors">
-      <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/10 via-white dark:via-slate-900 to-slate-100/50 dark:to-slate-800/50 -z-0"></div>
-      <div className="flex-1 flex items-center justify-center p-4 z-10">
-        <div className="w-full max-w-md bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-white dark:border-slate-700 p-8">
-          <div className="text-center mb-8 flex flex-col items-center">
-            
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
-                 <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-              </div>
-              <div className="flex flex-col justify-center text-left">
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                  <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-              </div>
-            </div>
+  const field = FIELD;
+  const label = LABEL;
+  const primaryBtn = PRIMARY_BTN;
 
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Portal do Cliente</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Acesse seus documentos e guias contábeis</p>
+  return (
+    <div className="min-h-screen bg-ground lg:grid lg:grid-cols-[1.05fr_1fr] lg:grid-rows-1">
+      {/* Brand panel — desktop only */}
+      <aside className="relative hidden overflow-hidden bg-virgula-primary text-white lg:flex lg:flex-col lg:justify-between lg:p-14">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -bottom-24 -right-16 select-none font-serif text-[26rem] leading-none text-gold/25"
+        >
+          ,
+        </span>
+        <Logo size="lg" onDark />
+        <div className="relative max-w-sm">
+          <h2 className="font-serif text-4xl font-semibold leading-[1.15] text-balance">
+            Suas guias, vencimentos e documentos — num lugar só.
+          </h2>
+          <p className="mt-4 text-sm leading-relaxed text-white/60">
+            O que você deve, quando vence, e se a empresa está regular. Sem
+            planilha, sem e-mail perdido.
+          </p>
+        </div>
+        <p className="relative text-xs text-white/45">Vírgula Contábil · Portal do Cliente</p>
+      </aside>
+
+      {/* Form */}
+      <div className="flex min-h-screen flex-col justify-center px-6 py-12 sm:px-10 lg:min-h-0">
+        <div className="mx-auto w-full max-w-sm">
+          <div className="mb-9 lg:hidden">
+            <Logo size="md" />
           </div>
 
+          <h1 className="font-serif text-2xl font-semibold text-ink">
+            {mfaChallengeId ? "Verificação em duas etapas" : "Entrar no portal"}
+          </h1>
+          <p className="mt-1.5 text-sm text-muted">
+            {mfaChallengeId
+              ? "Digite o código enviado ao e-mail do contador."
+              : "Acesse com o CNPJ da sua empresa."}
+          </p>
+
           {error && (
-            <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm rounded-lg border border-red-100 dark:border-red-800">
+            <div className="mt-6 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">CPF ou CNPJ</label>
-              <input
-                type="text"
-                className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green focus:border-transparent text-sm"
-                placeholder="000.000.000-00 ou 00.000.000/0001-00"
-                value={cnpj}
-                onChange={handleCnpjChange}
-                required
+          {lockUntil && (
+            <RateLimitNotice until={lockUntil} onExpire={() => setLockUntil(null)} />
+          )}
+
+          {mfaChallengeId ? (
+            <div className="mt-7">
+              <MfaCodeForm
+                challengeId={mfaChallengeId}
+                onVerified={() => navigate("/admin")}
+                onCancel={() => setMfaChallengeId(null)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Senha</label>
-              <input
-                type="password"
-                className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green focus:border-transparent text-sm"
-                placeholder="Sua senha"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input 
-                  id="rememberMe" 
-                  type="checkbox" 
-                  className="w-4 h-4 text-virgula-green border-slate-300 rounded focus:ring-virgula-green"
-                  checked={rememberMe}
-                  onChange={e => setRememberMe(e.target.checked)}
+          ) : (
+            <form onSubmit={handleLogin} className="mt-7 space-y-5">
+              <div>
+                <label className={label}>CPF ou CNPJ</label>
+                <input
+                  type="text"
+                  className={field}
+                  placeholder="00.000.000/0001-00"
+                  value={cnpj}
+                  onChange={handleCnpjChange}
+                  autoComplete="username"
+                  required
                 />
-                <label htmlFor="rememberMe" className="ml-2 block text-sm text-slate-600 dark:text-slate-400">
+              </div>
+              <div>
+                <label className={label}>Senha</label>
+                <input
+                  type="password"
+                  className={field}
+                  placeholder="Sua senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-0.5">
+                <label className="flex items-center gap-2 text-sm text-muted select-none">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border-line text-brand focus:ring-brand/40"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
                   Permanecer conectado
                 </label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPwd(true)}
+                  className="text-sm font-medium text-brand hover:text-brand-strong"
+                >
+                  Esqueci a senha
+                </button>
               </div>
-              <button 
-                type="button"
-                onClick={() => setShowForgotPwd(true)}
-                className="text-sm text-virgula-green hover:text-emerald-700 dark:hover:text-emerald-400 font-semibold"
-              >
-                Esqueci minha senha
-              </button>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full bg-slate-900 dark:bg-virgula-green text-white font-bold py-2.5 rounded-lg hover:bg-slate-800 dark:hover:bg-emerald-600 transition-colors shadow-md"
-            >
-              Acessar Plataforma
-            </button>
-            
-            <div className="mt-4 text-center">
-              <button 
-                type="button"
-                onClick={() => navigate('/admin/login')}
-                className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-              >
-                Acesso para Contadores
+              <button type="submit" disabled={!!lockUntil} className={primaryBtn}>
+                {lockUntil ? "Aguarde para tentar de novo" : "Acessar"}
               </button>
-            </div>
-          </form>
+            </form>
+          )}
+
+          <div className="mt-10 border-t border-line pt-5 text-center">
+            <button
+              type="button"
+              onClick={() => navigate("/admin/login")}
+              className="text-xs font-medium text-faint hover:text-muted"
+            >
+              Acesso para contadores
+            </button>
+          </div>
         </div>
       </div>
 
       {showForgotPwd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
-            <button 
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-line bg-surface p-7 shadow-lg">
+            <button
               onClick={() => { setShowForgotPwd(false); setResetStep(1); setResetMsg({ text: "", type: "" }); }}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="absolute right-4 top-4 text-faint transition-colors hover:text-muted"
+              aria-label="Fechar"
             >
               ✕
             </button>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Recuperar Senha</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-              {resetStep === 1 
-                ? "Informe seu CNPJ para receber um código de verificação por e-mail." 
-                : "Informe o código recebido no e-mail e sua nova senha."}
+            <h2 className="font-serif text-xl font-semibold text-ink">Recuperar senha</h2>
+            <p className="mt-1.5 text-sm text-muted">
+              {resetStep === 1
+                ? "Informe seu CNPJ para receber um código por e-mail."
+                : "Informe o código recebido e a nova senha."}
             </p>
 
             {resetMsg.text && (
-              <div className={`mb-6 p-3 text-sm rounded-lg border ${
-                resetMsg.type === "success" 
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800" 
-                  : "bg-red-50 text-red-700 border-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800"
-              }`}>
+              <div
+                className={`mt-5 rounded-lg border px-3.5 py-3 text-sm ${
+                  resetMsg.type === "success"
+                    ? "border-ok/25 bg-ok-wash text-brand-fg"
+                    : "border-danger/25 bg-danger-wash text-danger"
+                }`}
+              >
                 {resetMsg.text}
               </div>
             )}
 
             {resetStep === 1 ? (
-              <form onSubmit={handleForgotPassword} className="space-y-4">
+              <form onSubmit={handleForgotPassword} className="mt-5 space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">CNPJ</label>
+                  <label className={label}>CNPJ</label>
                   <input
                     type="text"
-                    className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green"
+                    className={field}
                     placeholder="00.000.000/0001-00"
                     value={resetCnpj}
                     onChange={(e) => {
                       let v = e.target.value.replace(/\D/g, "");
                       if (v.length > 11) {
-                          v = v.replace(/^(\d{2})(\d)/, "$1.$2");
-                          v = v.replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3");
-                          v = v.replace(/\.(\d{3})(\d)/, ".$1/$2");
-                          v = v.replace(/(\d{4})(\d)/, "$1-$2");
+                        v = v.replace(/^(\d{2})(\d)/, "$1.$2");
+                        v = v.replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3");
+                        v = v.replace(/\.(\d{3})(\d)/, ".$1/$2");
+                        v = v.replace(/(\d{4})(\d)/, "$1-$2");
                       }
                       setResetCnpj(v.substring(0, 18));
                     }}
                     required
                   />
                 </div>
-                <button
-                  type="submit"
-                  disabled={isResetLoading}
-                  className="w-full bg-virgula-green text-white font-bold py-2.5 rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
-                >
-                  {isResetLoading ? "Enviando..." : "Enviar Código"}
+                <button type="submit" disabled={isResetLoading} className={primaryBtn}>
+                  {isResetLoading ? "Enviando..." : "Enviar código"}
                 </button>
               </form>
             ) : (
-              <form onSubmit={handleResetPassword} className="space-y-4">
+              <form onSubmit={handleResetPassword} className="mt-5 space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Código de Verificação</label>
+                  <label className={label}>Código de verificação</label>
                   <input
                     type="text"
-                    className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green text-center text-lg tracking-widest uppercase font-mono"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    className={`${field} text-center font-mono text-lg tracking-[0.4em]`}
                     placeholder="000000"
-                    value={resetToken}
-                    onChange={(e) => setResetToken(e.target.value)}
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Nova Senha</label>
+                  <label className={label}>Nova senha</label>
                   <input
                     type="password"
-                    className="w-full px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-virgula-green"
-                    placeholder="Digite sua nova senha"
+                    minLength={8}
+                    autoComplete="new-password"
+                    className={field}
+                    placeholder="Mínimo de 8 caracteres"
                     value={resetNewPassword}
                     onChange={(e) => setResetNewPassword(e.target.value)}
                     required
                   />
                 </div>
-                <button
-                  type="submit"
-                  disabled={isResetLoading}
-                  className="w-full bg-virgula-green text-white font-bold py-2.5 rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
-                >
-                  {isResetLoading ? "Salvando..." : "Redefinir Senha"}
+                <button type="submit" disabled={isResetLoading} className={primaryBtn}>
+                  {isResetLoading ? "Salvando..." : "Redefinir senha"}
                 </button>
               </form>
             )}
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -318,20 +397,39 @@ export function AccountantLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockUntil && lockUntil > Date.now()) return;
+    setError("");
     try {
       const res = await apiFetch("/api/auth/accountant/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setLockUntil(lockUntilFrom(data?.retryAfter));
+        return;
+      }
       if (res.ok) {
-        localStorage.setItem("accountantToken", data.token);
-        navigate("/admin");
+        if (data.mfaRequired && data.challengeId) {
+          setMfaChallengeId(data.challengeId);
+          return;
+        }
+        if (data.token && data.refreshToken) {
+          saveSession({
+            kind: "accountant",
+            token: data.token,
+            refreshToken: data.refreshToken,
+            remember: true,
+          });
+          navigate("/admin");
+        }
       } else {
         setError(data.error);
       }
@@ -341,66 +439,79 @@ export function AccountantLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900 z-0"></div>
-      <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10 p-8 z-10 mx-4">
-        <div className="text-center mb-8 flex flex-col items-center">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
-               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-            </div>
-            <div className="flex flex-col justify-center text-left">
-                <span className="text-3xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-            </div>
-          </div>
-          <h1 className="text-xl font-bold text-white tracking-tight mt-2">Área do Contador</h1>
-        </div>
+    <div className="flex min-h-screen flex-col justify-center bg-ground px-6 py-12 sm:px-10">
+      <div className="mx-auto w-full max-w-sm">
+        <Logo size="md" />
+
+        <p className="mt-9 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
+          Painel administrativo
+        </p>
+        <h1 className="mt-1.5 font-serif text-2xl font-semibold text-ink">
+          {mfaChallengeId ? "Verificação em duas etapas" : "Área do contador"}
+        </h1>
+        <p className="mt-1.5 text-sm text-muted">
+          {mfaChallengeId
+            ? "Digite o código enviado ao seu e-mail."
+            : "Acesse com suas credenciais administrativas."}
+        </p>
 
         {error && (
-          <div className="mb-6 p-3 bg-red-500/20 border border-red-500/50 text-red-200 text-sm rounded-lg">
+          <div className="mt-6 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-1">Usuário</label>
-            <input
-              type="text"
-              className="w-full px-4 py-2 border border-slate-700 bg-slate-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-1">Senha</label>
-            <input
-              type="password"
-              className="w-full px-4 py-2 border border-slate-700 bg-slate-800/50 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/50"
-          >
-            Entrar
-          </button>
+        {lockUntil && (
+          <RateLimitNotice until={lockUntil} onExpire={() => setLockUntil(null)} />
+        )}
 
-          <div className="mt-4 text-center">
-            <button 
-              type="button"
-              onClick={() => navigate('/login')}
-              className="text-xs text-slate-400 hover:text-slate-200"
-            >
-              Voltar para Área do Cliente
-            </button>
+        {mfaChallengeId ? (
+          <div className="mt-7">
+            <MfaCodeForm
+              challengeId={mfaChallengeId}
+              onVerified={() => navigate("/admin")}
+              onCancel={() => setMfaChallengeId(null)}
+            />
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleLogin} className="mt-7 space-y-5">
+            <div>
+              <label className={LABEL}>Usuário</label>
+              <input
+                type="text"
+                className={FIELD}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div>
+              <label className={LABEL}>Senha</label>
+              <input
+                type="password"
+                className={FIELD}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            <button type="submit" disabled={!!lockUntil} className={PRIMARY_BTN}>
+              {lockUntil ? "Aguarde para tentar de novo" : "Entrar"}
+            </button>
+          </form>
+        )}
+
+        <div className="mt-10 border-t border-line pt-5 text-center">
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            className="text-xs font-medium text-faint hover:text-muted"
+          >
+            Voltar para a área do cliente
+          </button>
+        </div>
       </div>
     </div>
   );

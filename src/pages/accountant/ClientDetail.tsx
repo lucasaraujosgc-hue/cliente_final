@@ -1,4 +1,5 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, openDocument } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
@@ -11,6 +12,9 @@ export function ClientDetail() {
   const [data, setData] = useState<any>(null);
 
   const [editingMsg, setEditingMsg] = useState<any>(null);
+  // Shown exactly once, right after generation — the token is never returned again.
+  const [newIntegrationToken, setNewIntegrationToken] = useState<string | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   const [docFilterCategory, setDocFilterCategory] = useState("");
   const [docFilterOverdue, setDocFilterOverdue] = useState(false);
@@ -110,14 +114,6 @@ export function ClientDetail() {
     }
   };
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
 
 
   const handleDeleteDoc = async (docId: string) => {
@@ -277,7 +273,7 @@ export function ClientDetail() {
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900">{data.client.name}</h1>
-          <p className="text-slate-500 text-xs mt-1">CNPJ: {data.client.cnpj} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600' : 'text-amber-600'}`}>Status: {data.client.regularityStatus}</span></p>
+          <p className="text-slate-500 text-xs mt-1">CNPJ: {formatCnpj(data.client.cnpj)} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600' : 'text-amber-600'}`}>Status: {data.client.regularityStatus}</span></p>
         </div>
       </header>
 
@@ -662,9 +658,9 @@ export function ClientDetail() {
                         <Edit3 className="w-4 h-4" />
                      </button>
                      {doc.fileUrl && (
-                        <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+                        <button onClick={() => openDocument(doc.id, "download", { as: "accountant", filename: doc.title })} title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
                            <Download className="w-4 h-4" />
-                        </a>
+                        </button>
                      )}
                      <button onClick={() => markDocStatus(doc.id, "late")} title="Marcar como Atrasado" className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100">
                         <X className="w-4 h-4" />
@@ -688,14 +684,13 @@ export function ClientDetail() {
 
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden p-6 mt-8">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-800 text-sm">Integração API (Hash da Empresa)</h3>
-          {data.client.integrationHash ? (
-            <button 
+          <h3 className="font-bold text-slate-800 text-sm">Integração API (Token da Empresa)</h3>
+          {data.client.hasIntegrationToken ? (
+            <button
               onClick={async () => {
-                await apiFetch(`/api/accountant/client/${id}/revoke-token`, {
-                  method: "POST",
-                  
-                }, "accountant");
+                if (!window.confirm("Revogar o token? As integrações que o utilizam deixarão de funcionar.")) return;
+                await apiFetch(`/api/accountant/client/${id}/revoke-token`, { method: "POST" }, "accountant");
+                setNewIntegrationToken(null);
                 loadData();
               }}
               className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100"
@@ -703,27 +698,48 @@ export function ClientDetail() {
               Revogar
             </button>
           ) : (
-            <button 
+            <button
               onClick={async () => {
-                await apiFetch(`/api/accountant/client/${id}/generate-token`, {
-                  method: "POST",
-                  
-                }, "accountant");
+                const r = await apiFetch(`/api/accountant/client/${id}/generate-token`, { method: "POST" }, "accountant");
+                const j = await r.json().catch(() => ({}));
+                if (j.token) setNewIntegrationToken(j.token);
+                setTokenCopied(false);
                 loadData();
               }}
               className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800"
             >
-              Gerar Nova Hash
+              Gerar Novo Token
             </button>
           )}
         </div>
-        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-center justify-between">
-           {data.client.integrationHash ? (
-              <code className="text-sm font-mono text-slate-600 select-all">{data.client.integrationHash}</code>
-           ) : (
-              <span className="text-sm text-slate-400">Nenhuma hash ativa. Gere uma para integrar com o sistema principal.</span>
-           )}
-        </div>
+
+        {newIntegrationToken ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-bold text-amber-800">
+              Copie agora — este token não será exibido novamente.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono text-slate-800 select-all break-all flex-1">{newIntegrationToken}</code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(newIntegrationToken);
+                  setTokenCopied(true);
+                }}
+                className="text-xs shrink-0 bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800"
+              >
+                {tokenCopied ? "Copiado!" : "Copiar"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+            <span className="text-sm text-slate-500">
+              {data.client.hasIntegrationToken
+                ? "Token configurado (oculto por segurança). Gere um novo para substituí-lo."
+                : "Nenhum token ativo. Gere um para integrar com o sistema principal."}
+            </span>
+          </div>
+        )}
       </div>
 
       {editingDocId && (

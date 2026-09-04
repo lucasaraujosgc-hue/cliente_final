@@ -1,4 +1,4 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, openDocument } from "../../lib/apiClient";
 import React, { useState, useEffect, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -109,22 +109,10 @@ export function FileGallery() {
     }
   };
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return "";
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
-
-  const downloadFile = (fileUrl: string, title: string) => {
-    const link = document.createElement('a');
-    link.href = getAuthenticatedFileUrl(fileUrl);
-    link.download = title;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const downloadFile = (fileId: string, title: string) => {
+    openDocument(fileId, "download", { as: "accountant", filename: title }).catch((e) =>
+      alert("Erro ao baixar o arquivo: " + e.message),
+    );
   };
 
   const handleBulkDownload = async () => {
@@ -136,18 +124,13 @@ export function FileGallery() {
       
       for (const f of filesToDownload) {
         if (!f.fileUrl) continue;
-        
-        let blob;
-        const authUrl = getAuthenticatedFileUrl(f.fileUrl);
-        if (f.fileUrl.startsWith("data:")) {
-          const res = await apiFetch(f.fileUrl, {}, "accountant");
-          blob = await res.blob();
-        } else {
-          // fetch from server
-          const res = await apiFetch(authUrl, {}, "accountant");
-          blob = await res.blob();
-        }
-        
+
+        // Always go through the authenticated endpoint — it resolves data:
+        // URIs, /uploads files and guia PDFs alike.
+        const res = await apiFetch(`/api/documents/${f.id}/file`, {}, "accountant");
+        if (!res.ok) continue;
+        const blob = await res.blob();
+
         const ext = f.fileUrl.includes('pdf') ? 'pdf' : (f.fileUrl.includes('png') ? 'png' : 'jpg'); // simplified
         const filename = `${f.title}.${ext}`.replace(/[^a-zA-Z0-9.\-_]/g, '_');
         zip.file(filename, blob);
@@ -304,7 +287,7 @@ export function FileGallery() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => file.fileUrl && downloadFile(file.fileUrl, file.title)}
+                        onClick={() => file.fileUrl && downloadFile(file.id, file.title)}
                         disabled={!file.fileUrl}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
                         title="Baixar"
