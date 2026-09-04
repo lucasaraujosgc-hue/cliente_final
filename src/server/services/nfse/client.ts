@@ -442,6 +442,48 @@ export interface DistribuicaoLote {
   raw: any;
 }
 
+// O ADN devolve o envelope LoteDistribuicaoNSUResponse mesmo em HTTP 404/400:
+//   404 + StatusProcessamento=NENHUM_DOCUMENTO_LOCALIZADO (código E2220) = não
+//   há DF-e a partir do NSU informado — resultado NORMAL, não é erro.
+// É falha de verdade só quando o corpo não traz o envelope (transporte/auth
+// devolveu HTML/vazio) ou o HTTP é 5xx / 401 / 403.
+export function loteDFeTemEnvelope(body: any): boolean {
+  if (!body || typeof body !== "object") return false;
+  const statusProc = String(body.StatusProcessamento ?? body.statusProcessamento ?? "").trim();
+  return !!statusProc || Array.isArray(body.LoteDFe) || Array.isArray(body.loteDFe);
+}
+
+export function montarLoteDFe(body: any, nsuInformado: number): DistribuicaoLote {
+  const lote: any[] = Array.isArray(body?.LoteDFe)
+    ? body.LoteDFe
+    : Array.isArray(body?.loteDFe)
+      ? body.loteDFe
+      : [];
+  const docs: DistribuicaoDoc[] = lote.map((d) => {
+    const b64 = d?.ArquivoXml ?? d?.arquivoXml ?? "";
+    return {
+      nsu: Number(d?.NSU ?? d?.nsu ?? 0),
+      chaveAcesso: String(d?.ChaveAcesso ?? d?.chaveAcesso ?? "").trim().toUpperCase() || null,
+      tipoDocumento: String(d?.TipoDocumento ?? d?.tipoDocumento ?? "NENHUM") as TipoDocDistribuicao,
+      tipoEvento: String(d?.TipoEvento ?? d?.tipoEvento ?? "").trim() || null,
+      xml: b64 ? ungzipB64(b64) : "",
+      dataHoraGeracao: String(d?.DataHoraGeracao ?? d?.dataHoraGeracao ?? "").trim() || null,
+    };
+  });
+  const status = String(
+    body?.StatusProcessamento ?? body?.statusProcessamento ?? "NENHUM_DOCUMENTO_LOCALIZADO",
+  ) as DistribuicaoLote["status"];
+  const ultimoNsu = docs.length ? Math.max(...docs.map((x) => x.nsu)) : nsuInformado;
+  return {
+    status,
+    docs: docs.sort((a, b) => a.nsu - b.nsu),
+    ultimoNsu,
+    alertas: extractMensagens(body, "alertas"),
+    erros: extractMensagens(body, "erros"),
+    raw: body,
+  };
+}
+
 // GET /DFe/{NSU}?cnpjConsulta={cnpj}&lote=true — devolve os DF-e com NSU > {NSU}.
 export async function distribuirDFe(
   agent: https.Agent,
@@ -463,7 +505,15 @@ export async function distribuirDFe(
     );
   }
 
-  if (!res.ok && res.status !== 200) {
+  let body: any = {};
+  try {
+    body = res.json();
+  } catch {
+    /* corpo não-JSON — tratado como falha abaixo */
+  }
+
+  const httpFalha = res.status >= 500 || res.status === 401 || res.status === 403;
+  if (httpFalha || !loteDFeTemEnvelope(body)) {
     nfseLog("warn", "distribuicao.http_erro", {
       url,
       httpStatus: res.status,
@@ -479,35 +529,17 @@ export async function distribuirDFe(
       debug: debugFrom(res, url),
     });
   }
-  let body: any = {};
-  try {
-    body = res.json();
-  } catch {
-    /* ignore */
+
+  if (!res.ok) {
+    // HTTP não-2xx mas com envelope válido (tipicamente 404 "nada localizado").
+    nfseLog("info", "distribuicao.sem_documentos", {
+      url,
+      httpStatus: res.status,
+      statusProc: String(body?.StatusProcessamento ?? "").trim(),
+    });
   }
-  const lote: any[] = Array.isArray(body?.LoteDFe) ? body.LoteDFe : Array.isArray(body?.loteDFe) ? body.loteDFe : [];
-  const docs: DistribuicaoDoc[] = lote.map((d) => {
-    const b64 = d?.ArquivoXml ?? d?.arquivoXml ?? "";
-    return {
-      nsu: Number(d?.NSU ?? d?.nsu ?? 0),
-      chaveAcesso: String(d?.ChaveAcesso ?? d?.chaveAcesso ?? "").trim().toUpperCase() || null,
-      tipoDocumento: String(d?.TipoDocumento ?? d?.tipoDocumento ?? "NENHUM") as TipoDocDistribuicao,
-      tipoEvento: String(d?.TipoEvento ?? d?.tipoEvento ?? "").trim() || null,
-      xml: b64 ? ungzipB64(b64) : "",
-      dataHoraGeracao: String(d?.DataHoraGeracao ?? d?.dataHoraGeracao ?? "").trim() || null,
-    };
-  });
-  const status = String(body?.StatusProcessamento ?? body?.statusProcessamento ?? "NENHUM_DOCUMENTO_LOCALIZADO") as
-    DistribuicaoLote["status"];
-  const ultimoNsu = docs.length ? Math.max(...docs.map((x) => x.nsu)) : nsu;
-  return {
-    status,
-    docs: docs.sort((a, b) => a.nsu - b.nsu),
-    ultimoNsu,
-    alertas: extractMensagens(body, "alertas"),
-    erros: extractMensagens(body, "erros"),
-    raw: body,
-  };
+
+  return montarLoteDFe(body, nsu);
 }
 
 // GET /{cod}/{codServico}/{competencia}/aliquota → ResultadoConsultaAliquotas
