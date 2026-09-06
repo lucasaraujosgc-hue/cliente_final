@@ -1,4 +1,5 @@
 import { apiFetch } from "../../lib/apiClient";
+import { isNativeApp, nativePushPermission, nativeEnablePush } from "../../lib/native";
 import React, { useEffect, useState, useRef } from "react";
 import {
   Bell,
@@ -39,14 +40,10 @@ export function ClientDashboard() {
 
   useEffect(() => {
     const checkPushState = async () => {
-      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
-      setIsCapacitorApp(isCapacitor);
-      if (isCapacitor) {
-        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
-        if (PushNotifications) {
-          const status = await PushNotifications.checkPermissions();
-          setPushGranted(status.receive === 'granted');
-        }
+      const native = isNativeApp();
+      setIsCapacitorApp(native);
+      if (native) {
+        setPushGranted((await nativePushPermission()) === "granted");
       } else if ('Notification' in window) {
         setPushGranted(Notification.permission === 'granted');
       }
@@ -156,37 +153,15 @@ export function ClientDashboard() {
 
   const subscribeToPush = async () => {
     try {
-      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
-      
-      let fcmToken = null;
+      const native = isNativeApp();
+
+      let fcmToken: string | null = null;
       let subscriptionObject = null;
 
-      if (isCapacitor) {
-        // Handle Capacitor Mobile Push Notifications (FCM)
-        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
-        if (PushNotifications) {
-          let permStatus = await PushNotifications.checkPermissions();
-          if (permStatus.receive === 'prompt') {
-            permStatus = await PushNotifications.requestPermissions();
-          }
-          if (permStatus.receive !== 'granted') {
-            throw new Error('User denied push permission');
-          }
-          
-          await PushNotifications.register();
-          
-          // Wait for token using a Promise
-          fcmToken = await new Promise((resolve, reject) => {
-            PushNotifications.addListener('registration', (token: any) => {
-              resolve(token.value);
-            });
-            PushNotifications.addListener('registrationError', (error: any) => {
-              reject(error);
-            });
-            // Timeout just in case it doesn't fire
-            setTimeout(() => resolve(null), 5000);
-          });
-        }
+      if (native) {
+        // App: token FCM único (iOS + Android) via @capacitor-firebase/messaging.
+        fcmToken = await nativeEnablePush();
+        if (!fcmToken) throw new Error("Permissão de notificação negada");
       } else if ("serviceWorker" in navigator && "PushManager" in window) {
         // Handle Web Push (PWA/Browser)
         const registration = await navigator.serviceWorker.ready;
@@ -216,26 +191,18 @@ export function ClientDashboard() {
         });
         console.log("Push notifications subscribed!");
       }
-      if (isCapacitor) {
-        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
-        if (PushNotifications) {
-          const status = await PushNotifications.checkPermissions();
-          setPushGranted(status.receive === 'granted');
-        }
-      } else if ('Notification' in window) {
-        setPushGranted(Notification.permission === 'granted');
-      }
+      await refreshPushGranted();
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
-      if (isCapacitorApp) {
-        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
-        if (PushNotifications) {
-          const status = await PushNotifications.checkPermissions();
-          setPushGranted(status.receive === 'granted');
-        }
-      } else if ('Notification' in window) {
-        setPushGranted(Notification.permission === 'granted');
-      }
+      await refreshPushGranted();
+    }
+  };
+
+  const refreshPushGranted = async () => {
+    if (isNativeApp()) {
+      setPushGranted((await nativePushPermission()) === "granted");
+    } else if ("Notification" in window) {
+      setPushGranted(Notification.permission === "granted");
     }
   };
 
@@ -245,25 +212,17 @@ export function ClientDashboard() {
     // Only refresh the push subscription automatically when the user has
     // already granted permission — never prompt on mount. The "Ativar
     // Notificações" button handles the opt-in flow explicitly.
-    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
-    if (!isCapacitor && "Notification" in window && Notification.permission === "granted") {
+    const native = isNativeApp();
+    if (native) {
+      // No app, re-registra em silêncio se já autorizado (o token FCM roda).
+      nativePushPermission().then((p) => {
+        if (p === "granted") subscribeToPush();
+      });
+    } else if ("Notification" in window && Notification.permission === "granted") {
       subscribeToPush();
     }
-
-    const checkPushState = async () => {
-      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
-      setIsCapacitorApp(isCapacitor);
-      if (isCapacitor) {
-        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
-        if (PushNotifications) {
-          const status = await PushNotifications.checkPermissions();
-          setPushGranted(status.receive === 'granted');
-        }
-      } else if ('Notification' in window) {
-        setPushGranted(Notification.permission === 'granted');
-      }
-    };
-    checkPushState();
+    setIsCapacitorApp(native);
+    refreshPushGranted();
   }, []);
 
   function urlBase64ToUint8Array(base64String: string) {

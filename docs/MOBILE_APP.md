@@ -83,30 +83,44 @@ Desktop (md+):                        Mobile (<md):
 
 ## Capacitor
 
-**Não está no repositório.** Verificável:
+**Está no repositório** (desde set/2026). Só o **portal do cliente** — o
+contador continua no navegador. Passo a passo de build/publicação em
+[`docs/MOBILE_BUILD.md`](./MOBILE_BUILD.md).
 
 ```
-$ ls capacitor.config.* android/ ios/     → não existem
-$ grep '@capacitor' package.json          → nada
+capacitor.config.ts     appId br.com.virgulacontabil.portal, webDir ./www
+ios/  android/           projetos nativos (versionados; .gitignore próprio p/ build)
+www/                     bundle web do app — gerado por `npm run build:mobile`, NÃO versionado
 ```
 
-O que existe no código web (detecção defensiva de `window.Capacitor`):
+Scripts (`package.json`):
 
-| Arquivo | Comportamento quando Capacitor está presente |
-|---------|----------------------------------------------|
-| `src/lib/apiClient.ts` `getApiUrl()` | usa base absoluta `https://cliente.virgulacontabil.com.br` em vez de mesma origem |
-| `src/pages/client/Dashboard.tsx` `subscribeToPush()` / `checkPushState()` | usa `window.Capacitor.Plugins.PushNotifications` (FCM): `checkPermissions` → `requestPermissions` → `register` → escuta `registration` → envia `fcmToken` para `POST /api/notifications/subscribe` |
+| Script | O quê |
+|--------|-------|
+| `npm run build:mobile` | `vite build --outDir www` (SPA only) |
+| `npm run cap:sync` | build:mobile + `cap sync` (copia web + atualiza plugins nos 2 SO) |
+| `npm run cap:ios` / `cap:android` | sync + abre Xcode / Android Studio |
 
-Ou seja: o SPA está preparado para rodar dentro de um WebView Capacitor com o
-plugin `@capacitor/push-notifications`, mas o build nativo em si é mantido fora
-(ou ainda `[PLANEJADO]`).
+Plugins: `@capacitor-firebase/messaging` (push FCM iOS+Android), `@capacitor/app`
+(botão voltar / ciclo de vida), `@capacitor/status-bar`, `@capacitor/splash-screen`,
+`@capacitor/keyboard`, `@capacitor/browser`, `@capacitor/filesystem` + `@capacitor/share`
+(abrir/compartilhar PDF no visualizador nativo).
 
-`[PLANEJADO]` para uma futura versão nativa:
-- `capacitor.config.ts` versionado (ou link ao repo que o mantém);
-- plugins: `@capacitor/push-notifications`, `@capacitor/app` (botão voltar),
-  `@capacitor/status-bar`, `@capacitor/splash-screen`, possivelmente
-  `@capacitor/filesystem`/`@capacitor/camera` para upload;
-- `server`/`allowNavigation` apontando para `cliente.virgulacontabil.com.br`.
+Código específico do app:
+
+| Arquivo | Comportamento no app nativo |
+|---------|-----------------------------|
+| `src/lib/native.ts` | `isNativeApp()`, `initNativeShell()` (status bar, splash, botão voltar), `nativeEnablePush()` (token FCM via FirebaseMessaging), `shareNativeBlob()` |
+| `src/lib/apiClient.ts` `getApiUrl()` | base absoluta `https://cliente.virgulacontabil.com.br` (a API é cross-origin) |
+| `src/lib/apiClient.ts` `openDocument()` / `nfse.ts` `viewDanfse()` | grava o PDF no cache e abre pela folha de compartilhamento nativa |
+| `src/main.tsx` | **não** registra o service worker dentro do app |
+| `src/App.tsx` | `/admin/*` redireciona para `/dashboard` no app nativo |
+| `src/pages/client/Dashboard.tsx` | opt-in de push usa `native.ts` (não mais `window.Capacitor.Plugins` cru) |
+| `server.ts` | CORS libera `capacitor://localhost` (iOS) e `https://localhost` (Android) |
+| `vite.config.ts` | alias de `firebase/messaging` → stub (o SDK `firebase` JS não é instalado; push web usa VAPID) |
+
+Não usamos `server.url` — os assets vão **embutidos** no app (App Store implica
+menos com "wrapper de site"). Toda atualização de UI exige nova build/submissão.
 
 ---
 
@@ -146,12 +160,12 @@ plugin `@capacitor/push-notifications`, mas o build nativo em si é mantido fora
 
 ## Botão voltar (Android)
 
-- **Não há handler custom.** Não existe `App.addListener('backButton', ...)` em
-  lugar nenhum do código.
-- Comportamento atual = padrão do WebView/Capacitor: navega no histórico do
-  router e, no topo da pilha, fecha o app.
-- `[PLANEJADO]`: interceptar `backButton` para (a) fechar modais/drawers abertos
-  primeiro, (b) confirmar saída na tela raiz, (c) respeitar as abas.
+- `src/lib/native.ts` `initNativeShell()` registra `App.addListener('backButton', …)`:
+  dispara um `CustomEvent("native-back")` cancelável (uma página pode fechar seu
+  modal/drawer e chamar `preventDefault()`); se ninguém cancelar, `history.back()`;
+  na raiz, `App.exitApp()`.
+- `[PLANEJADO]`: páginas com modal/drawer ainda não escutam o `native-back` —
+  hoje o voltar navega mesmo com modal aberto.
 
 ---
 
@@ -193,14 +207,17 @@ plugin `@capacitor/push-notifications`, mas o build nativo em si é mantido fora
 | Item | Status |
 |------|--------|
 | PWA (manifest + service worker + push web) | ✅ implementado |
-| Push FCM via Capacitor (hooks no SPA) | ✅ no código web (depende do wrapper nativo) |
+| Wrapper Capacitor iOS + Android no repo (só cliente) | ✅ implementado (set/2026) |
+| Push FCM nativo (iOS + Android) via `@capacitor-firebase/messaging` | ✅ implementado (falta o setup Firebase — ver MOBILE_BUILD.md) |
+| Handler do botão voltar do Android (`@capacitor/app`) | ✅ implementado (`src/lib/native.ts`) |
+| Abrir/compartilhar PDF no visualizador nativo | ✅ implementado |
 | Safe-area no `<body>` + viewport-fit=cover | ✅ implementado |
 | Sidebar (contador, desktop) + drawer (contador, mobile) | ✅ implementado |
 | Bottom navigation (cliente, < lg) | ✅ implementado |
 | Sidebar (cliente, ≥ lg) | ✅ implementado |
-| Wrapper Capacitor Android/iOS no repo | ❌ `[PLANEJADO]` |
+| Exclusão de conta in-app (exigência Apple 5.1.1 / Google) | ❌ `[PENDENTE p/ publicar]` — ver MOBILE_BUILD.md §6 |
+| Login biométrico (Face ID / Touch ID) | ❌ `[PLANEJADO]` (reforça o 4.2) |
+| Ícone/splash gerados (`@capacitor/assets`) | ❌ `[PLANEJADO]` |
 | Badge de "atrasados" na bottom nav | ❌ `[PLANEJADO]` |
-| Handler do botão voltar do Android | ❌ `[PLANEJADO]` |
 | Gestos (swipe, pull-to-refresh) | ❌ `[PLANEJADO]` |
-| Captura por câmera no upload | ❌ `[PLANEJADO]` |
-| Padding de safe-area em barra fixa | ❌ `[PLANEJADO]` (quando a bottom nav existir) |
+| Captura por câmera no upload (`@capacitor/camera`) | ❌ `[PLANEJADO]` (strings já no Info.plist) |

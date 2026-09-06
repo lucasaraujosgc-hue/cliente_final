@@ -88,18 +88,25 @@ async function startServer() {
     }),
   );
 
-  const allowedOrigins = corsOrigins();
+  // Origins fixas do WebView do app nativo (Capacitor). Não são alcançáveis por
+  // um browser real e a API é Bearer-only (sem cookie de sessão), então liberar
+  // é seguro e evita que um CORS_ORIGINS incompleto quebre o app.
+  //   iOS      → capacitor://localhost
+  //   Android  → https://localhost   (androidScheme padrão do Capacitor)
+  const CAPACITOR_ORIGINS = ["capacitor://localhost", "https://localhost"];
+  const allowedOrigins = [...corsOrigins(), ...CAPACITOR_ORIGINS];
   app.use(
     cors({
-      // Explicit allow-list when configured. Otherwise reflect any origin in
-      // dev only; in production deny cross-origin outright. validateEnv()
-      // already refuses to boot in production without CORS_ORIGINS — this is
-      // just a backstop so a misconfig can never open the API to every origin.
+      // Explicit allow-list when configured (always includes the Capacitor
+      // origins). Otherwise reflect any origin in dev only; in production deny
+      // cross-origin outright. validateEnv() already refuses to boot in
+      // production without CORS_ORIGINS — this is just a backstop so a misconfig
+      // can never open the API to every origin.
       origin:
-        allowedOrigins.length > 0
+        corsOrigins().length > 0
           ? allowedOrigins
           : process.env.NODE_ENV === "production"
-            ? false
+            ? CAPACITOR_ORIGINS
             : true,
       credentials: true,
     }),

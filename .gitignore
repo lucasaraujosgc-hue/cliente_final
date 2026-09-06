@@ -10,3 +10,14 @@ coverage/
 # local scratch / tooling
 tmp-preview.cjs
 .claude/settings.local.json
+
+# Capacitor — web bundle gerado p/ o app + assets sincronizados nos projetos
+# nativos (regenerados por `npm run cap:sync`). Os projetos ios/ e android/ em
+# si SÃO versionados (têm .gitignore próprio p/ Pods, .gradle, build, etc.).
+www/
+/ios/App/App/public/
+/ios/App/App/capacitor.config.json
+/ios/App/App/GoogleService-Info.plist
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/google-services.json

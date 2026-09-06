@@ -8,6 +8,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { ThemeProvider } from "next-themes";
 import { ClientLayout, AccountantLayout } from "./components/Layouts";
 import { ClientDashboardSkeleton } from "./components/Skeleton";
+import { isNativeApp } from "./lib/native";
+
+// O app nativo (Capacitor) é SÓ o portal do cliente. As telas do contador
+// continuam no bundle (mesmo SPA) mas ficam inacessíveis dentro do app.
+const NATIVE = isNativeApp();
 
 // Route components are code-split so heavy libs (recharts, xlsx, pdfjs-dist,
 // firebase) only load on the pages that actually use them. Named exports, so
@@ -46,7 +51,10 @@ export default function App() {
             {/* Auth */}
             <Route path="/login" element={<Login />} />
             <Route path="/setup-profile" element={<SetupProfile />} />
-            <Route path="/admin/login" element={<AccountantLogin />} />
+            <Route
+              path="/admin/login"
+              element={NATIVE ? <Navigate to="/login" replace /> : <AccountantLogin />}
+            />
 
             {/* Client Routes */}
             <Route element={<ClientLayout />}>
@@ -58,8 +66,11 @@ export default function App() {
               <Route path="/nfse" element={<ClientNfse />} />
             </Route>
 
-            {/* Accountant Routes */}
-            <Route path="/admin" element={<AccountantLayout />}>
+            {/* Accountant Routes — bloqueadas no app nativo (só cliente) */}
+            <Route
+              path="/admin"
+              element={NATIVE ? <Navigate to="/dashboard" replace /> : <AccountantLayout />}
+            >
               <Route index element={<AccountantDashboard />} />
               <Route path="nfse" element={<AccountantNfse />} />
               <Route path="clients" element={<ClientsList />} />

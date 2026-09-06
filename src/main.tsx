@@ -2,8 +2,12 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import {isNativeApp, initNativeShell} from './lib/native';
 
-if ('serviceWorker' in navigator) {
+// Service worker: só no navegador/PWA. Dentro do app Capacitor o SW atrapalha
+// a bridge nativa e pode servir versão velha do bundle — o app já vem com os
+// assets embutidos e usa push nativo (FCM), não o SW.
+if ('serviceWorker' in navigator && !isNativeApp()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(registration => {
       console.log('SW registered: ', registration);
@@ -12,6 +16,9 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+// Shell nativo (status bar, splash, botão voltar) — no-op no navegador.
+void initNativeShell();
 
 // Session handling lives in src/lib/apiClient.ts: apiFetch transparently
 // refreshes an expired access token and retries, and only dispatches the

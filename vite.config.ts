@@ -9,6 +9,12 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        // @capacitor-firebase/messaging só é usado no app nativo (guardado por
+        // isNativeApp()). Sua camada WEB importa "firebase/messaging"; como não
+        // instalamos o SDK `firebase` (push web usa VAPID), apontamos para um
+        // stub para o bundle não quebrar. Ver src/lib/firebase-messaging-web-stub.ts.
+        'firebase/messaging': path.resolve(__dirname, 'src/lib/firebase-messaging-web-stub.ts'),
+        'firebase/app': path.resolve(__dirname, 'src/lib/firebase-messaging-web-stub.ts'),
       },
     },
     build: {

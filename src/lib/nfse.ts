@@ -359,6 +359,10 @@ export async function fetchDanfseBlob(id: string): Promise<Blob> {
 
 export async function viewDanfse(id: string, numero?: string | null): Promise<void> {
   const blob = await fetchDanfseBlob(id);
+  const { isNativeApp, shareNativeBlob } = await import("./native");
+  if (isNativeApp()) {
+    if (await shareNativeBlob(blob, `NFSe-${numero || id}.pdf`)) return;
+  }
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank", "noopener");
   setTimeout(() => URL.revokeObjectURL(url), 60_000);

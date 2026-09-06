@@ -293,6 +293,17 @@ export const openDocument = async (
   );
   if (!res.ok) throw new Error(`Falha ao obter o documento (${res.status})`);
   const blob = await res.blob();
+
+  // App nativo: WKWebView não abre blob: em aba nova nem dispara <a download>.
+  // Grava no cache e entrega pela folha de compartilhamento do sistema (que
+  // também tem "abrir em..." / visualizar PDF).
+  const { isNativeApp, shareNativeBlob } = await import("./native");
+  if (isNativeApp()) {
+    const ok = await shareNativeBlob(blob, opts.filename || "documento.pdf");
+    if (ok) return;
+    // se falhar, cai no fluxo web abaixo
+  }
+
   const url = URL.createObjectURL(blob);
   try {
     if (action === "view") {
