@@ -32,8 +32,19 @@ const CHAVE_B = "29293052" + "98765432000100" + "0".repeat(28);
 const DRIZZLE = path.join(process.cwd(), "drizzle");
 const journal = JSON.parse(fs.readFileSync(path.join(DRIZZLE, "meta", "_journal.json"), "utf8"));
 
-function nfseXml(chave: string, n: string, vServ: string) {
-  return `<?xml version="1.0" encoding="UTF-8"?><NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infNFSe Id="NFS${chave}"><nNFSe>${n}</nNFSe><cStat>100</cStat><dhProc>2026-09-01T10:00:00-03:00</dhProc><emit><CNPJ>52613515000160</CNPJ></emit><toma><CNPJ>07252858000192</CNPJ><xNome>Tomador X</xNome></toma><serv><cServ><xDescServ>Serviço</xDescServ></cServ></serv><valores><vServPrest><vServ>${vServ}</vServ></vServPrest><dCompet>2026-09-01</dCompet></valores></infNFSe></NFSe>`;
+function nfseXml(
+  chave: string,
+  n: string,
+  vServ: string,
+  parts: { prestDoc?: string; prestNome?: string; tomaDoc?: string; tomaNome?: string } = {},
+) {
+  const {
+    prestDoc = "52613515000160",
+    prestNome = "VIRGULA CONTABIL LTDA",
+    tomaDoc = "07252858000192",
+    tomaNome = "Tomador X",
+  } = parts;
+  return `<?xml version="1.0" encoding="UTF-8"?><NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infNFSe Id="NFS${chave}"><nNFSe>${n}</nNFSe><cStat>100</cStat><dhProc>2026-09-01T10:00:00-03:00</dhProc><emit><CNPJ>${prestDoc}</CNPJ><xNome>${prestNome}</xNome></emit><toma><CNPJ>${tomaDoc}</CNPJ><xNome>${tomaNome}</xNome></toma><serv><cServ><xDescServ>Serviço</xDescServ></cServ></serv><valores><vServPrest><vServ>${vServ}</vServ></vServPrest><dCompet>2026-09-01</dCompet></valores></infNFSe></NFSe>`;
 }
 
 beforeAll(async () => {
@@ -78,11 +89,12 @@ describe("sincronizarDistribuicao", () => {
 
     const r = await sincronizarDistribuicao(CLIENT_ID);
     expect(r.novas).toBe(2);
+    expect(r.novasTomadas).toBe(0);
     expect(r.ultimoNsu).toBe(11);
 
     const rows = await testDb.select().from(nfseEmissoes).where(eq(nfseEmissoes.clientId, CLIENT_ID));
     expect(rows).toHaveLength(2);
-    expect(rows.every((x) => x.origem === "distribuicao" && x.status === "emitida")).toBe(true);
+    expect(rows.every((x) => x.origem === "distribuicao" && x.status === "emitida" && x.papel === "prestador")).toBe(true);
     const a = rows.find((x) => x.chaveAcesso === CHAVE_A)!;
     expect(a.valorServicos).toBe(10000);
     expect(a.numeroNota).toBe("5");
@@ -139,5 +151,33 @@ describe("sincronizarDistribuicao", () => {
     expect(r.eventos).toBe(1);
     const [row] = await testDb.select().from(nfseEmissoes).where(and(eq(nfseEmissoes.clientId, CLIENT_ID), eq(nfseEmissoes.chaveAcesso, CHAVE_A)));
     expect(row.status).toBe("cancelada");
+  });
+
+  it("classifica como 'tomador' quando o CNPJ do cliente é o tomador da nota", async () => {
+    // cert.certCnpj = 52613515000160. Aqui ele aparece como TOMADOR.
+    const xml = nfseXml(CHAVE_A, "9", "300.00", {
+      prestDoc: "11222333000181",
+      prestNome: "PRESTADOR EXTERNO LTDA",
+      tomaDoc: "52613515000160",
+      tomaNome: "VIRGULA CONTABIL LTDA",
+    });
+    distribuir.mockResolvedValueOnce({
+      status: "DOCUMENTOS_LOCALIZADOS",
+      docs: [{ nsu: 40, chaveAcesso: CHAVE_A, tipoDocumento: "NFSE", tipoEvento: null, xml, dataHoraGeracao: null }],
+      ultimoNsu: 40,
+      alertas: [],
+      erros: [],
+      raw: {},
+    });
+    distribuir.mockResolvedValueOnce({ status: "NENHUM_DOCUMENTO_LOCALIZADO", docs: [], ultimoNsu: 40, alertas: [], erros: [], raw: {} });
+
+    const r = await sincronizarDistribuicao(CLIENT_ID);
+    expect(r.novas).toBe(1);
+    expect(r.novasTomadas).toBe(1);
+
+    const [row] = await testDb.select().from(nfseEmissoes).where(eq(nfseEmissoes.clientId, CLIENT_ID));
+    expect(row.papel).toBe("tomador");
+    expect(row.prestadorDoc).toBe("11222333000181");
+    expect(row.prestadorNome).toBe("PRESTADOR EXTERNO LTDA");
   });
 });

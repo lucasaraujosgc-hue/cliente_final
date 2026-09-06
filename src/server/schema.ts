@@ -234,6 +234,10 @@ export const nfseEmissoes = pgTable('nfse_emissoes', {
   status: text('status').notNull().default('rascunho'),
   // 'sistema' = emitida por aqui | 'distribuicao' = recebida do ADN (portal nacional)
   origem: text('origem').default('sistema').notNull(),
+  // Papel do cliente NESTA nota: 'prestador' (serviço prestado — o padrão, e sempre
+  // que origem='sistema') | 'tomador' (serviço tomado — a nota veio da distribuição
+  // e o CNPJ do cliente é o tomador) | 'intermediario'.
+  papel: text('papel').default('prestador').notNull(),
   nsu: bigint('nsu', { mode: 'number' }), // NSU da distribuição (quando origem='distribuicao')
   ambiente: text('ambiente'), // homologacao | producao (fixado no momento da emissão)
   // Resposta da Sefin Nacional (Swagger: NFSePostResponseSucesso / *Erro).
@@ -246,6 +250,8 @@ export const nfseEmissoes = pgTable('nfse_emissoes', {
   aliquotaIss: real('aliquota_iss'),
   valorIss: integer('valor_iss'), // centavos
   descricao: text('descricao'),
+  prestadorDoc: text('prestador_doc'), // CPF/CNPJ de quem prestou (preenchido nas notas tomadas)
+  prestadorNome: text('prestador_nome'),
   tomadorDoc: text('tomador_doc'), // CPF/CNPJ do tomador (dígitos)
   tomadorNome: text('tomador_nome'),
   tomadorEmail: text('tomador_email'),

@@ -80,6 +80,9 @@ export function nfseEmissaoListDTO(e: NfseEmissaoRow) {
     id: e.id,
     status: e.status,
     origem: e.origem, // 'sistema' | 'distribuicao'
+    papel: e.papel, // 'prestador' | 'tomador' | 'intermediario'
+    prestadorNome: e.prestadorNome ?? null,
+    prestadorDoc: e.prestadorDoc ?? null,
     tomadorNome: e.tomadorNome ?? null,
     tomadorDoc: e.tomadorDoc ?? null,
     valorServicos: e.valorServicos ?? null,

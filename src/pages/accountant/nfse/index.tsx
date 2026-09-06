@@ -196,7 +196,9 @@ function EmissoesTab() {
                   {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-slate-800 dark:text-white">
-                      {e.tomadorNome || e.tomadorDoc || "—"}
+                      {e.papel === "tomador"
+                        ? e.prestadorNome || e.prestadorDoc || "—"
+                        : e.tomadorNome || e.tomadorDoc || "—"}
                     </p>
                     <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
                       <span>
@@ -204,7 +206,12 @@ function EmissoesTab() {
                         {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
                         {e.ambiente ? ` · ${e.ambiente}` : ""}
                       </span>
-                      {e.origem === "distribuicao" && (
+                      {e.papel === "tomador" && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          serviço tomado
+                        </span>
+                      )}
+                      {e.origem === "distribuicao" && e.papel !== "tomador" && (
                         <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
                           portal nacional
                         </span>

@@ -71,6 +71,13 @@
       "when": 1788319200000,
       "tag": "0009_nfse_distribuicao",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788683252382,
+      "tag": "0010_nfse_papel_tomador",
+      "breakpoints": true
     }
   ]
 }

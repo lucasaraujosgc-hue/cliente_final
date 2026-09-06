@@ -21,6 +21,9 @@ export interface NfseEmissao {
   id: string;
   status: string;
   origem: "sistema" | "distribuicao";
+  papel: "prestador" | "tomador" | "intermediario";
+  prestadorNome: string | null;
+  prestadorDoc: string | null;
   tomadorNome: string | null;
   tomadorDoc: string | null;
   valorServicos: number | null; // centavos
@@ -176,6 +179,13 @@ export async function listEmissoes(): Promise<NfseEmissao[]> {
   return data.emissoes || [];
 }
 
+// NFS-e de serviço tomado (o cliente é o tomador), trazidas do portal nacional.
+export async function listTomados(): Promise<NfseEmissao[]> {
+  const res = await apiFetch("/api/nfse/tomados");
+  const data = await res.json();
+  return data.tomados || [];
+}
+
 export async function getEmissao(id: string): Promise<NfseEmissaoDetail> {
   const res = await apiFetch(`/api/nfse/emissoes/${id}`);
   const data = await res.json();
@@ -272,6 +282,7 @@ export async function sincronizarEmissao(id: string): Promise<SincronizarResult>
 export interface DistribuicaoResult {
   ok: boolean;
   novas?: number;
+  novasTomadas?: number;
   atualizadas?: number;
   eventos?: number;
   ultimoNsu?: number;

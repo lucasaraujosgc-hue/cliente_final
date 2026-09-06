@@ -44,6 +44,7 @@ export {
 
 export {
   listEmissoes,
+  listEmissoesTomadas,
   getEmissao,
   listAllEmissoes,
   getEmissaoById,

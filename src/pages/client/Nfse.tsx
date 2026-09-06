@@ -15,6 +15,7 @@ import {
   getNfseStatus,
   getNfseAtividades,
   listEmissoes,
+  listTomados,
   getEmissao,
   viewDanfse,
   shareDanfse,
@@ -33,6 +34,8 @@ import { EmitWizard, type WizardPrefill } from "./nfse/EmitWizard";
 export function ClientNfse() {
   const [status, setStatus] = useState<NfseStatus | null>(null);
   const [emissoes, setEmissoes] = useState<NfseEmissao[]>([]);
+  const [tomados, setTomados] = useState<NfseEmissao[]>([]);
+  const [tab, setTab] = useState<"emitidas" | "tomados">("emitidas");
   const [atividades, setAtividades] = useState<NfseAtividadeCliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState<{ open: boolean; prefill: WizardPrefill | null }>({
@@ -53,11 +56,15 @@ export function ClientNfse() {
       } else if ((r.novas ?? 0) + (r.atualizadas ?? 0) + (r.eventos ?? 0) === 0) {
         setFlash("Nenhuma nota nova no portal nacional.");
       } else {
-        setFlash(
-          `Portal nacional: ${r.novas ?? 0} nota(s) nova(s)` +
-            ((r.eventos ?? 0) ? `, ${r.eventos} atualização(ões)` : "") +
-            ".",
-        );
+        const novas = r.novas ?? 0;
+        const tomadas = r.novasTomadas ?? 0;
+        const prestadas = novas - tomadas;
+        const partes: string[] = [];
+        if (prestadas > 0) partes.push(`${prestadas} emitida(s)`);
+        if (tomadas > 0) partes.push(`${tomadas} de serviço tomado`);
+        if (r.eventos) partes.push(`${r.eventos} atualização(ões)`);
+        setFlash(`Portal nacional: ${partes.join(" · ")}.`);
+        if (tomadas > 0 && prestadas === 0) setTab("tomados");
         await load();
       }
     } finally {
@@ -69,11 +76,13 @@ export function ClientNfse() {
     const s = await getNfseStatus().catch(() => null);
     setStatus(s);
     if (s?.enabled) {
-      const [e, a] = await Promise.all([
+      const [e, t, a] = await Promise.all([
         listEmissoes().catch(() => []),
+        listTomados().catch(() => []),
         getNfseAtividades().catch(() => []),
       ]);
       setEmissoes(e);
+      setTomados(t);
       setAtividades(a);
     }
     setLoading(false);
@@ -242,6 +251,94 @@ export function ClientNfse() {
         <p className="rounded-lg border border-line bg-sunken px-4 py-2.5 text-sm text-muted">{flash}</p>
       )}
 
+      <div className="flex gap-1 rounded-xl border border-line bg-sunken p-1 text-sm font-semibold">
+        {([
+          ["emitidas", "Notas emitidas", emissoes.length],
+          ["tomados", "Serviços tomados", tomados.length],
+        ] as const).map(([key, label, n]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={
+              "flex-1 rounded-lg px-3 py-2 transition " +
+              (tab === key ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")
+            }
+          >
+            {label}
+            {n > 0 && <span className="ml-1.5 text-xs font-bold text-faint">{n}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "tomados" && (
+        <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+          <header className="border-b border-line px-5 py-4">
+            <h2 className="font-serif text-base font-semibold text-ink">Serviços tomados</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              NFS-e em que a sua empresa é a tomadora, trazidas do portal nacional. Somente leitura.
+            </p>
+          </header>
+          {tomados.length === 0 ? (
+            <div className="px-5 py-14 text-center">
+              <FileText className="mx-auto size-8 text-faint" strokeWidth={1.6} />
+              <p className="mt-3 text-sm font-semibold text-ink">Nenhum serviço tomado</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted">
+                Notas emitidas contra o seu CNPJ por prestadores aparecem aqui depois de
+                "Buscar no portal nacional".
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-line">
+              {tomados.map((e) => {
+                const s = nfseStatusLabel(e.status);
+                return (
+                  <li key={e.id} className="px-5 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">
+                          {e.prestadorNome || (e.prestadorDoc ? formatCnpj(e.prestadorDoc) : "—")}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {new Date(e.dataEmissao || e.createdAt).toLocaleDateString("pt-BR")}
+                          {e.numeroNota ? ` · nº ${e.numeroNota}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-ink tabular-nums">
+                          {centavosToBRL(e.valorServicos)}
+                        </span>
+                        <span
+                          className={
+                            "rounded-full px-2 py-0.5 text-[11px] font-bold " +
+                            (s.tone === "ok"
+                              ? "bg-ok-wash text-brand-fg"
+                              : s.tone === "muted"
+                                ? "bg-sunken text-muted"
+                                : "bg-warn-wash text-warn")
+                          }
+                        >
+                          {e.status === "cancelada" ? "Cancelada" : "Recebida"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <button
+                        disabled={busyId === e.id}
+                        onClick={() => doView(e)}
+                        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-sunken disabled:opacity-50"
+                      >
+                        <Eye className="size-3.5" /> Ver PDF
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {tab === "emitidas" && (
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <header className="border-b border-line px-5 py-4">
           <h2 className="font-serif text-base font-semibold text-ink">Notas emitidas</h2>
@@ -354,6 +451,7 @@ export function ClientNfse() {
           </ul>
         )}
       </section>
+      )}
     </div>
   );
 }

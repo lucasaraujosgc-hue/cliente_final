@@ -23,6 +23,7 @@ import {
 import {
   nfseStatusForClient,
   listEmissoes,
+  listEmissoesTomadas,
   getEmissao,
   getEmissaoById,
   listAllEmissoes,
@@ -130,6 +131,13 @@ export function registerNfseRoutes(app: Express) {
   app.get("/api/nfse/emissoes", verifyClientAuth, async (req, res) => {
     const rows = await listEmissoes(getClientId(req));
     res.json({ emissoes: rows.map(nfseEmissaoListDTO) });
+  });
+
+  // NFS-e de serviço TOMADO (o cliente é o tomador) — trazidas da distribuição
+  // do portal nacional. Somente leitura.
+  app.get("/api/nfse/tomados", verifyClientAuth, async (req, res) => {
+    const rows = await listEmissoesTomadas(getClientId(req));
+    res.json({ tomados: rows.map(nfseEmissaoListDTO) });
   });
 
   app.get("/api/nfse/emissoes/:id", verifyClientAuth, async (req, res) => {

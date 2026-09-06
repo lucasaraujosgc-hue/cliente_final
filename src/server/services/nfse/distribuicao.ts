@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { nfseConfig, nfseEmissoes } from "../../schema";
-import { normalizeInscricao } from "./inscricao";
+import { normalizeInscricao, inscricaoRaizMatches } from "./inscricao";
 import { loadClientCertContext } from "./cert";
 import { contribuintesBase, distribuirDFe, type Ambiente, type DistribuicaoDoc } from "./client";
 import { parseNfseXml } from "./nfseXml";
@@ -27,21 +27,41 @@ const EVENTOS_CANCELAMENTO = new Set([
 ]);
 
 export interface SincronizacaoResultado {
-  novas: number;
+  novas: number; // total de NFS-e novas (prestadas + tomadas)
+  novasTomadas: number; // quantas das novas são serviço TOMADO
   atualizadas: number;
   eventos: number;
   ultimoNsu: number;
   lotes: number;
 }
 
+// De qual lado o CNPJ do cliente está nesta NFS-e. A distribuição do ADN entrega
+// tanto notas em que ele é o prestador quanto notas em que ele é o tomador.
+export function papelDoCliente(
+  cnpjCliente: string,
+  prestadorDoc: string | null,
+  tomadorDoc: string | null,
+): "prestador" | "tomador" {
+  const meu = normalizeInscricao(cnpjCliente);
+  const pres = normalizeInscricao(prestadorDoc || "");
+  const toma = normalizeInscricao(tomadorDoc || "");
+  const bate = (a: string, b: string) => !!a && !!b && (a === b || inscricaoRaizMatches(a, b));
+  if (bate(meu, pres)) return "prestador";
+  if (bate(meu, toma)) return "tomador";
+  return "prestador"; // não deu para casar — trata como prestada (comportamento antigo)
+}
+
 async function upsertNfseRecebida(
   clientId: string,
   ambiente: string,
+  cnpjCliente: string,
   doc: DistribuicaoDoc,
-): Promise<"nova" | "atualizada" | "ignorada"> {
+): Promise<{ resultado: "nova" | "atualizada" | "ignorada"; papel: "prestador" | "tomador" }> {
   const info = parseNfseXml(doc.xml);
   const chave = (doc.chaveAcesso || info.chaveAcesso || "").toUpperCase();
-  if (!chave) return "ignorada";
+  if (!chave) return { resultado: "ignorada", papel: "prestador" };
+
+  const papel = papelDoCliente(cnpjCliente, info.prestadorDoc, info.tomadorDoc);
 
   const [existente] = await db
     .select()
@@ -49,17 +69,25 @@ async function upsertNfseRecebida(
     .where(and(eq(nfseEmissoes.clientId, clientId), eq(nfseEmissoes.chaveAcesso, chave)));
 
   if (existente) {
-    // Já temos essa nota (emitida por aqui ou já distribuída). Só amarra o NSU
-    // e completa o XML da NFS-e se faltava.
+    // Já temos essa nota (emitida por aqui ou já distribuída). Amarra o NSU e
+    // completa o XML se faltava. Só reclassifica o papel / partes quando a linha
+    // veio da distribuição — uma emissão do sistema é sempre 'prestador'.
     await db
       .update(nfseEmissoes)
       .set({
         nsu: doc.nsu,
         xmlNfse: existente.xmlNfse || doc.xml || null,
+        ...(existente.origem === "distribuicao"
+          ? {
+              papel,
+              prestadorDoc: info.prestadorDoc ? normalizeInscricao(info.prestadorDoc) : null,
+              prestadorNome: info.prestadorNome,
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(nfseEmissoes.id, existente.id));
-    return "atualizada";
+    return { resultado: "atualizada", papel: existente.origem === "distribuicao" ? papel : "prestador" };
   }
 
   const vServ = Number(String(info.valorServico || "").replace(",", "."));
@@ -67,11 +95,14 @@ async function upsertNfseRecebida(
     clientId,
     status: "emitida",
     origem: "distribuicao",
+    papel,
     nsu: doc.nsu,
     ambiente,
     competencia: info.competencia,
     valorServicos: Number.isFinite(vServ) ? Math.round(vServ * 100) : null,
     descricao: info.descServico,
+    prestadorDoc: info.prestadorDoc ? normalizeInscricao(info.prestadorDoc) : null,
+    prestadorNome: info.prestadorNome,
     tomadorDoc: info.tomadorDoc ? normalizeInscricao(info.tomadorDoc) : null,
     tomadorNome: info.tomadorNome,
     numeroNota: info.numeroNota,
@@ -80,7 +111,7 @@ async function upsertNfseRecebida(
     dataEmissao: info.dhProc ? new Date(info.dhProc) : doc.dataHoraGeracao ? new Date(doc.dataHoraGeracao) : null,
     xmlNfse: doc.xml || null,
   });
-  return "nova";
+  return { resultado: "nova", papel };
 }
 
 async function aplicarEvento(clientId: string, doc: DistribuicaoDoc): Promise<boolean> {
@@ -120,7 +151,14 @@ export async function sincronizarDistribuicao(
 
   // reiniciar=true varre desde o NSU 0 (diagnóstico / troca de ambiente).
   let nsu = opts.reiniciar ? 0 : (config.ultimoNsu ?? 0);
-  const res: SincronizacaoResultado = { novas: 0, atualizadas: 0, eventos: 0, ultimoNsu: nsu, lotes: 0 };
+  const res: SincronizacaoResultado = {
+    novas: 0,
+    novasTomadas: 0,
+    atualizadas: 0,
+    eventos: 0,
+    ultimoNsu: nsu,
+    lotes: 0,
+  };
 
   nfseLog("info", "distribuicao.inicio", {
     clientId,
@@ -143,9 +181,11 @@ export async function sincronizarDistribuicao(
     for (const doc of lote.docs) {
       try {
         if (doc.tipoDocumento === "NFSE" && doc.xml) {
-          const r = await upsertNfseRecebida(clientId, ambiente, doc);
-          if (r === "nova") res.novas++;
-          else if (r === "atualizada") res.atualizadas++;
+          const r = await upsertNfseRecebida(clientId, ambiente, cnpj, doc);
+          if (r.resultado === "nova") {
+            res.novas++;
+            if (r.papel === "tomador") res.novasTomadas++;
+          } else if (r.resultado === "atualizada") res.atualizadas++;
         } else if (doc.tipoDocumento === "EVENTO") {
           if (await aplicarEvento(clientId, doc)) res.eventos++;
         }

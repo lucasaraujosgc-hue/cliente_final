@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../../db";
 import { nfseEmissoes } from "../../schema";
 import type { NfseEmissaoRow } from "../../types";
@@ -7,12 +7,25 @@ import { NfseError } from "./errors";
 // Read side of the emissões table. The write side (emitir / cancelar) lives in
 // services/nfse/emitir.ts once the DPS build + signature land (plano fase 3–4).
 
+// "Notas emitidas" do cliente = notas em que ele é prestador/intermediário. As
+// notas TOMADAS (papel='tomador', vindas da distribuição) saem em listagem
+// própria — listEmissoesTomadas.
 export async function listEmissoes(clientId: string, limit = 100): Promise<NfseEmissaoRow[]> {
   return db
     .select()
     .from(nfseEmissoes)
-    .where(eq(nfseEmissoes.clientId, clientId))
+    .where(and(eq(nfseEmissoes.clientId, clientId), ne(nfseEmissoes.papel, "tomador")))
     .orderBy(desc(nfseEmissoes.createdAt))
+    .limit(limit);
+}
+
+// NFS-e de serviço TOMADO — o cliente é o tomador. Só vêm da distribuição do ADN.
+export async function listEmissoesTomadas(clientId: string, limit = 100): Promise<NfseEmissaoRow[]> {
+  return db
+    .select()
+    .from(nfseEmissoes)
+    .where(and(eq(nfseEmissoes.clientId, clientId), eq(nfseEmissoes.papel, "tomador")))
+    .orderBy(desc(nfseEmissoes.dataEmissao), desc(nfseEmissoes.createdAt))
     .limit(limit);
 }
 
