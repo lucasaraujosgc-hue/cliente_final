@@ -93,7 +93,7 @@ export function ClientVault() {
     if (!doc.dueDate) return { text: "Pendente", tone: "warn" };
     const parsedDue = parseDueDate(doc.dueDate);
     if (!parsedDue) return { text: "Pendente", tone: "warn" };
-    const diff = differenceInDays(parsedDue, new Date(2026, 5, 22));
+    const diff = differenceInDays(parsedDue, new Date());
     if (diff < 0) return { text: `Atrasada ${Math.abs(diff)}d`, tone: "danger" };
     if (diff <= 4) return { text: `Vence em ${diff}d`, tone: "warn" };
     return { text: "Pendente", tone: "muted" };
@@ -188,7 +188,10 @@ export function ClientVault() {
                     <p className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted tabular-nums">
                       <span>{format(parseISO(doc.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
                       {activeTab === "received" && <span>· {doc.competence || "todas as competências"}</span>}
-                      {doc.dueDate && activeTab === "received" && <span className="text-ink">· vence {doc.dueDate}</span>}
+                      {doc.dueDate && activeTab === "received" && (() => {
+                        const dd = parseDueDate(doc.dueDate);
+                        return <span className="text-ink">· vence {dd ? format(dd, "dd/MM/yyyy", { locale: ptBR }) : doc.dueDate}</span>;
+                      })()}
                     </p>
                   </div>
                 </div>
