@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X, Bell, AlertCircle, Smartphone } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History, Receipt, FileText } from "lucide-react";
 import { cn } from "../lib/utils";
+import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
+import { Logo } from "./Logo";
+
+const CHROME_FIELD =
+  "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
+const CHROME_LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted mb-1.5";
 
 export function ClientLayout() {
-  const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+  const token = hasSession("client");
   let user: any = {};
   try {
     user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
@@ -16,9 +22,6 @@ export function ClientLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  
   // Password Change Modal State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [emailForm, setEmailForm] = useState(user.email || "");
@@ -28,50 +31,52 @@ export function ClientLayout() {
   const [modalSuccess, setModalSuccess] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const handleLogout = () => {
+    void logout("client");
+    try {
+      localStorage.removeItem("clientUser");
+      sessionStorage.removeItem("clientUser");
+    } catch {
+      /* ignore */
+    }
+    navigate("/login");
+  };
+
   useEffect(() => {
-    // Keep email input in sync when user object charges
+    // Keep email input in sync when user object changes
     if (user.email && !emailForm) {
       setEmailForm(user.email);
     }
   }, [user.email]);
 
   useEffect(() => {
-    const handleOpenModal = () => {
-      setShowPasswordModal(true);
-    };
+    const handleOpenModal = () => setShowPasswordModal(true);
     window.addEventListener("open-password-change-modal", handleOpenModal);
-    return () => {
-      window.removeEventListener("open-password-change-modal", handleOpenModal);
-    };
+    return () => window.removeEventListener("open-password-change-modal", handleOpenModal);
   }, []);
 
+  useEffect(() => {
+    const handleUnauthorized = () => handleLogout();
+    window.addEventListener("unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("unauthorized", handleUnauthorized);
+  }, []);
+
+  // All hooks must run before this early return — bailing out earlier
+  // changed the hook call order between renders and violated the rules of
+  // hooks (React would warn / misbehave on logout).
   if (!token) {
     return <Navigate to="/login" replace />;
   }
-
-  useEffect(() => {
-    const handleUnauthorized = () => {
-      handleLogout();
-    };
-    window.addEventListener("unauthorized", handleUnauthorized);
-    return () => {
-      window.removeEventListener("unauthorized", handleUnauthorized);
-    };
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem("clientToken");
-    localStorage.removeItem("clientUser");
-    sessionStorage.removeItem("clientToken");
-    sessionStorage.removeItem("clientUser");
-    navigate("/login");
-  };
 
   const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError("");
     setModalSuccess("");
 
+    if (passwordForm && passwordForm.length < 8) {
+      setModalError("A nova senha precisa ter ao menos 8 caracteres.");
+      return;
+    }
     if (passwordForm && passwordForm !== confirmPassword) {
       setModalError("As senhas informadas não coincidem.");
       return;
@@ -79,17 +84,16 @@ export function ClientLayout() {
 
     setIsSaving(true);
     try {
-      const res = await fetch("/api/client/setup-profile", {
+      const res = await apiFetch("/api/client/setup-profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           email: emailForm,
           password: passwordForm || undefined
         })
-      });
+      }, "client");
 
       const data = await res.json();
       if (res.ok) {
@@ -113,197 +117,150 @@ export function ClientLayout() {
     }
   };
 
-  const menu = [
-    { name: "Painel Resumo", path: "/dashboard", icon: LayoutDashboard },
-    { name: "Atrasados", path: "/overdue", icon: AlertCircle },
-    { name: "Cofre Digital", path: "/vault", icon: Folder },
-    { name: "Meus Envios", path: "/uploads", icon: Upload },
+  // One nav model, two chrome shells: a left sidebar from `lg` up, a fixed
+  // bottom bar below it (phones + tablets). `short` labels keep the bottom bar
+  // readable on narrow screens.
+  const nav = [
+    { to: "/dashboard", label: "Visão Geral", short: "Visão Geral", Icon: LayoutDashboard },
+    { to: "/overdue", label: "Atrasados", short: "Atrasados", Icon: AlertCircle },
+    { to: "/vault", label: "Cofre Digital", short: "Cofre", Icon: Folder },
+    { to: "/uploads", label: "Meus Envios", short: "Envios", Icon: Upload },
   ];
-
-  const renderSidebarContent = () => (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
-      <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex items-center space-x-3">
-           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
-           </div>
-           <div className="flex flex-col justify-center">
-              <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-           </div>
-        </div>
-        {/* Mobile close button */}
-        <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-        {menu.map((item) => {
-          const Icon = item.icon;
-          const active = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => setMobileSidebarOpen(false)}
-              className={cn(
-                "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50"
-              )}
-            >
-              <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-400")} />
-              {item.name}
-            </Link>
-          );
-        })}
-
-        {/* Password / Settings link */}
-        <button
-          onClick={() => {
-            setShowPasswordModal(true);
-            setMobileSidebarOpen(false);
-          }}
-          className="w-full flex items-center px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg text-sm font-medium transition-colors text-left"
-        >
-          <Settings className="w-5 h-5 mr-3 text-slate-400" />
-          Alterar Senha
-        </button>
-      </nav>
-
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-        <div className="flex items-center px-3 py-2">
-           <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold mr-3 shrink-0">
-             {user.name?.charAt(0) || "C"}
-           </div>
-           <div className="flex flex-col overflow-hidden">
-             <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.name}</span>
-             <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Cliente</span>
-           </div>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="mt-2 w-full flex items-center px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"
-        >
-          <LogOut className="w-5 h-5 mr-3" />
-          Sair
-        </button>
-      </div>
-    </div>
-  );
+  const isActive = (to: string) =>
+    location.pathname === to || (to === "/dashboard" && location.pathname === "/");
 
   return (
-    <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
-      
-      {/* 3. Main Content Pane */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        
-        {/* Top bar */}
-        <header className="h-14 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 w-full z-10 shrink-0">
-          <div className="flex items-center space-x-3">
-             {/* Settings Gear replacing hamburger */}
-             <button onClick={() => setShowPasswordModal(true)} className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Alterar Senha">
-               <Settings className="w-5 h-5" />
-             </button>
-             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px] sm:max-w-none">
-                Empresa: <strong className="text-slate-800 dark:text-white">{user.name}</strong>
-             </span>
-          </div>
-          <div className="flex items-center space-x-4">
-             <button onClick={() => window.dispatchEvent(new CustomEvent('open-notifications'))} className="text-slate-500 hover:text-indigo-500 transition-colors" title="Notificações">
-               <Bell className="w-5 h-5" />
-             </button>
-             <button onClick={handleLogout} className="text-slate-500 hover:text-red-500 transition-colors" title="Sair">
-               <LogOut className="w-5 h-5" />
-             </button>
-          </div>
+    <div className="flex h-screen w-full overflow-hidden bg-ground text-ink">
+
+      {/* Sidebar — desktop / installed PWA (lg and up) */}
+      <aside className="hidden shrink-0 flex-col border-r border-line bg-surface lg:flex lg:w-60">
+        <div className="flex h-16 items-center border-b border-line px-5">
+          <Logo size="sm" />
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+          {nav.map(({ to, label, Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive(to)
+                  ? "bg-brand-wash text-brand-fg"
+                  : "text-muted hover:bg-sunken hover:text-ink",
+              )}
+            >
+              <Icon className="size-[18px] shrink-0" strokeWidth={isActive(to) ? 2.2 : 1.8} />
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="space-y-0.5 border-t border-line p-3">
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint truncate">
+            {user.name || "Cliente"}
+          </p>
+          {[
+            { label: "Alterar senha", Icon: Settings, onClick: () => setShowPasswordModal(true) },
+            { label: "Notificações", Icon: Bell, onClick: () => window.dispatchEvent(new CustomEvent("open-notifications")) },
+          ].map(({ label, Icon, onClick }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-sunken hover:text-ink"
+            >
+              <Icon className="size-4 shrink-0" strokeWidth={1.8} /> {label}
+            </button>
+          ))}
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-danger-wash hover:text-danger"
+          >
+            <LogOut className="size-4 shrink-0" strokeWidth={1.8} /> Sair
+          </button>
+        </div>
+      </aside>
+
+      <main className="relative flex flex-1 flex-col overflow-hidden">
+
+        {/* Compact top bar — mobile / tablet only (gear + bell live on Visão Geral) */}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-line bg-surface/85 px-4 backdrop-blur lg:hidden">
+          <span className="truncate text-sm font-semibold text-ink">
+            {user.name || "Portal do Cliente"}
+          </span>
+          <button onClick={handleLogout} className="-mr-1.5 p-1.5 text-muted transition-colors hover:text-danger" title="Sair">
+            <LogOut className="size-5" strokeWidth={1.8} />
+          </button>
         </header>
 
-        <div className="absolute inset-0 top-14 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
-        <div className="flex-1 overflow-auto z-0 flex flex-col">
-          <div className="max-w-7xl w-full mx-auto p-4 md:p-8 relative flex-1 flex flex-col">
-            
-            {/* Global Tabs */}
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
-              <Link
-                to="/dashboard"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Visão Geral
-              </Link>
-              <Link
-                to="/overdue"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/overdue' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Atrasados
-              </Link>
-              <Link
-                to="/vault"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/vault' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Cofre Digital
-              </Link>
-              <Link
-                to="/uploads"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/uploads' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Meus Envios
-              </Link>
-            </div>
-
+        <div className="z-0 flex flex-1 flex-col overflow-auto">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 md:px-8 md:py-9">
             <Outlet />
           </div>
         </div>
+
+        {/* Bottom navigation — mobile + tablet (hidden from lg up) */}
+        <nav className="flex shrink-0 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+          {nav.map(({ to, short, Icon }) => {
+            const active = isActive(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold tracking-tight transition-colors",
+                  active ? "text-brand" : "text-faint",
+                )}
+              >
+                <Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} />
+                {short}
+              </Link>
+            );
+          })}
+        </nav>
       </main>
 
-      {/* 4. Password Change Modal */}
+      {/* Password Change Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 p-6 w-full max-w-md relative">
-            <button onClick={() => setShowPasswordModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-               <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-lg">
+            <button onClick={() => setShowPasswordModal(false)} className="absolute right-4 top-4 text-faint transition-colors hover:text-muted" aria-label="Fechar">
+              <X className="size-5" />
             </button>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Alterar Senha de Acesso</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Mantenha seus dados e credenciais de acesso atualizados com segurança.</p>
+            <h2 className="font-serif text-xl font-semibold text-ink">Alterar dados de acesso</h2>
+            <p className="mt-1.5 text-sm text-muted">E-mail de contato e senha do portal.</p>
 
             {modalError && (
-              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs rounded-lg border border-red-100 dark:border-red-800">
-                {modalError}
-              </div>
+              <div className="mt-4 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">{modalError}</div>
             )}
             {modalSuccess && (
-              <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-xs rounded-lg border border-emerald-100 dark:border-emerald-800">
-                {modalSuccess}
-              </div>
+              <div className="mt-4 rounded-lg border border-ok/25 bg-ok-wash px-3.5 py-3 text-sm text-brand-fg">{modalSuccess}</div>
             )}
 
-            <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+            <form onSubmit={handlePasswordChangeSubmit} className="mt-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">E-mail Cadastrado</label>
-                <input required type="email" value={emailForm} onChange={(e) => setEmailForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" placeholder="exemplo@empresa.com" />
+                <label className={CHROME_LABEL}>E-mail de contato</label>
+                <input required type="email" value={emailForm} onChange={(e) => setEmailForm(e.target.value)} className={CHROME_FIELD} placeholder="exemplo@empresa.com" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nova Senha (deixe em branco se não quiser alterar)</label>
-                <input type="password" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+                <label className={CHROME_LABEL}>Nova senha (deixe em branco para manter)</label>
+                <input type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className={CHROME_FIELD} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Confirmar Nova Senha</label>
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+                <label className={CHROME_LABEL}>Confirmar nova senha</label>
+                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={CHROME_FIELD} />
               </div>
-              <button disabled={isSaving} type="submit" className="w-full py-2.5 bg-slate-900 dark:bg-virgula-green text-white rounded-xl text-sm font-bold shadow-md hover:opacity-90 transition-opacity">
-                {isSaving ? "Salvando..." : "Confirmar Alterações"}
+              <button disabled={isSaving} type="submit" className="w-full rounded-lg bg-brand py-2.5 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-strong disabled:opacity-50">
+                {isSaving ? "Salvando..." : "Confirmar alterações"}
               </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
 
 export function AccountantLayout() {
-  const token = localStorage.getItem("accountantToken");
+  const token = hasSession("accountant");
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -311,22 +268,17 @@ export function AccountantLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [totalSize, setTotalSize] = useState<number | null>(null);
 
-  if (!token) {
-    return <Navigate to="/admin/login" replace />;
-  }
-
   useEffect(() => {
+    if (!token) return;
     const handleUnauthorized = () => {
       handleLogout();
     };
     window.addEventListener("unauthorized", handleUnauthorized);
-    
+
     // Fetch stats
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/accountant/files/stats", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await apiFetch("/api/accountant/files/stats", {}, "accountant");
         const data = await res.json();
         if (data.totalSize !== undefined) {
           setTotalSize(data.totalSize);
@@ -340,8 +292,13 @@ export function AccountantLayout() {
     };
   }, []);
 
+  // All hooks must run before this early return (rules of hooks).
+  if (!token) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
   const handleLogout = () => {
-    localStorage.removeItem("accountantToken");
+    void logout("accountant");
     navigate("/admin/login");
   };
 
@@ -356,6 +313,8 @@ export function AccountantLayout() {
   const menu = [
     { name: "Inbox", path: "/admin", icon: Upload },
     { name: "Clientes", path: "/admin/clients", icon: Users },
+    { name: "NFS-e", path: "/admin/nfse", icon: FileText },
+    { name: "Pagamentos", path: "/admin/payments", icon: Receipt },
     { name: "Notificações", path: "/admin/notifications", icon: Bell },
     { 
       name: `Galeria de Arquivos ${totalSize !== null ? `(${formatSize(totalSize)})` : ''}`, 
@@ -363,21 +322,14 @@ export function AccountantLayout() {
       icon: Folder 
     },
     { name: "Dispositivos", path: "/admin/devices", icon: Smartphone },
+    { name: "Histórico", path: "/admin/audit", icon: History },
     { name: "Configurações", path: "/admin/settings", icon: Settings },
   ];
 
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-slate-900 dark:bg-slate-950 text-slate-100">
       <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
-        <div className="flex items-center space-x-3">
-           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
-           </div>
-           <div className="flex flex-col justify-center">
-              <span className="text-2xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-           </div>
-        </div>
+        <Logo onDark />
         {/* Mobile close button */}
         <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-200 rounded-lg">
           <X className="w-5 h-5" />

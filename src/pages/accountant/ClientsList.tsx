@@ -1,4 +1,5 @@
 import { apiFetch } from "../../lib/apiClient";
+import { formatCnpj, normalizeCnpj, cnpjMatches } from "../../lib/cnpj";
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square, Upload, KeyRound, CheckCircle2 } from "lucide-react";
@@ -95,23 +96,18 @@ export function ClientsList() {
     e.preventDefault();
     setIsSubmitting(true);
     
+    const payload = { ...clientForm, cnpj: normalizeCnpj(clientForm.cnpj) };
     if (editClient) {
       await apiFetch(`/api/accountant/client/${editClient.id}`, {
         method: "PUT",
-        headers: { 
-          "Content-Type": "application/json",
-           
-        },
-        body: JSON.stringify(clientForm)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       }, "accountant");
     } else {
       await apiFetch("/api/accountant/clients", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-           
-        },
-        body: JSON.stringify(clientForm)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       }, "accountant");
     }
     
@@ -155,7 +151,7 @@ export function ClientsList() {
     e.stopPropagation();
     setEditClient(client);
     setClientForm({
-      cnpj: client.cnpj,
+      cnpj: formatCnpj(client.cnpj),
       name: client.name,
       accountantCategory: client.accountantCategory || "",
       integrationHash: client.integrationHash || ""
@@ -198,7 +194,7 @@ export function ClientsList() {
   ));
 
   const filtered = clients.filter(c => {
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.cnpj.includes(search);
+    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || cnpjMatches(c.cnpj, search);
     const clientCats = c.accountantCategory ? c.accountantCategory.split(",").map((cat: string) => cat.trim()) : [];
     const matchCategory = categoryFilter === "all" || clientCats.includes(categoryFilter);
     return matchSearch && matchCategory;
@@ -318,7 +314,7 @@ export function ClientsList() {
 
               <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2 max-h-60">
                 {clients.filter(c => {
-                   const matchSearch = c.name.toLowerCase().includes(muralSearch.toLowerCase()) || c.cnpj.includes(muralSearch);
+                   const matchSearch = c.name.toLowerCase().includes(muralSearch.toLowerCase()) || cnpjMatches(c.cnpj, muralSearch);
                    const clientCats = c.accountantCategory ? c.accountantCategory.split(",").map((cat: string) => cat.trim()) : [];
                    const matchCategory = muralCategoryFilter === "all" || clientCats.includes(muralCategoryFilter);
                    return matchSearch && matchCategory;
@@ -335,7 +331,7 @@ export function ClientsList() {
                   >
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800">{client.name}</h4>
-                      <p className="text-xs text-slate-500">{client.cnpj} {client.accountantCategory ? `• ${client.accountantCategory}` : ''}</p>
+                      <p className="text-xs text-slate-500">{formatCnpj(client.cnpj)} {client.accountantCategory ? `• ${client.accountantCategory}` : ''}</p>
                     </div>
                     {muralSelectedIds.includes(client.id) ? (
                       <CheckSquare className="w-5 h-5 text-indigo-600" />
@@ -414,7 +410,7 @@ export function ClientsList() {
                       )}
                     </h4>
                     <div className="flex items-center space-x-2 mt-0.5">
-                       <p className="text-xs text-slate-500">{client.cnpj}</p>
+                       <p className="text-xs text-slate-500">{formatCnpj(client.cnpj)}</p>
                        {client.accountantCategory && (
                          <>
                            <span className="text-xs text-slate-300">•</span>

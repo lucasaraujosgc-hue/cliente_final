@@ -1,4 +1,5 @@
 import { apiFetch } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 import React, { useState, useEffect } from "react";
 import { Send, Bell, CheckSquare, Square, Clock, Trash2, Calendar, AlertTriangle } from "lucide-react";
 
@@ -340,7 +341,7 @@ export function AccountantNotifications() {
                      <div className="flex-1 min-w-0">
                        <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{client.name}</p>
                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate uppercase">
-                         {client.accountantCategory || "Geral"} • {client.cnpj}
+                         {client.accountantCategory || "Geral"} • {formatCnpj(client.cnpj)}
                        </p>
                      </div>
                    </div>
