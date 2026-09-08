@@ -15,10 +15,21 @@
 //                 app-private localStorage. Never a shared browser store.
 // ---------------------------------------------------------------------------
 
+import { Capacitor } from "@capacitor/core";
+
+// `@capacitor/core` define `window.Capacitor` até no navegador/PWA — o que
+// vale é `isNativePlatform()` (true só dentro do app iOS/Android).
+const isNative = (): boolean => {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+};
+
 export const getApiUrl = (endpoint: string) => {
-  const isCapacitor =
-    typeof window !== "undefined" && (window as any).Capacitor !== undefined;
-  const baseUrl = isCapacitor ? "https://cliente.virgulacontabil.com.br" : "";
+  // Só o app nativo fala com um host absoluto; browser e PWA usam mesma origem.
+  const baseUrl = isNative() ? "https://cliente.virgulacontabil.com.br" : "";
   return `${baseUrl}${endpoint}`;
 };
 
@@ -36,8 +47,7 @@ const STORAGE_KEYS: Record<UserType, { access: string; refresh: string; remember
   accountant: { access: "accountantToken", refresh: "accountantRefreshToken", remember: "accountantRemember" },
 };
 
-const isCapacitor = () =>
-  typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+const isCapacitor = () => isNative();
 
 const secureStore = () => {
   try {
