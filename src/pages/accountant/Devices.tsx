@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Trash2, Smartphone, AlertCircle, RefreshCw } from "lucide-react";
+import { apiFetch } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 
 export function Devices() {
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
@@ -9,10 +11,7 @@ export function Devices() {
   const fetchSubscriptions = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("accountantToken");
-      const res = await fetch("/api/accountant/subscriptions", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch("/api/accountant/subscriptions", {}, "accountant");
       if (!res.ok) throw new Error("Erro ao carregar dispositivos");
       const data = await res.json();
       setSubscriptions(data.subscriptions || []);
@@ -30,11 +29,9 @@ export function Devices() {
   const handleDelete = async (id: string) => {
     if (!confirm("Deseja realmente remover esta assinatura? O cliente receberá a solicitação para ativar novamente ao acessar.")) return;
     try {
-      const token = localStorage.getItem("accountantToken");
-      const res = await fetch(`/api/accountant/subscriptions/${id}`, {
+      const res = await apiFetch(`/api/accountant/subscriptions/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      }, "accountant");
       if (!res.ok) throw new Error("Erro ao excluir dispositivo");
       fetchSubscriptions();
     } catch (e: any) {
@@ -101,7 +98,7 @@ export function Devices() {
                         {sub.client?.name || "Desconhecido"}
                       </div>
                       <div className="text-xs text-slate-500 font-mono mt-0.5">
-                        {sub.client?.cnpj || "S/ CNPJ"}
+                        {sub.client?.cnpj ? formatCnpj(sub.client.cnpj) : "S/ CNPJ"}
                       </div>
                     </td>
                     <td className="px-6 py-4">

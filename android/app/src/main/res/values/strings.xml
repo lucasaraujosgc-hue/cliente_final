@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Portal do Cliente</string>
+    <string name="title_activity_main">Portal do Cliente</string>
+    <string name="package_name">br.com.virgulacontabil.portal</string>
+    <string name="custom_url_scheme">br.com.virgulacontabil.portal</string>
+</resources>

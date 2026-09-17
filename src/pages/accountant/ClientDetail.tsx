@@ -1,7 +1,8 @@
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, openDocument } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
+import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle, UserX } from "lucide-react";
 import { format, parseISO, isBefore } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
@@ -11,6 +12,9 @@ export function ClientDetail() {
   const [data, setData] = useState<any>(null);
 
   const [editingMsg, setEditingMsg] = useState<any>(null);
+  // Shown exactly once, right after generation — the token is never returned again.
+  const [newIntegrationToken, setNewIntegrationToken] = useState<string | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   const [docFilterCategory, setDocFilterCategory] = useState("");
   const [docFilterOverdue, setDocFilterOverdue] = useState(false);
@@ -110,14 +114,6 @@ export function ClientDetail() {
     }
   };
 
-  const getAuthenticatedFileUrl = (url: string | null) => {
-    if (!url) return undefined;
-    if (url.startsWith('/api/')) {
-      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
-      return `${url}?token=${token}`;
-    }
-    return url;
-  };
 
 
   const handleDeleteDoc = async (docId: string) => {
@@ -271,32 +267,55 @@ export function ClientDetail() {
 
   return (
     <div className="space-y-8 animate-in fade-in">
-      <header className="flex items-center gap-4 bg-white/40 backdrop-blur-md border border-white rounded-2xl shadow-sm px-6 py-4 -mx-4">
-        <Link to="/admin/clients" className="p-2 bg-white/80 border border-white rounded-lg text-slate-500 hover:text-slate-900 transition-colors shadow-sm">
+      <header className="flex items-center gap-4 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm px-6 py-4 -mx-4">
+        <Link to="/admin/clients" className="p-2 bg-white/80 dark:bg-slate-900/70 border border-white dark:border-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors shadow-sm">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">{data.client.name}</h1>
-          <p className="text-slate-500 text-xs mt-1">CNPJ: {data.client.cnpj} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600' : 'text-amber-600'}`}>Status: {data.client.regularityStatus}</span></p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">{data.client.name}</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">CNPJ: {formatCnpj(data.client.cnpj)} • <span className={`font-semibold ${data.client.regularityStatus === 'green' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>Status: {data.client.regularityStatus}</span></p>
         </div>
       </header>
+
+      {/* Pedido de exclusão de conta feito pelo cliente pelo app. Fica no topo
+          porque tem prazo legal e o contador é quem executa (o botão Excluir
+          cliente da lista faz a remoção em cascata). */}
+      {data.client.deletionRequestedAt && (
+        <div className="rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <UserX className="w-5 h-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-rose-800 dark:text-rose-300">
+                Cliente pediu a exclusão da conta
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-rose-700 dark:text-rose-400">
+                Solicitado em{" "}
+                {format(parseISO(data.client.deletionRequestedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                . Encerre as obrigações fiscais do período antes de remover — a exclusão apaga
+                documentos, guias, faturamento e mensagens em cascata.
+                {data.client.deletionReason ? ` Motivo informado: "${data.client.deletionReason}"` : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Upload Manual Panel */}
-        <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden">
-           <div className="px-6 py-4 border-b border-white bg-white/50 flex flex-col justify-center">
-             <h3 className="font-semibold text-slate-800 text-sm flex items-center"><UploadCloud className="w-4 h-4 mr-2" /> Upload Manual de Guia/Documento</h3>
+        <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 overflow-hidden">
+           <div className="px-6 py-4 border-b border-white dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 flex flex-col justify-center">
+             <h3 className="font-semibold text-slate-800 dark:text-white text-sm flex items-center"><UploadCloud className="w-4 h-4 mr-2" /> Upload Manual de Guia/Documento</h3>
            </div>
            <form onSubmit={handleUpload} className="p-6 space-y-4">
               <div>
-                 <label className="block text-xs font-semibold text-slate-500 mb-1">Título do Arquivo</label>
-                 <input name="title" required className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: DAS Junho 2026"/>
+                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Título do Arquivo</label>
+                 <input name="title" required className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: DAS Junho 2026"/>
               </div>
               <div className="flex gap-4">
                 <div className="flex-1">
-                   <label className="block text-xs font-semibold text-slate-500 mb-1">Categoria</label>
-                   <select name="category" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Categoria</label>
+                   <select name="category" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                       <option value="">Selecione...</option>
                       <option value="Simples Nacional">Simples Nacional</option>
                       <option value="Honorários">Honorários</option>
@@ -318,20 +337,20 @@ export function ClientDetail() {
                    </select>
                 </div>
                 <div className="flex-1">
-                   <label className="block text-xs font-semibold text-slate-500 mb-1">Competência</label>
-                   <input type="text" name="competence" placeholder="MM/yyyy" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
+                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Competência</label>
+                   <input type="text" name="competence" placeholder="MM/yyyy" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
                 <div className="flex-1">
-                   <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento (Opc.)</label>
-                   <input type="date" name="dueDate" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
+                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Vencimento (Opc.)</label>
+                   <input type="date" name="dueDate" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Arquivo Fiscal/PDF</label>
-                <input type="file" name="file" required className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Arquivo Fiscal/PDF</label>
+                <input type="file" name="file" required className="w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
               </div>
               <div className="pt-2">
-                 <button type="submit" className="w-full bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 transition-colors shadow-md">
+                 <button type="submit" className="w-full bg-slate-900 dark:bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 dark:hover:bg-indigo-500 transition-colors shadow-md">
                     Disponibilizar no Cofre do Cliente
                  </button>
               </div>
@@ -339,19 +358,19 @@ export function ClientDetail() {
         </div>
 
        {/* Message Panel */}
-        <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
-           <div className="px-6 py-4 border-b border-white bg-white/50 flex flex-col justify-center">
-             <h3 className="font-semibold text-slate-800 text-sm flex items-center"><MessageSquare className="w-4 h-4 mr-2" /> Mural de Recados</h3>
+        <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 overflow-hidden flex flex-col">
+           <div className="px-6 py-4 border-b border-white dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 flex flex-col justify-center">
+             <h3 className="font-semibold text-slate-800 dark:text-white text-sm flex items-center"><MessageSquare className="w-4 h-4 mr-2" /> Mural de Recados</h3>
            </div>
            
            <div className="flex-1 overflow-auto p-6 space-y-4 max-h-[300px]">
-              {data.messages.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Nenhum recado enviado.</p>}
+              {data.messages.length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-4">Nenhum recado enviado.</p>}
               {data.messages.map((m:any) => {
                  const isFromClient = m.direction === 'client_to_accountant';
                  return (
-                 <div key={m.id} className={`backdrop-blur-md border p-4 rounded-2xl text-sm shadow-sm relative group ${isFromClient ? 'bg-amber-50/80 border-amber-100/50 text-amber-900 shadow-amber-50' : 'bg-blue-50/80 border-blue-100/50 text-blue-900 shadow-blue-50'}`}>
+                 <div key={m.id} className={`backdrop-blur-md border p-4 rounded-2xl text-sm shadow-sm relative group ${isFromClient ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-100/50 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 shadow-amber-50 dark:shadow-slate-950/40' : 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-100/50 dark:border-blue-900/40 text-blue-900 dark:text-blue-200 shadow-blue-50 dark:shadow-slate-950/40'}`}>
                     <div className="flex items-center gap-2 mb-1">
-                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFromClient ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
+                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFromClient ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300' : 'bg-blue-200 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300'}`}>
                           {isFromClient ? 'DO CLIENTE' : 'SEU RECADO'}
                        </span>
                     </div>
@@ -359,8 +378,8 @@ export function ClientDetail() {
                     <div className="flex justify-between items-end">
                        <span className={`text-[10px] uppercase font-bold mt-2 block ${isFromClient ? 'text-amber-500/80' : 'text-blue-400/80'}`}>{format(parseISO(m.createdAt), "dd MMM HH:mm", {locale: ptBR})}</span>
                        <div className="hidden group-hover:flex gap-2">
-                          <button type="button" onClick={() => deleteMessage(m.id)} title="Excluir"><Trash2 className="w-4 h-4 text-red-500 hover:text-red-700"/></button>
-                          {!isFromClient && <button type="button" onClick={() => setEditingMsg(m)} title="Editar"><Edit3 className="w-4 h-4 text-blue-500 hover:text-blue-700"/></button>}
+                          <button type="button" onClick={() => deleteMessage(m.id)} title="Excluir"><Trash2 className="w-4 h-4 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"/></button>
+                          {!isFromClient && <button type="button" onClick={() => setEditingMsg(m)} title="Editar"><Edit3 className="w-4 h-4 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"/></button>}
                        </div>
                     </div>
                  </div>
@@ -368,15 +387,15 @@ export function ClientDetail() {
               })}
            </div>
 
-           <form onSubmit={handleSendMessage} className="p-4 border-t border-white bg-white/60 flex flex-col gap-2 relative">
+           <form onSubmit={handleSendMessage} className="p-4 border-t border-white dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 flex flex-col gap-2 relative">
               {editingMsg && (
-                 <div className="flex items-center justify-between text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">
+                 <div className="flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-1 rounded-lg">
                     <span>Editando mensagem...</span>
-                    <button type="button" onClick={() => setEditingMsg(null)} className="text-slate-400 hover:text-slate-600">Cancelar</button>
+                    <button type="button" onClick={() => setEditingMsg(null)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200">Cancelar</button>
                  </div>
               )}
               <div className="flex gap-2">
-                 <input name="content" required placeholder="Digite um aviso importante..." defaultValue={editingMsg?.content || ""} className="flex-1 px-4 py-2.5 text-sm border border-slate-200 bg-white/80 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"/>
+                 <input name="content" required placeholder="Digite um aviso importante..." defaultValue={editingMsg?.content || ""} className="flex-1 px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/70 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"/>
                  <button type="submit" className="bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition-colors shadow-md">
                     <Send className="w-4 h-4" />
                  </button>
@@ -387,21 +406,21 @@ export function ClientDetail() {
       </div>
 
       {/* SEÇÃO DE FATURAMENTO - SIMPLES FINANCEIRO */}
-      <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden mt-8">
-        <div className="px-6 py-4 border-b border-white bg-white/50 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+      <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 overflow-hidden mt-8">
+        <div className="px-6 py-4 border-b border-white dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
            <div>
-              <h3 className="font-semibold text-slate-800 text-sm flex items-center">
+              <h3 className="font-semibold text-slate-800 dark:text-white text-sm flex items-center">
                 <FileSpreadsheet className="w-5 h-5 mr-2 text-virgula-green" /> 
                 Informar Faturamento Mensal (Serviços / Vendas)
               </h3>
-              <p className="text-xs text-slate-500 mt-1">Insira os valores de faturamento do cliente manualmente ou importe via arquivo Excel.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Insira os valores de faturamento do cliente manualmente ou importe via arquivo Excel.</p>
            </div>
            
            <div className="flex gap-2 shrink-0">
              <button 
                 type="button"
                 onClick={() => setShowBillingForm(!showBillingForm)} 
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-lg flex items-center transition-colors"
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold px-3 py-2 rounded-lg flex items-center transition-colors"
              >
                 {showBillingForm ? "Ocultar Lançamento" : "Lançamento Manual"}
              </button>
@@ -424,9 +443,9 @@ export function ClientDetail() {
         </div>
 
         {showBillingForm && (
-           <form onSubmit={handleSaveBilling} className="p-6 border-b border-slate-100 bg-slate-50/50 space-y-4 animate-in slide-in-from-top duration-200">
+           <form onSubmit={handleSaveBilling} className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 space-y-4 animate-in slide-in-from-top duration-200">
               <div className="flex justify-between items-center mb-2">
-                 <span className="text-xs text-slate-500 font-semibold">Preencha os valores (permite zerados):</span>
+                 <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Preencha os valores (permite zerados):</span>
                  <a 
                    href="data:text/csv;charset=utf-8,Competencia,FaturamentoServico,FaturamentoVenda,TotalEntradas,ServicosTomados%0A06/2026,0,0,0,0" 
                    download="modelo_importacao.csv"
@@ -437,18 +456,18 @@ export function ClientDetail() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Competência (MM/AAAA)</label>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Competência (MM/AAAA)</label>
                     <input 
                       type="text" 
                       required 
                       placeholder="Ex: 05/2026" 
                       value={billingForm.month}
                       onChange={e => setBillingForm({...billingForm, month: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Faturamento Serviços (R$)</label>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Faturamento Serviços (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
@@ -456,11 +475,11 @@ export function ClientDetail() {
                       placeholder="0.00"
                       value={billingForm.servicesRevenue}
                       onChange={e => setBillingForm({...billingForm, servicesRevenue: e.target.value ? Number(e.target.value) : 0})}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Faturamento Vendas (R$)</label>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Faturamento Vendas (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
@@ -468,11 +487,11 @@ export function ClientDetail() {
                       placeholder="0.00"
                       value={billingForm.salesRevenue}
                       onChange={e => setBillingForm({...billingForm, salesRevenue: e.target.value ? Number(e.target.value) : 0})}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Total Entradas (R$)</label>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Total Entradas (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
@@ -480,11 +499,11 @@ export function ClientDetail() {
                       placeholder="0.00"
                       value={billingForm.totalIncomes}
                       onChange={e => setBillingForm({...billingForm, totalIncomes: e.target.value ? Number(e.target.value) : 0})}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Serviços Tomados (R$)</label>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Serviços Tomados (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
@@ -492,14 +511,14 @@ export function ClientDetail() {
                       placeholder="0.00"
                       value={billingForm.servicesTaken}
                       onChange={e => setBillingForm({...billingForm, servicesTaken: e.target.value ? Number(e.target.value) : 0})}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                  <button 
                    type="submit" 
-                   className="bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
+                   className="bg-slate-900 dark:bg-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-800 dark:hover:bg-indigo-500 transition-colors shadow-sm"
                  >
                    Salvar Lançamento
                  </button>
@@ -508,16 +527,16 @@ export function ClientDetail() {
         )}
 
         <div className="p-6">
-           <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">Histórico de Faturamentos Lançados</h4>
+           <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-3">Histórico de Faturamentos Lançados</h4>
            {(!data.billing || data.billing.length === 0) ? (
-              <p className="text-sm text-slate-400 text-center py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-100">
+              <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-6 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl border border-dashed border-slate-100 dark:border-slate-800">
                 Nenhum registro de faturamento lançado para este cliente ainda. 
               </p>
            ) : (
               <div className="overflow-x-auto">
                  <table className="w-full text-left border-collapse text-sm">
                     <thead>
-                       <tr className="border-b border-slate-100 text-slate-400 text-xs uppercase tracking-wider">
+                       <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 text-xs uppercase tracking-wider">
                           <th className="py-2.5 font-bold">Mês/Ano</th>
                           <th className="py-2.5 font-bold text-right">Fat. Serviços</th>
                           <th className="py-2.5 font-bold text-right">Fat. Vendas</th>
@@ -526,20 +545,20 @@ export function ClientDetail() {
                           <th className="py-2.5 font-bold text-right">Faturamento Total</th>
                        </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100/50 text-slate-700">
+                    <tbody className="divide-y divide-slate-100/50 dark:divide-slate-800/50 text-slate-700 dark:text-slate-300">
                        {data.billing.map((b: any) => {
                           const totalRevenue = (b.servicesRevenue || 0) + (b.salesRevenue || 0);
                           return (
-                             <tr key={b.id} className="hover:bg-slate-50/40 transition-colors">
-                                <td className="py-3 font-semibold text-slate-950 flex items-center">
-                                   <Calendar className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+                             <tr key={b.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="py-3 font-semibold text-slate-950 dark:text-white flex items-center">
+                                   <Calendar className="w-4 h-4 text-slate-400 dark:text-slate-500 mr-2 shrink-0" />
                                    {b.month}
                                 </td>
                                 <td className="py-3 text-right">R$ {Number(b.servicesRevenue || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="py-3 text-right">R$ {Number(b.salesRevenue || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                <td className="py-3 text-right text-emerald-600 font-medium">R$ {Number(b.totalIncomes || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                <td className="py-3 text-right text-amber-600 font-medium">R$ {Number(b.servicesTaken || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                <td className="py-3 text-right font-bold text-slate-900 bg-slate-50 px-2.5 rounded-lg">R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td className="py-3 text-right text-emerald-600 dark:text-emerald-400 font-medium">R$ {Number(b.totalIncomes || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td className="py-3 text-right text-amber-600 dark:text-amber-400 font-medium">R$ {Number(b.servicesTaken || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td className="py-3 text-right font-bold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/60 px-2.5 rounded-lg">R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                              </tr>
                           );
                        })}
@@ -550,23 +569,23 @@ export function ClientDetail() {
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-xl border text-slate-900 border-white rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50 mt-8">
-        <div className="px-6 py-4 border-b border-white bg-white/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-           <h3 className="font-semibold text-slate-800">Todos os Documentos do Cliente</h3>
+      <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl border text-slate-900 dark:text-white border-white dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 mt-8">
+        <div className="px-6 py-4 border-b border-white dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+           <h3 className="font-semibold text-slate-800 dark:text-white">Todos os Documentos do Cliente</h3>
            <div className="flex flex-wrap items-center gap-3">
-             <label className="flex items-center gap-2 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 font-medium bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                 <input 
                   type="checkbox" 
                   checked={docFilterOverdue} 
                   onChange={e => setDocFilterOverdue(e.target.checked)}
-                  className="rounded border-slate-300 text-rose-500 focus:ring-rose-500"
+                  className="rounded border-slate-300 dark:border-slate-700 text-rose-500 dark:text-rose-400 focus:ring-rose-500"
                 />
                 Apenas Atrasados
              </label>
              <select 
                value={docFilterCategory} 
                onChange={e => setDocFilterCategory(e.target.value)}
-               className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+               className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-blue-500"
              >
                 <option value="">Todas as Categorias</option>
                 <option value="Simples Nacional">Simples Nacional</option>
@@ -589,7 +608,7 @@ export function ClientDetail() {
              </select>
            </div>
         </div>
-        <div className="divide-y divide-slate-100/50 max-h-[500px] overflow-auto">
+        <div className="divide-y divide-slate-100/50 dark:divide-slate-800/50 max-h-[500px] overflow-auto">
           {(() => {
             const filteredDocs = data.documents.filter((doc: any) => {
                if (docFilterCategory && doc.category !== docFilterCategory) return false;
@@ -603,7 +622,7 @@ export function ClientDetail() {
             });
 
             if (filteredDocs.length === 0) {
-              return <div className="p-8 text-center text-slate-500">Nenhum documento encontrado.</div>;
+              return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Nenhum documento encontrado.</div>;
             }
 
             return filteredDocs.map((doc: any) => {
@@ -613,29 +632,29 @@ export function ClientDetail() {
               }
 
               return (
-                <div key={doc.id} className={`p-4 px-6 hover:bg-white flex items-center justify-between group transition-colors ${isLate ? 'bg-rose-50/30' : ''}`}>
+                <div key={doc.id} className={`p-4 px-6 hover:bg-white dark:hover:bg-slate-800 flex items-center justify-between group transition-colors ${isLate ? 'bg-rose-50/30 dark:bg-rose-950/20' : ''}`}>
                   <div className="flex items-center">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${isLate ? 'bg-rose-100 text-rose-600' : (doc.uploadedBy === 'client' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600')}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${isLate ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : (doc.uploadedBy === 'client' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400')}`}>
                       {isLate ? <AlertCircle className="w-5 h-5 animate-pulse" /> : (doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />)}
                     </div>
                     <div className="flex-1">
-                      <h4 className={`text-sm font-medium ${isLate ? 'text-rose-700' : 'text-slate-900'}`}>{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
-                      <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                         <span className="font-medium text-slate-700">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
+                      <h4 className={`text-sm font-medium ${isLate ? 'text-rose-700 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap gap-2 items-center">
+                         <span className="font-medium text-slate-700 dark:text-slate-300">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
                          <span>•</span>
-                         <span className={doc.status === 'ok' || doc.status === 'viewed' ? 'text-emerald-500 font-semibold' : ''}>Status: {doc.status}</span>
+                         <span className={doc.status === 'ok' || doc.status === 'viewed' ? 'text-emerald-500 dark:text-emerald-400 font-semibold' : ''}>Status: {doc.status}</span>
                          <span>•</span>
                          <span>Cat: {doc.category}</span>
                          <span>•</span>
                          {doc.dueDate && (
-                           <span className={isLate ? 'text-rose-600 font-bold' : ''}>
+                           <span className={isLate ? 'text-rose-600 dark:text-rose-400 font-bold' : ''}>
                              Vence: {doc.dueDate.includes('T') ? doc.dueDate.split('T')[0] : doc.dueDate} {isLate && '(ATRASADO)'}
                            </span>
                          )}
                          {doc.extractedData?.extractedValue && (
                            <>
                              <span>•</span>
-                             <span className="text-slate-700 font-semibold">Valor: {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                             <span className="text-slate-700 dark:text-slate-300 font-semibold">Valor: {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
                            </>
                          )}
                          <span>•</span>
@@ -657,24 +676,24 @@ export function ClientDetail() {
                           });
                         }} 
                         title="Editar Documento" 
-                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                        className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
                      >
                         <Edit3 className="w-4 h-4" />
                      </button>
                      {doc.fileUrl && (
-                        <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+                        <button onClick={() => openDocument(doc.id, "download", { as: "accountant", filename: doc.title })} title="Baixar" className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
                            <Download className="w-4 h-4" />
-                        </a>
+                        </button>
                      )}
-                     <button onClick={() => markDocStatus(doc.id, "late")} title="Marcar como Atrasado" className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100">
+                     <button onClick={() => markDocStatus(doc.id, "late")} title="Voltar para atrasada (reabre a consulta de pagamento)" className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40">
                         <X className="w-4 h-4" />
                      </button>
-                     <button onClick={() => markDocStatus(doc.id, "paid")} title="Marcar como Em Dia / Pago" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
+                     <button onClick={() => markDocStatus(doc.id, "paid")} title="Dar baixa: marca como paga, encerra a consulta no SERPRO e avisa o cliente" className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
                         <CheckCircle className="w-4 h-4" />
                      </button>
-                     <button onClick={() => handleDeleteDoc(doc.id)} title="Excluir Arquivo" className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><Trash2 className="w-4 h-4" /></button>
+                     <button onClick={() => handleDeleteDoc(doc.id)} title="Excluir Arquivo" className="p-2 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40"><Trash2 className="w-4 h-4" /></button>
                      {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && doc.status !== 'paid' && doc.status !== 'late' && (
-                        <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
+                        <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
                            <Check className="w-4 h-4" />
                         </button>
                      )}
@@ -686,71 +705,91 @@ export function ClientDetail() {
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden p-6 mt-8">
+      <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 overflow-hidden p-6 mt-8">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-800 text-sm">Integração API (Hash da Empresa)</h3>
-          {data.client.integrationHash ? (
-            <button 
+          <h3 className="font-bold text-slate-800 dark:text-white text-sm">Integração API (Token da Empresa)</h3>
+          {data.client.hasIntegrationToken ? (
+            <button
               onClick={async () => {
-                await apiFetch(`/api/accountant/client/${id}/revoke-token`, {
-                  method: "POST",
-                  
-                }, "accountant");
+                if (!window.confirm("Revogar o token? As integrações que o utilizam deixarão de funcionar.")) return;
+                await apiFetch(`/api/accountant/client/${id}/revoke-token`, { method: "POST" }, "accountant");
+                setNewIntegrationToken(null);
                 loadData();
               }}
-              className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100"
+              className="text-xs bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100 dark:hover:bg-red-900/40"
             >
               Revogar
             </button>
           ) : (
-            <button 
+            <button
               onClick={async () => {
-                await apiFetch(`/api/accountant/client/${id}/generate-token`, {
-                  method: "POST",
-                  
-                }, "accountant");
+                const r = await apiFetch(`/api/accountant/client/${id}/generate-token`, { method: "POST" }, "accountant");
+                const j = await r.json().catch(() => ({}));
+                if (j.token) setNewIntegrationToken(j.token);
+                setTokenCopied(false);
                 loadData();
               }}
-              className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800"
+              className="text-xs bg-slate-900 dark:bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800 dark:hover:bg-indigo-500"
             >
-              Gerar Nova Hash
+              Gerar Novo Token
             </button>
           )}
         </div>
-        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-center justify-between">
-           {data.client.integrationHash ? (
-              <code className="text-sm font-mono text-slate-600 select-all">{data.client.integrationHash}</code>
-           ) : (
-              <span className="text-sm text-slate-400">Nenhuma hash ativa. Gere uma para integrar com o sistema principal.</span>
-           )}
-        </div>
+
+        {newIntegrationToken ? (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+              Copie agora — este token não será exibido novamente.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono text-slate-800 dark:text-white select-all break-all flex-1">{newIntegrationToken}</code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(newIntegrationToken);
+                  setTokenCopied(true);
+                }}
+                className="text-xs shrink-0 bg-slate-900 dark:bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800 dark:hover:bg-indigo-500"
+              >
+                {tokenCopied ? "Copiado!" : "Copiar"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl p-4">
+            <span className="text-sm text-slate-500 dark:text-slate-400">
+              {data.client.hasIntegrationToken
+                ? "Token configurado (oculto por segurança). Gere um novo para substituí-lo."
+                : "Nenhum token ativo. Gere um para integrar com o sistema principal."}
+            </span>
+          </div>
+        )}
       </div>
 
       {editingDocId && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
-            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Edit3 className="w-5 h-5 text-blue-500" /> Editar Documento
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-blue-500 dark:text-blue-400" /> Editar Documento
             </h2>
             <form onSubmit={handleEditDocSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Título</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Título</label>
                 <input 
                   required 
                   type="text" 
                   value={editDocForm.title} 
                   onChange={e => setEditDocForm({ ...editDocForm, title: e.target.value })} 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Categoria</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Categoria</label>
                   <select 
                     required 
                     value={editDocForm.category} 
                     onChange={e => setEditDocForm({ ...editDocForm, category: e.target.value })} 
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   >
                       <option value="">Selecione...</option>
                       <option value="Simples Nacional">Simples Nacional</option>
@@ -773,23 +812,23 @@ export function ClientDetail() {
                   </select>
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Vencimento</label>
                   <input 
                     type="date" 
                     value={editDocForm.dueDate} 
                     onChange={e => setEditDocForm({ ...editDocForm, dueDate: e.target.value })} 
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Status</label>
                   <select 
                     required 
                     value={editDocForm.status} 
                     onChange={e => setEditDocForm({ ...editDocForm, status: e.target.value })} 
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="new">Novo / Pendente</option>
                     <option value="viewed">Visualizado</option>
@@ -798,33 +837,33 @@ export function ClientDetail() {
                   </select>
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Valor (Opcional)</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Valor (Opcional)</label>
                   <input 
                     type="number"
                     step="0.01"
                     value={editDocForm.valor} 
                     onChange={e => setEditDocForm({ ...editDocForm, valor: e.target.value })} 
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Ex: 150.00"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Substituir Arquivo (Opcional)</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Substituir Arquivo (Opcional)</label>
                 <input 
                   type="file" 
                   onChange={e => {
                     const f = e.target.files ? e.target.files[0] : null;
                     setEditDocForm({ ...editDocForm, file: f });
                   }}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div className="pt-4 flex justify-end gap-3">
                 <button 
                   type="button" 
                   onClick={() => setEditingDocId(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-xl transition-colors"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm rounded-xl transition-colors"
                 >
                   Cancelar
                 </button>

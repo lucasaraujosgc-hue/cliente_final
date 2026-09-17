@@ -1,8 +1,7 @@
 import { Express } from "express";
 import fs from "fs";
 import path from "path";
-import https from "https";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { db } from "../db";
 import {
   clients,
@@ -11,18 +10,44 @@ import {
   messages,
   serproConfig,
   guiasGeradas,
+  paymentChecks,
+  notificationLog,
 } from "../schema";
 import { transporter } from "../services/mailer";
-import { upload } from "../services/upload";
-import { getSerproToken, serproPost, isUuid } from "../services/serpro";
+import { upload, GUIAS_PDF_DIR, validateUploadedFileContent } from "../services/upload";
+import {
+  resolveGuiaPdfPath,
+  sendDiskFile,
+  sendDataUri,
+  isReadableFile,
+} from "../services/files";
+import { getSerproToken, serproPost, isUuid, buildSerproContext } from "../services/serpro";
+import { recordGuiaInteraction, isFederalGuia, markDocumentPaid } from "../services/paymentQuery";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
+import { getClientId } from "../types";
+import { clientSelfDTO } from "../dto/client";
+import { formatCnpj } from "../../lib/cnpj";
+import { validateBody } from "../middleware/validate";
+import {
+  billingUpdateSchema,
+  billingBulkSchema,
+  clientSetupProfileSchema,
+  clientMessageSchema,
+  clientDeletionRequestSchema,
+  clientUploadSchema,
+  clientPreferencesSchema,
+  clientGuiaSchema,
+  clientGuiaInteractionSchema,
+  docStatusSchema,
+} from "../schemas/validation";
+import { upsertBilling } from "../services/billing";
 
 // Routes used by the client-facing portal: dashboard, profile, billing,
 // document acknowledgement, messages, and SERPRO "guia" (tax slip) generation.
 export function registerClientRoutes(app: Express) {
   app.get("/api/client/dashboard", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+    const clientId = getClientId(req);
     const clientList = await db
       .select()
       .from(clients)
@@ -49,13 +74,51 @@ export function registerClientRoutes(app: Express) {
     const serproConf = await db.select().from(serproConfig).limit(1);
     const whatsappSupport = serproConf[0]?.whatsappSupport || "";
 
+    // Payment-check state per guia (read-only). No SERPRO call here — the
+    // backend job owns the querying; this just surfaces the current status.
+    const checks = await db
+      .select()
+      .from(paymentChecks)
+      .where(eq(paymentChecks.clientId, clientId));
+    const checkByDoc = new Map(checks.map((c) => [c.documentId, c]));
+
+    // Generated guias (SERPRO). Their value / due date live on the guias_geradas
+    // row; a document that points at one (file_url = /api/pendencies/guia/N/pdf)
+    // should fall back to that when its own extracted_data is missing a value —
+    // e.g. a guia recalculated before the value was persisted on the document.
+    const guias = await db
+      .select()
+      .from(guiasGeradas)
+      .where(eq(guiasGeradas.clientId, clientId));
+    const guiaById = new Map(guias.map((g) => [String(g.id), g]));
+    const guiaIdFromUrl = (u: string | null) =>
+      u?.match(/\/api\/pendencies\/guia\/(\d+)\/pdf/)?.[1] ?? null;
+
+    const resolveDoc = (d: (typeof docs)[number]) => {
+      const ed =
+        d.extractedData && typeof d.extractedData === "object" && !Array.isArray(d.extractedData)
+          ? { ...(d.extractedData as Record<string, unknown>) }
+          : {};
+      const g = guiaById.get(guiaIdFromUrl(d.fileUrl) ?? "");
+      if ((ed.extractedValue == null || ed.extractedValue === 0) && typeof g?.valorTotal === "number") {
+        ed.extractedValue = g.valorTotal;
+      }
+      const dueDate = d.dueDate || g?.dataVencimento || null;
+      return { ...d, dueDate, extractedData: ed };
+    };
+
     res.json({
-      client,
+      client: clientSelfDTO(client),
       whatsappSupport,
-      documents: docs.map((d) => ({
-        ...d,
-        createdAt: d.createdAt.toISOString(),
-      })),
+      documents: docs.map((d) => {
+        const r = resolveDoc(d);
+        return {
+          ...r,
+          createdAt: d.createdAt.toISOString(),
+          paymentStatus: checkByDoc.get(d.id)?.status ?? null,
+          paymentNextCheckAt: checkByDoc.get(d.id)?.nextCheckAt?.toISOString() ?? null,
+        };
+      }),
       billing,
       messages: msgs.map((m) => ({
         ...m,
@@ -64,8 +127,8 @@ export function registerClientRoutes(app: Express) {
     });
   });
 
-  app.post("/api/client/setup-profile", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+  app.post("/api/client/setup-profile", verifyClientAuth, validateBody(clientSetupProfileSchema), async (req, res) => {
+    const clientId = getClientId(req);
     const { email, password } = req.body;
 
     const clientList = await db
@@ -107,7 +170,7 @@ export function registerClientRoutes(app: Express) {
                </div>
                <h2>Olá, ${client.name}!</h2>
                <p>Seu primeiro acesso ao nosso portal foi realizado com sucesso.</p>
-               <p>Seu login é: <strong>${client.cnpj}</strong></p>
+               <p>Seu login é: <strong>${formatCnpj(client.cnpj)}</strong></p>
                <p>Agora você pode acompanhar as guias, envios de documentos e mural de recados pelo nosso sistema centralizado.</p>
                <p>Atenciosamente,<br>Equipe Vírgula Contábil</p>
              </div>
@@ -118,97 +181,24 @@ export function registerClientRoutes(app: Express) {
       }
     }
 
-    res.json({ success: true, client });
+    res.json({ success: true, client: clientSelfDTO(client) });
   });
 
-  app.post("/api/client/update-billing", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
-    const {
-      month,
-      servicesRevenue,
-      salesRevenue,
-      totalIncomes,
-      servicesTaken,
-    } = req.body;
-
+  app.post("/api/client/update-billing", verifyClientAuth, validateBody(billingUpdateSchema), async (req, res) => {
+    const clientId = getClientId(req);
     try {
-      const existing = await db
-        .select()
-        .from(billingData)
-        .where(eq(billingData.clientId, clientId));
-      const target = existing.find((b) => b.month === month);
-
-      const updatePayload = {
-        servicesRevenue: servicesRevenue || 0,
-        salesRevenue: salesRevenue || 0,
-        totalIncomes: totalIncomes || 0,
-        servicesTaken: servicesTaken || 0,
-        // Legacy fallback
-        revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-        expenses: servicesTaken || 0,
-        payroll: 0,
-      };
-
-      if (target) {
-        await db
-          .update(billingData)
-          .set(updatePayload)
-          .where(eq(billingData.id, target.id));
-      } else {
-        await db.insert(billingData).values({
-          ...updatePayload,
-          clientId,
-          month,
-        });
-      }
+      await upsertBilling(clientId, req.body);
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
   });
 
-  app.post("/api/client/bulk-billing", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
-    const { data } = req.body; // Array of items
-
+  app.post("/api/client/bulk-billing", verifyClientAuth, validateBody(billingBulkSchema), async (req, res) => {
+    const clientId = getClientId(req);
     try {
-      for (const item of data) {
-        const {
-          month,
-          servicesRevenue,
-          salesRevenue,
-          totalIncomes,
-          servicesTaken,
-        } = item;
-        const existing = await db
-          .select()
-          .from(billingData)
-          .where(eq(billingData.clientId, clientId));
-        const target = existing.find((b) => b.month === month);
-
-        const updatePayload = {
-          servicesRevenue: servicesRevenue || 0,
-          salesRevenue: salesRevenue || 0,
-          totalIncomes: totalIncomes || 0,
-          servicesTaken: servicesTaken || 0,
-          // Legacy fallback
-          revenue: (servicesRevenue || 0) + (salesRevenue || 0),
-          expenses: servicesTaken || 0,
-          payroll: 0,
-        };
-
-        if (target) {
-          await db
-            .update(billingData)
-            .set(updatePayload)
-            .where(eq(billingData.id, target.id));
-        } else {
-          await db.insert(billingData).values({
-            ...updatePayload,
-            clientId,
-            month,
-          });
-        }
+      for (const item of req.body.data) {
+        await upsertBilling(clientId, item);
       }
       res.json({ success: true });
     } catch (e: any) {
@@ -221,6 +211,7 @@ export function registerClientRoutes(app: Express) {
   app.post(
     "/api/pendencies/guia/:clienteId",
     verifyAnyAuth,
+    validateBody(clientGuiaSchema),
     async (req, res) => {
       try {
         const clientId = req.params.clienteId;
@@ -230,8 +221,8 @@ export function registerClientRoutes(app: Express) {
           return res.status(400).json({ error: "ID do cliente no formato inválido." });
         }
 
-        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
-        const tokenRole = (req as any).user?.role;
+        const tokenClientId = req.user?.clientId;
+        const tokenRole = req.user?.role;
         if (tokenRole === "client" && tokenClientId !== clientId) {
           return res.status(403).json({ error: "Acesso negado." });
         }
@@ -274,14 +265,15 @@ export function registerClientRoutes(app: Express) {
           return res.status(404).json({ error: "Cliente não encontrado." });
         }
 
-        const serproList = await db.select().from(serproConfig).limit(1);
-        if (serproList.length === 0 || !serproList[0].consumerKey) {
-           return res.status(400).json({ error: "Integra Contador não configurado. Acesse as configurações." });
+        // Shared SERPRO wiring (config decrypt + trial/prod URL + mTLS agent).
+        let serproCtx;
+        try {
+          serproCtx = await buildSerproContext();
+        } catch (e: any) {
+          return res.status(Number(e?.status) || 400).json({ error: e?.message || "Integra Contador não configurado." });
         }
-        const config = serproList[0];
-        const cnpjContrato = config.cnpjContratante
-            ? config.cnpjContratante.replace(/\D/g, "")
-            : "00000000000100";
+        const config = serproCtx.config;
+        const cnpjContrato = serproCtx.cnpjContratante;
 
         const client = clientList[0];
         const anoPA = competencia.substring(0, 4);
@@ -319,42 +311,16 @@ export function registerClientRoutes(app: Express) {
         }
 
         console.log(`[SERPRO API] Enviando POST /Emitir para tipo ${tipoGuia}`);
-        
-        let certAgent;
-        if (config.ambiente === "producao") {
-          if (!config.certPath) {
-            return res.status(400).json({
-              error: "Certificado digital nao configurado. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
-            });
-          }
 
-          try {
-            const pfx = await fs.promises.readFile(config.certPath);
-            certAgent = new https.Agent({
-              pfx,
-              passphrase: config.certSenha || "",
-              rejectUnauthorized: true,
-            });
-          } catch (err: any) {
-            console.error("Certificado SERPRO configurado nao pode ser lido:", {
-              path: config.certPath,
-              code: err?.code,
-              message: err?.message,
-            });
-            return res.status(400).json({
-              error: "Certificado digital nao encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
-            });
-          }
-        }
+        const certAgent = serproCtx.certAgent;
 
         let pdfBase64;
         let vencFormatado;
         let valorTotal;
+        let numeroDocumento: string | null = null;
         try {
           const tokens = await getSerproToken(config, certAgent);
-          const baseUrl = config.ambiente === "producao"
-            ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
-            : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
+          const baseUrl = serproCtx.baseUrl;
 
           const apiResp = await serproPost(`${baseUrl}/Emitir`, tokens, payload, certAgent);
           if (!apiResp.ok) {
@@ -381,6 +347,11 @@ export function registerClientRoutes(app: Express) {
             // Data de vencimento da API é da guia original — ignora e usa data de emissão
             vencFormatado = null;
             valorTotal    = det.valores?.total ?? null;
+            // "Número do Documento" da DAS — usado depois na consulta PAGTOWEB.
+            numeroDocumento =
+              typeof det.numeroDocumento === "string" && det.numeroDocumento
+                ? det.numeroDocumento.replace(/\D/g, "") || null
+                : null;
           } else {
             // Resposta: { PDFByteArrayBase64: "..." }
             const dctf = typeof dados === "object" && dados !== null ? dados : {};
@@ -426,6 +397,32 @@ export function registerClientRoutes(app: Express) {
           console.warn("[SERPRO API] Guia gerada sem PIX copia e cola extraido do PDF.");
         }
 
+        // Valor da guia recalculada: DAS traz na resposta da API; DCTFWEB não,
+        // então extrai do texto do PDF (mesma função usada nos webhooks). Sem
+        // isso o dashboard continua mostrando o valor antigo em "pendências".
+        let resolvedValue: number | null =
+          typeof valorTotal === "number" && !isNaN(valorTotal) ? valorTotal : null;
+        if (resolvedValue == null) {
+          try {
+            const { extractValueFromPdfBuffer } = await import("../qrExtractor");
+            resolvedValue = await extractValueFromPdfBuffer(pdfBuffer, tipoGuia);
+          } catch (err) {
+            console.warn("Nao foi possivel extrair o valor do PDF da guia:", err);
+          }
+        }
+        console.log(`[SERPRO API] Valor resolvido da guia: ${resolvedValue}`);
+
+        // "Número do Documento": DAS traz na resposta; DCTFWEB não, então tenta
+        // do texto do PDF. Usado depois na consulta de pagamento (PAGTOWEB).
+        if (!numeroDocumento) {
+          try {
+            const { extractDocNumberFromPdf } = await import("../qrExtractor");
+            numeroDocumento = await extractDocNumberFromPdf(pdfBuffer);
+          } catch (err) {
+            console.warn("Nao foi possivel extrair o numero do documento do PDF da guia:", err);
+          }
+        }
+
         let guiaId: number;
         let realFileUrl: string;
 
@@ -440,7 +437,8 @@ export function registerClientRoutes(app: Express) {
               competencia: competencia,
               status: "CONCLUIDO",
               dataVencimento: vencFormatado,
-              valorTotal: valorTotal,
+              valorTotal: resolvedValue,
+              numeroDocumento: numeroDocumento,
               pdfPath: "", // Atualizado abaixo
               createdAt: new Date(),
               concluidoAt: new Date(),
@@ -451,13 +449,10 @@ export function registerClientRoutes(app: Express) {
           realFileUrl = `/api/pendencies/guia/${guiaId}/pdf`;
 
           // Salva PDF em disco de forma assíncrona
-          const pdfDir = process.env.DATA_PATH 
-            ? path.join(process.env.DATA_PATH, "guias_pdfs") 
-            : path.join(process.cwd(), "data", "guias_pdfs");
-          await fs.promises.mkdir(pdfDir, { recursive: true });
-          
+          await fs.promises.mkdir(GUIAS_PDF_DIR, { recursive: true });
+
           const pdfFile = `guia_${tipoGuia}_${clientId}_${competencia}_${guiaId}.pdf`;
-          const pdfPath = path.join(pdfDir, pdfFile);
+          const pdfPath = path.join(GUIAS_PDF_DIR, pdfFile);
           await fs.promises.writeFile(pdfPath, pdfBuffer);
           
           await tx
@@ -467,6 +462,23 @@ export function registerClientRoutes(app: Express) {
 
           // Atualiza o documento original associado
           if (documentId && isUuid(documentId)) {
+            const [orig] = await tx
+              .select()
+              .from(documents)
+              .where(eq(documents.id, documentId));
+
+            // Preserva o resto do extractedData, só troca o valor pelo recalculado.
+            let extractedData: any = orig?.extractedData ?? {};
+            if (typeof extractedData !== "object" || Array.isArray(extractedData)) {
+              extractedData = { original: extractedData };
+            }
+            if (resolvedValue != null) {
+              extractedData = { ...extractedData, extractedValue: resolvedValue };
+            }
+            if (numeroDocumento) {
+              extractedData = { ...extractedData, numeroDocumento };
+            }
+
             await tx
               .update(documents)
               .set({
@@ -474,6 +486,7 @@ export function registerClientRoutes(app: Express) {
                 fileUrl: realFileUrl,
                 pixCode,
                 status: "GUIA_ATUALIZADA",
+                extractedData,
               })
               .where(eq(documents.id, documentId));
           }
@@ -487,7 +500,7 @@ export function registerClientRoutes(app: Express) {
           status: "CONCLUIDO",
           guiaId: guiaId!,
           dataVencimento: vencFormatado,
-          valorTotal: valorTotal,
+          valorTotal: resolvedValue,
           pdfPath: realFileUrl!,
           pixCode,
         });
@@ -514,42 +527,29 @@ export function registerClientRoutes(app: Express) {
       }
 
       // Segurança contra IDOR/BOLA: Se for cliente, valida se a guia é dele
-      const tokenClientId = (req as any).user?.clientId;
-      const tokenRole = (req as any).user?.role;
+      const tokenClientId = req.user?.clientId;
+      const tokenRole = req.user?.role;
       if (tokenRole === "client" && guia[0].clientId !== tokenClientId) {
         return res.status(403).send("Acesso negado. Esta guia pertence a outro cliente.");
       }
 
       const pdfData = guia[0].pdfPath;
-      if (pdfData.startsWith("data:application/pdf;base64,")) {
-        const base64Data = pdfData.replace("data:application/pdf;base64,", "");
-        const buffer = Buffer.from(base64Data, "base64");
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename=guia_${guiaId}.pdf`,
-        );
-        return res.send(buffer);
+      const opts = {
+        disposition: "inline" as const,
+        downloadName: `guia_${guiaId}.pdf`,
+      };
+
+      if (pdfData.startsWith("data:")) {
+        return sendDataUri(res, pdfData, opts);
       }
-      
-      // Valida assincronamente a existência do arquivo no disco
-      try {
-        await fs.promises.access(pdfData);
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename=${path.basename(pdfData)}`,
-        );
-        const stream = fs.createReadStream(pdfData);
-        stream.pipe(res);
-      } catch {
-        // Redireciona apenas se for uma URL HTTP válida
-        if (pdfData.startsWith("http://") || pdfData.startsWith("https://")) {
-          res.redirect(pdfData);
-        } else {
-          res.status(404).send("PDF não encontrado no disco.");
-        }
+
+      // Resolve strictly within the guias PDF directory — never redirect to an
+      // arbitrary URL, never read a path from outside our control.
+      const abs = resolveGuiaPdfPath(pdfData);
+      if (!abs || !(await isReadableFile(abs))) {
+        return res.status(404).send("PDF da guia não encontrado.");
       }
+      return sendDiskFile(res, abs, opts);
     } catch (e: any) {
       console.error(e);
       res.status(500).send("Erro ao baixar PDF");
@@ -563,8 +563,8 @@ export function registerClientRoutes(app: Express) {
       try {
         const clientId = req.params.clienteId;
 
-        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
-        const tokenRole = (req as any).user?.role;
+        const tokenClientId = req.user?.clientId;
+        const tokenRole = req.user?.role;
         if (tokenRole === "client" && tokenClientId !== clientId) {
           return res.status(403).json({ error: "Acesso negado." });
         }
@@ -587,8 +587,10 @@ export function registerClientRoutes(app: Express) {
     "/api/client/upload",
     verifyClientAuth,
     upload.single("file"),
+    validateUploadedFileContent,
+    validateBody(clientUploadSchema),
     async (req, res) => {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { title, category, competence } = req.body;
 
       const [newDoc] = await db
@@ -611,8 +613,8 @@ export function registerClientRoutes(app: Express) {
     },
   );
 
-  app.post("/api/client/mark-doc/:id", verifyClientAuth, async (req, res) => {
-    const clientId = (req as any).user.clientId;
+  app.post("/api/client/mark-doc/:id", verifyClientAuth, validateBody(docStatusSchema), async (req, res) => {
+    const clientId = getClientId(req);
     const docId = req.params.id;
     const { status } = req.body;
 
@@ -621,16 +623,173 @@ export function registerClientRoutes(app: Express) {
       .from(documents)
       .where(eq(documents.id, docId));
     if (docs.length > 0 && docs[0].clientId === clientId) {
-      await db.update(documents).set({ status }).where(eq(documents.id, docId));
+      if (status === "paid") {
+        // Caminho único: some da lista do cliente, registra no histórico e
+        // MANTÉM a consulta no SERPRO agendada — marcar é uma declaração, a
+        // confirmação vem da consulta (e o contador vê o que nunca confirmou).
+        await markDocumentPaid(docId, "client");
+      } else {
+        await db.update(documents).set({ status }).where(eq(documents.id, docId));
+      }
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Doc not found" });
     }
   });
 
-  app.post("/api/client/message", verifyClientAuth, async (req, res) => {
+  // Records that the client interacted with a guia (opened the boleto / copied
+  // the PIX / copied the payment code). Does NOT hit SERPRO — it just schedules
+  // a payment check for the next day (one per guia, deduped). The backend job
+  // (services/paymentQuery.ts) does the actual querying.
+  app.post(
+    "/api/client/guia/:documentId/interaction",
+    verifyClientAuth,
+    validateBody(clientGuiaInteractionSchema),
+    async (req, res) => {
+      const clientId = getClientId(req);
+      const docId = req.params.documentId;
+      if (!isUuid(docId)) return res.status(400).json({ error: "ID inválido." });
+
+      const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+      if (!doc) return res.status(404).json({ error: "Documento não encontrado." });
+      if (doc.clientId !== clientId) return res.status(403).json({ error: "Acesso negado." });
+
+      // Only guias with a payment status worth tracking. Others: silent no-op.
+      if (!isFederalGuia(doc) || doc.status === "paid") {
+        return res.json({ scheduled: false, nextCheckAt: null });
+      }
+
+      const result = await recordGuiaInteraction(docId, clientId, req.body.type);
+      res.json(result);
+    },
+  );
+
+  // ---- Histórico de avisos ------------------------------------------------
+  //
+  // Antes o push era fire-and-forget: se o cliente dispensasse a notificação,
+  // o aviso sumia. services/push.ts grava tudo em notification_log.
+
+  app.get("/api/client/notifications", verifyClientAuth, async (req, res) => {
+    const rows = await db
+      .select()
+      .from(notificationLog)
+      .where(eq(notificationLog.clientId, getClientId(req)))
+      .orderBy(desc(notificationLog.createdAt))
+      .limit(50);
+    res.json({
+      notifications: rows,
+      unread: rows.filter((n) => !n.read).length,
+    });
+  });
+
+  app.post("/api/client/notifications/read", verifyClientAuth, async (req, res) => {
+    await db
+      .update(notificationLog)
+      .set({ read: true })
+      .where(
+        and(eq(notificationLog.clientId, getClientId(req)), eq(notificationLog.read, false)),
+      );
+    res.json({ success: true });
+  });
+
+  // ---- Exclusão de conta -------------------------------------------------
+  //
+  // Apple (5.1.1(v)) e Google exigem um caminho de exclusão DENTRO do app.
+  // Um escritório de contabilidade tem guarda legal dos documentos fiscais
+  // (5 anos), então não dá para apagar na hora: o cliente registra o pedido,
+  // o contador é avisado e executa quando as obrigações estiverem encerradas.
+  // A Apple aceita esse desenho desde que o app explique a retenção.
+
+  app.get("/api/client/account/deletion", verifyClientAuth, async (req, res) => {
+    const [c] = await db.select().from(clients).where(eq(clients.id, getClientId(req)));
+    if (!c) return res.status(404).json({ error: "Conta não encontrada." });
+    res.json({
+      requested: !!c.deletionRequestedAt,
+      requestedAt: c.deletionRequestedAt,
+      reason: c.deletionReason,
+    });
+  });
+
+  app.post(
+    "/api/client/account/deletion",
+    verifyClientAuth,
+    validateBody(clientDeletionRequestSchema),
+    async (req, res) => {
+      const clientId = getClientId(req);
+      const [c] = await db.select().from(clients).where(eq(clients.id, clientId));
+      if (!c) return res.status(404).json({ error: "Conta não encontrada." });
+      if (c.deletionRequestedAt) {
+        return res.json({ requested: true, requestedAt: c.deletionRequestedAt });
+      }
+
+      const reason = (req.body.reason || "").trim() || null;
+      const [updated] = await db
+        .update(clients)
+        .set({ deletionRequestedAt: new Date(), deletionReason: reason })
+        .where(eq(clients.id, clientId))
+        .returning();
+
+      // O contador fica sabendo pelo mesmo canal que ele já acompanha.
+      await db.insert(messages).values({
+        clientId,
+        direction: "client_to_accountant",
+        read: false,
+        content:
+          "[Pedido de exclusão de conta] O cliente solicitou a exclusão da conta e dos dados pessoais pelo portal." +
+          (reason ? `
+
+Motivo informado: ${reason}` : ""),
+      });
+
+      res.json({ requested: true, requestedAt: updated.deletionRequestedAt });
+    },
+  );
+
+  app.delete("/api/client/account/deletion", verifyClientAuth, async (req, res) => {
+    const clientId = getClientId(req);
+    await db
+      .update(clients)
+      .set({ deletionRequestedAt: null, deletionReason: null })
+      .where(eq(clients.id, clientId));
+    await db.insert(messages).values({
+      clientId,
+      direction: "client_to_accountant",
+      read: false,
+      content: "[Pedido de exclusão de conta] O cliente cancelou o pedido de exclusão.",
+    });
+    res.json({ requested: false });
+  });
+
+  // Thread completa do cliente (a página /mensagens). O dashboard já devolve
+  // as mensagens, mas a tela de conversa não precisa carregar o resto.
+  app.get("/api/client/messages", verifyClientAuth, async (req, res) => {
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.clientId, getClientId(req)))
+      .orderBy(messages.createdAt);
+    res.json({ messages: msgs });
+  });
+
+  // Ao abrir a conversa, o que veio do escritório deixa de ser "não lida"
+  // (é o que apaga o aviso no topo do Visão Geral).
+  app.post("/api/client/messages/read", verifyClientAuth, async (req, res) => {
+    await db
+      .update(messages)
+      .set({ read: true })
+      .where(
+        and(
+          eq(messages.clientId, getClientId(req)),
+          eq(messages.direction, "accountant_to_client"),
+          eq(messages.read, false),
+        ),
+      );
+    res.json({ success: true });
+  });
+
+  app.post("/api/client/message", verifyClientAuth, validateBody(clientMessageSchema), async (req, res) => {
     try {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { content } = req.body;
 
       const [newMsg] = await db
@@ -652,9 +811,9 @@ export function registerClientRoutes(app: Express) {
     }
   });
 
-  app.put("/api/client/preferences", verifyClientAuth, async (req, res) => {
+  app.put("/api/client/preferences", verifyClientAuth, validateBody(clientPreferencesSchema), async (req, res) => {
     try {
-      const clientId = (req as any).user.clientId;
+      const clientId = getClientId(req);
       const { notificationPreferences } = req.body;
 
       await db.update(clients)

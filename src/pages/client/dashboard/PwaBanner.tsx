@@ -6,28 +6,26 @@ interface PwaBannerProps {
 
 export function PwaBanner({ onDismiss }: PwaBannerProps) {
   return (
-    <div className="relative bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-3xl shadow-lg border border-emerald-500/20 flex flex-col sm:flex-row items-center sm:justify-between gap-4 overflow-hidden transform duration-250 hover:shadow-xl mt-3">
-      <div className="absolute top-0 right-0 p-16 bg-white/5 rounded-full translate-x-12 -translate-y-12 pointer-events-none"></div>
-      <div className="flex items-center gap-4 z-10">
-        <div className="p-3 bg-white/15 backdrop-blur-md rounded-2xl text-emerald-100 animate-bounce shrink-0">
-          <Smartphone className="w-6 h-6" />
-        </div>
-        <div>
-          <h4 className="font-extrabold text-sm sm:text-base tracking-tight">Dica de Aplicativo PWA 📱</h4>
-          <p className="text-emerald-100 text-xs mt-1 leading-relaxed max-w-xl">
-            Acesse como aplicativo nativo! No iOS, <strong className="text-white">esta ação deve ser feita obrigatoriamente através do navegador Safari</strong>: toque no botão de <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> (ícone de quadrado com uma seta para cima) e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong>. No Android, basta tocar nas opções do Chrome e escolher <strong className="text-white">"Instalar aplicativo"</strong>.
-          </p>
-        </div>
+    <div className="flex items-start gap-3 rounded-xl border border-line bg-sunken px-4 py-3.5">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-wash text-brand-fg">
+        <Smartphone className="size-4" strokeWidth={1.9} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-ink">Instale o portal como app</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
+          <span className="font-medium text-ink">iOS:</span> pelo Safari, toque em
+          Compartilhar → “Adicionar à Tela de Início”.{" "}
+          <span className="font-medium text-ink">Android:</span> menu do Chrome →
+          “Instalar aplicativo”.
+        </p>
       </div>
-      <div className="flex gap-2 shrink-0 z-10 self-end sm:self-center">
-        <button
-          onClick={onDismiss}
-          className="p-2 bg-black/10 hover:bg-black/25 rounded-xl text-white transition-all"
-          title="Dispensar sugestão"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <button
+        onClick={onDismiss}
+        className="-mr-1 -mt-0.5 shrink-0 p-1.5 text-faint transition-colors hover:text-muted"
+        title="Dispensar"
+      >
+        <X className="size-4" />
+      </button>
     </div>
   );
 }
