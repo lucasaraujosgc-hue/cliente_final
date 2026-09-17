@@ -60,11 +60,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 const catLabel = (c: string) => CATEGORY_LABEL[c] || c;
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  PAGO: { text: "Pago", cls: "bg-emerald-100 text-emerald-700" },
-  PENDENTE: { text: "Pendente", cls: "bg-amber-100 text-amber-700" },
-  ERRO: { text: "Erro", cls: "bg-rose-100 text-rose-700" },
-  NAO_APLICAVEL: { text: "N/A", cls: "bg-slate-100 text-slate-500" },
-  SEM_CONSULTA: { text: "Sem consulta", cls: "bg-slate-100 text-slate-500" },
+  PAGO: { text: "Pago", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" },
+  PENDENTE: { text: "Pendente", cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" },
+  ERRO: { text: "Erro", cls: "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300" },
+  NAO_APLICAVEL: { text: "N/A", cls: "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400" },
+  SEM_CONSULTA: { text: "Sem consulta", cls: "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400" },
 };
 
 export function AccountantPayments() {
@@ -201,11 +201,11 @@ export function AccountantPayments() {
   };
 
   const stats = [
-    { label: "Selecionadas", value: result?.selected, Icon: Receipt, tone: "text-slate-600 bg-slate-100" },
-    { label: "Consultadas", value: result?.checked, Icon: RefreshCw, tone: "text-blue-600 bg-blue-100" },
-    { label: "Pagamentos encontrados", value: result?.paid, Icon: CheckCircle2, tone: "text-emerald-600 bg-emerald-100" },
-    { label: "Não identificados", value: result?.notFound, Icon: HelpCircle, tone: "text-amber-600 bg-amber-100" },
-    { label: "Erros", value: result?.errors, Icon: AlertTriangle, tone: "text-rose-600 bg-rose-100" },
+    { label: "Selecionadas", value: result?.selected, Icon: Receipt, tone: "text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800" },
+    { label: "Consultadas", value: result?.checked, Icon: RefreshCw, tone: "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40" },
+    { label: "Pagamentos encontrados", value: result?.paid, Icon: CheckCircle2, tone: "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40" },
+    { label: "Não identificados", value: result?.notFound, Icon: HelpCircle, tone: "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40" },
+    { label: "Erros", value: result?.errors, Icon: AlertTriangle, tone: "text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/40" },
   ];
 
   return (
@@ -213,7 +213,7 @@ export function AccountantPayments() {
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-emerald-500" />
+            <Receipt className="w-6 h-6 text-emerald-500 dark:text-emerald-400" />
             Consulta de pagamentos
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -242,13 +242,13 @@ export function AccountantPayments() {
               <div className="text-2xl font-bold text-slate-900 dark:text-white leading-none tabular-nums">
                 {s.value ?? "–"}
               </div>
-              <div className="text-[11px] text-slate-500 mt-1">{s.label}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">{s.label}</div>
             </div>
           ))}
         </div>
       )}
       {result && (
-        <p className="text-xs text-slate-500 flex items-center gap-1.5">
+        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" /> Última consulta:{" "}
           {format(parseISO(result.ranAt), "dd/MM/yyyy HH:mm", { locale: ptBR })}
         </p>
@@ -303,11 +303,11 @@ export function AccountantPayments() {
           )}
 
           <div className="flex items-center gap-2 text-xs">
-            <button onClick={selectAllVisible} className="font-semibold text-emerald-600 hover:text-emerald-700">
+            <button onClick={selectAllVisible} className="font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300">
               Selecionar {visible.length}
             </button>
             {selected.size > 0 && (
-              <button onClick={clearSelection} className="text-slate-500 hover:text-slate-700">
+              <button onClick={clearSelection} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                 Limpar seleção
               </button>
             )}
@@ -355,16 +355,16 @@ export function AccountantPayments() {
         </div>
 
         {guias === null ? (
-          <div className="p-10 text-center text-slate-400 text-sm">Carregando…</div>
+          <div className="p-10 text-center text-slate-400 dark:text-slate-500 text-sm">Carregando…</div>
         ) : visible.length === 0 ? (
-          <div className="p-10 text-center text-slate-400 text-sm">
+          <div className="p-10 text-center text-slate-400 dark:text-slate-500 text-sm">
             Nenhuma guia federal pendente.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800">
                   <th className="px-4 py-2.5 w-8"></th>
                   <th className="px-3 py-2.5">Empresa</th>
                   <th className="px-3 py-2.5">Guia</th>
@@ -384,14 +384,14 @@ export function AccountantPayments() {
                           type="checkbox"
                           checked={selected.has(g.documentId)}
                           onChange={() => toggle(g.documentId)}
-                          className="rounded border-slate-300 text-emerald-600"
+                          className="rounded border-slate-300 dark:border-slate-700 text-emerald-600 dark:text-emerald-400"
                         />
                       </td>
                       <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{g.clientName}</td>
                       <td className="px-3 py-2.5">
                         <span className="font-medium text-slate-900 dark:text-white">{g.title}</span>
                         {g.competence && (
-                          <span className="block text-[11px] text-slate-400">Comp. {g.competence}</span>
+                          <span className="block text-[11px] text-slate-400 dark:text-slate-500">Comp. {g.competence}</span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400 tabular-nums">
@@ -405,12 +405,12 @@ export function AccountantPayments() {
                           {st.text}
                         </span>
                         {g.checkAttempts > 0 && (
-                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                          <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                             {g.checkAttempts} tentativa(s)
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-[11px] text-slate-500 tabular-nums">
+                      <td className="px-3 py-2.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                         {g.lastCheckedAt
                           ? format(parseISO(g.lastCheckedAt), "dd/MM HH:mm", { locale: ptBR })
                           : g.nextCheckAt

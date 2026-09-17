@@ -17,13 +17,13 @@ interface AuditEntry {
 }
 
 const ACTION_TONE: Record<string, string> = {
-  "client.create": "bg-emerald-100 text-emerald-700",
-  "client.update": "bg-blue-100 text-blue-700",
-  "client.delete": "bg-rose-100 text-rose-700",
-  "client.reset_password": "bg-amber-100 text-amber-700",
-  "token.generate": "bg-indigo-100 text-indigo-700",
-  "token.revoke": "bg-slate-200 text-slate-700",
-  "files.bulk_delete": "bg-rose-100 text-rose-700",
+  "client.create": "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
+  "client.update": "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300",
+  "client.delete": "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300",
+  "client.reset_password": "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
+  "token.generate": "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300",
+  "token.revoke": "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300",
+  "files.bulk_delete": "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300",
 };
 
 export function Audit() {
@@ -52,7 +52,7 @@ export function Audit() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <History className="w-6 h-6 text-slate-400" /> Histórico de Ações
+            <History className="w-6 h-6 text-slate-400 dark:text-slate-500" /> Histórico de Ações
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Registro das operações sensíveis realizadas no painel do contador.
@@ -94,7 +94,7 @@ export function Audit() {
               <li key={e.id} className="px-6 py-4 flex items-start gap-4">
                 <span
                   className={`shrink-0 mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                    ACTION_TONE[e.action] || "bg-slate-100 text-slate-600"
+                    ACTION_TONE[e.action] || "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
                   }`}
                 >
                   {e.action}
@@ -103,7 +103,7 @@ export function Audit() {
                   <p className="text-sm text-slate-800 dark:text-slate-200">
                     {e.summary || `${e.action} ${e.targetId ?? ""}`}
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
                     {format(parseISO(e.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     {" · "}
                     <span className="font-mono">{e.actor}</span>

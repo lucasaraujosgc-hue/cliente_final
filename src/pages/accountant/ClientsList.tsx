@@ -202,13 +202,13 @@ export function ClientsList() {
 
   return (
     <div className="space-y-8 animate-in fade-in relative">
-      <header className="h-16 flex items-center justify-between px-8 bg-white/40 backdrop-blur-md border border-white rounded-2xl shadow-sm -mx-4">
+      <header className="h-16 flex items-center justify-between px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm -mx-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">Clientes</h1>
-          <p className="text-xs text-slate-500">Gerencie a carteira de clientes do escritório.</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Clientes</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Gerencie a carteira de clientes do escritório.</p>
         </div>
         <div className="flex gap-3 relative">
-          <button onClick={() => setShowMuralModal(true)} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-indigo-100 transition-colors">
+          <button onClick={() => setShowMuralModal(true)} className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors">
             <Megaphone className="w-4 h-4 mr-2" /> Mural de Recados
           </button>
           
@@ -221,16 +221,16 @@ export function ClientsList() {
                  onChange={handleImport}
                  disabled={isImporting}
                />
-               <button className="bg-slate-100 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-slate-200 transition-colors h-full disabled:opacity-50" disabled={isImporting}>
+               <button className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors h-full disabled:opacity-50" disabled={isImporting}>
                  <Upload className="w-4 h-4 mr-2" /> {isImporting ? "Importando..." : "Importar .xlsx"}
                </button>
             </div>
-            <button onClick={handleDownloadTemplate} className="text-[10px] text-slate-500 hover:text-slate-700 underline absolute -bottom-5 whitespace-nowrap" title="Baixar planilha de exemplo">
+            <button onClick={handleDownloadTemplate} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline absolute -bottom-5 whitespace-nowrap" title="Baixar planilha de exemplo">
               Baixar Exemplo
             </button>
           </div>
 
-          <button onClick={openCreateModal} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center shadow-md hover:bg-slate-800 transition-colors">
+          <button onClick={openCreateModal} className="bg-slate-900 dark:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center shadow-md hover:bg-slate-800 dark:hover:bg-indigo-500 transition-colors">
             <Plus className="w-4 h-4 mr-2" /> Novo Cliente
           </button>
         </div>
@@ -238,36 +238,36 @@ export function ClientsList() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 w-full max-w-md relative">
-            <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-6 w-full max-w-md relative">
+            <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200">
                <X className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-bold text-slate-900 mb-6">{editClient ? "Editar Cliente" : "Cadastrar Cliente"}</h2>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6">{editClient ? "Editar Cliente" : "Cadastrar Cliente"}</h2>
             <form onSubmit={handleSaveClient} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">CNPJ</label>
-                <input required disabled={!!editClient} type="text" value={clientForm.cnpj} onChange={(e) => setClientForm({...clientForm, cnpj: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white disabled:opacity-50" placeholder="00.000.000/0001-00" />
-                {!editClient && <span className="text-[10px] text-slate-400 mt-1 block">ℹ️ O login e a senha inicial de acesso do cliente serão este CNPJ.</span>}
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">CNPJ</label>
+                <input required disabled={!!editClient} type="text" value={clientForm.cnpj} onChange={(e) => setClientForm({...clientForm, cnpj: e.target.value})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 disabled:opacity-50" placeholder="00.000.000/0001-00" />
+                {!editClient && <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">ℹ️ O login e a senha inicial de acesso do cliente serão este CNPJ.</span>}
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Razão Social</label>
-                <input required type="text" value={clientForm.name} onChange={(e) => setClientForm({...clientForm, name: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" placeholder="Empresa XPTO Ltda" />
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Razão Social</label>
+                <input required type="text" value={clientForm.name} onChange={(e) => setClientForm({...clientForm, name: e.target.value})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900" placeholder="Empresa XPTO Ltda" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Categorias (Opcional - separe por vírgula)</label>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Categorias (Opcional - separe por vírgula)</label>
                 <input 
                   type="text" 
                   value={clientForm.accountantCategory} 
                   onChange={(e) => setClientForm({...clientForm, accountantCategory: e.target.value})} 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" 
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900" 
                   placeholder="Ex: Lucro Presumido, Simples Nacional" 
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Hash / Token Integração Externa (Opcional)</label>
-                <input type="text" value={clientForm.integrationHash} onChange={(e) => setClientForm({...clientForm, integrationHash: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" placeholder="Cole aqui o hash gerado no outro sistema" />
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Hash / Token Integração Externa (Opcional)</label>
+                <input type="text" value={clientForm.integrationHash} onChange={(e) => setClientForm({...clientForm, integrationHash: e.target.value})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900" placeholder="Cole aqui o hash gerado no outro sistema" />
               </div>
-              <button disabled={isSubmitting} type="submit" className="w-full py-2 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-md hover:opacity-90">
+              <button disabled={isSubmitting} type="submit" className="w-full py-2 bg-slate-900 dark:bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:opacity-90">
                 {isSubmitting ? "Salvando..." : (editClient ? "Salvar Alterações" : "Salvar Cliente")}
               </button>
             </form>
@@ -277,17 +277,17 @@ export function ClientsList() {
 
       {showMuralModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 w-full max-w-2xl relative flex flex-col max-h-[90vh]">
-            <button onClick={() => setShowMuralModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-6 w-full max-w-2xl relative flex flex-col max-h-[90vh]">
+            <button onClick={() => setShowMuralModal(false)} className="absolute top-4 right-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-200">
                <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl">
                 <Megaphone className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Mural Geral</h2>
-                <p className="text-xs text-slate-500">Envie mensagens que aparecerão como notificação no PWA dos clientes selecionados.</p>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Mural Geral</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Envie mensagens que aparecerão como notificação no PWA dos clientes selecionados.</p>
               </div>
             </div>
 
@@ -298,12 +298,12 @@ export function ClientsList() {
                   placeholder="Filtrar por nome ou CNPJ..." 
                   value={muralSearch}
                   onChange={e => setMuralSearch(e.target.value)}
-                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
                 <select
                   value={muralCategoryFilter}
                   onChange={(e) => setMuralCategoryFilter(e.target.value)}
-                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="all">Todas</option>
                   {categories.map((cat: any) => (
@@ -312,7 +312,7 @@ export function ClientsList() {
                 </select>
               </div>
 
-              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2 max-h-60">
+              <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl p-2 max-h-60">
                 {clients.filter(c => {
                    const matchSearch = c.name.toLowerCase().includes(muralSearch.toLowerCase()) || cnpjMatches(c.cnpj, muralSearch);
                    const clientCats = c.accountantCategory ? c.accountantCategory.split(",").map((cat: string) => cat.trim()) : [];
@@ -327,16 +327,16 @@ export function ClientsList() {
                         prev.includes(client.id) ? prev.filter(id => id !== client.id) : [...prev, client.id]
                       )
                     }}
-                    className="w-full flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg text-left transition-colors"
+                    className="w-full flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded-lg text-left transition-colors"
                   >
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-800">{client.name}</h4>
-                      <p className="text-xs text-slate-500">{formatCnpj(client.cnpj)} {client.accountantCategory ? `• ${client.accountantCategory}` : ''}</p>
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-white">{client.name}</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{formatCnpj(client.cnpj)} {client.accountantCategory ? `• ${client.accountantCategory}` : ''}</p>
                     </div>
                     {muralSelectedIds.includes(client.id) ? (
-                      <CheckSquare className="w-5 h-5 text-indigo-600" />
+                      <CheckSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     ) : (
-                      <Square className="w-5 h-5 text-slate-300" />
+                      <Square className="w-5 h-5 text-slate-300 dark:text-slate-600" />
                     )}
                   </button>
                 ))}
@@ -344,11 +344,11 @@ export function ClientsList() {
 
               <form onSubmit={handleSendMural} className="mt-2 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Mensagem ({muralSelectedIds.length} clientes selecionados)</label>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Mensagem ({muralSelectedIds.length} clientes selecionados)</label>
                   <textarea 
                     required
                     rows={3}
-                    className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
+                    className="w-full p-3 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
                     placeholder="Digite a mensagem que aparecerá no mural..."
                     value={muralMessage}
                     onChange={e => setMuralMessage(e.target.value)}
@@ -363,23 +363,23 @@ export function ClientsList() {
         </div>
       )}
 
-      <div className="bg-white/80 backdrop-blur-xl border text-slate-900 border-white rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50">
-        <div className="p-4 border-b border-white flex gap-4 bg-white/50 flex-col sm:flex-row">
+      <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl border text-slate-900 dark:text-white border-white dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50">
+        <div className="p-4 border-b border-white dark:border-slate-800 flex gap-4 bg-white/50 dark:bg-slate-900/40 flex-col sm:flex-row">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
             <input 
               type="text" 
               placeholder="Buscar por nome ou CNPJ..." 
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none bg-white"
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-100 focus:border-transparent outline-none bg-white dark:bg-slate-900"
             />
           </div>
           <div className="flex-none">
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-slate-900"
+              className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-100"
             >
               <option value="all">Todas as Categorias</option>
               {categories.map((cat: any) => (
@@ -389,32 +389,32 @@ export function ClientsList() {
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100/50">
+        <div className="divide-y divide-slate-100/50 dark:divide-slate-800/50">
           {filtered.map(client => (
             <div key={client.id} className="group relative">
               <Link 
                 to={`/admin/client/${client.id}`}
-                className="flex items-center justify-between p-4 px-6 hover:bg-slate-50/80 transition-colors"
+                className="flex items-center justify-between p-4 px-6 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
               >
                 <div className="flex items-center">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-semibold text-sm mr-4 group-hover:bg-slate-200 transition-colors">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-sm mr-4 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors">
                     {client.name.charAt(0)}
                   </div>
                   <div>
-                    <h4 className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                    <h4 className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
                       {client.name}
                       {client.firstAccessDone && (
-                        <span title="Cliente já acessou o sistema" className="text-emerald-500">
+                        <span title="Cliente já acessou o sistema" className="text-emerald-500 dark:text-emerald-400">
                            <CheckCircle2 className="w-3.5 h-3.5" />
                         </span>
                       )}
                     </h4>
                     <div className="flex items-center space-x-2 mt-0.5">
-                       <p className="text-xs text-slate-500">{formatCnpj(client.cnpj)}</p>
+                       <p className="text-xs text-slate-500 dark:text-slate-400">{formatCnpj(client.cnpj)}</p>
                        {client.accountantCategory && (
                          <>
-                           <span className="text-xs text-slate-300">•</span>
-                           <span className="text-xs text-slate-600 font-medium bg-slate-100 px-1.5 py-0.5 rounded-md">{client.accountantCategory}</span>
+                           <span className="text-xs text-slate-300 dark:text-slate-600">•</span>
+                           <span className="text-xs text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">{client.accountantCategory}</span>
                          </>
                        )}
                     </div>
@@ -424,40 +424,40 @@ export function ClientsList() {
                   <div className="flex items-center gap-2 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
                       onClick={(e) => handleResetPassword(client.id, e)}
-                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-lg transition-colors"
+                      className="p-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-lg transition-colors"
                       title="Resetar Senha"
                     >
                       <KeyRound className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={(e) => openEditModal(client, e)}
-                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                      className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors"
                       title="Editar Cliente"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={(e) => handleDeleteClient(client.id, e)}
-                      className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                      className="p-1.5 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg transition-colors"
                       title="Excluir Cliente"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                   <span className={`px-2.5 py-1 text-[10px] uppercase tracking-wider font-semibold rounded-full ${
-                    client.regularityStatus === 'green' ? 'bg-emerald-100 text-emerald-700' :
-                    client.regularityStatus === 'warning' ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-700'
+                    client.regularityStatus === 'green' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' :
+                    client.regularityStatus === 'warning' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' :
+                    'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
                   }`}>
                     {client.regularityStatus === 'green' ? 'Regular' : client.regularityStatus === 'warning' ? 'Atenção' : 'Irregular'}
                   </span>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-600 transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-slate-300 dark:text-slate-600 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
                 </div>
               </Link>
             </div>
           ))}
           {filtered.length === 0 && (
-             <div className="p-8 text-center text-slate-500">Nenhum cliente encontrado.</div>
+             <div className="p-8 text-center text-slate-500 dark:text-slate-400">Nenhum cliente encontrado.</div>
           )}
         </div>
       </div>
