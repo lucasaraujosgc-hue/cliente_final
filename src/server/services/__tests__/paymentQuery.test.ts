@@ -45,9 +45,12 @@ const {
   runPaymentQuerySweeper,
   checkPaymentsForDocuments,
   markPaymentsManual,
+  markDocumentPaid,
+  reopenDocumentPayment,
   consultarPagamentoNoSerpro,
   isFederalGuia,
 } = await import("../paymentQuery");
+const { sendClientNotification } = await import("../push");
 
 // Build the PAGTOWEB envelope the real API returns: `dados` is a stringified
 // JSON array of arrecadação records.
@@ -365,6 +368,98 @@ describe("markPaymentsManual", () => {
 
     const r = await markPaymentsManual([a]);
     expect(r).toMatchObject({ selected: 1, marked: 0, skipped: 1 });
+  });
+});
+
+// --- baixa manual de uma guia (o caminho único) -----------------------------
+
+describe("markDocumentPaid", () => {
+  const DOC = "22222222-2222-2222-2222-222222222222";
+
+  it("contador: fecha a consulta, marca o documento e avisa o cliente", async () => {
+    await seedGuia(DOC);
+    const r = await markDocumentPaid(DOC, "accountant");
+
+    expect(r).toMatchObject({ ok: true, alreadyPaid: false, notified: true });
+
+    const [doc] = await testDb.select().from(documents).where(eq(documents.id, DOC));
+    expect(doc.status).toBe("paid");
+
+    const [check] = await testDb
+      .select()
+      .from(paymentChecks)
+      .where(eq(paymentChecks.documentId, DOC));
+    expect(check.status).toBe("PAGO");
+    expect(check.paidSource).toBe("accountant");
+    // consulta encerrada: o sweeper não pode continuar batendo no SERPRO
+    expect(check.nextCheckAt).toBeNull();
+
+    expect(sendClientNotification).toHaveBeenCalledWith(
+      CLIENT_ID,
+      "Pagamento confirmado",
+      expect.stringContaining("escritório"),
+    );
+  });
+
+  it("cria o payment_check quando a guia nunca foi aberta pelo cliente", async () => {
+    await seedGuia(DOC);
+    const antes = await testDb.select().from(paymentChecks);
+    expect(antes).toHaveLength(0);
+
+    await markDocumentPaid(DOC, "accountant");
+    expect(await testDb.select().from(paymentChecks)).toHaveLength(1);
+  });
+
+  it("cliente: some da lista dele mas a conferência no SERPRO continua", async () => {
+    await seedGuia(DOC);
+    const r = await markDocumentPaid(DOC, "client");
+
+    expect(r.notified).toBe(false);
+    const [doc] = await testDb.select().from(documents).where(eq(documents.id, DOC));
+    expect(doc.status).toBe("paid");
+
+    const [check] = await testDb
+      .select()
+      .from(paymentChecks)
+      .where(eq(paymentChecks.documentId, DOC));
+    // marcar é declaração, não confirmação — a consulta segue agendada
+    expect(check.status).toBe("PENDENTE");
+    expect(check.nextCheckAt).not.toBeNull();
+    expect(check.paidSource).toBeNull();
+  });
+
+  it("é idempotente: marcar de novo não reavisa o cliente", async () => {
+    await seedGuia(DOC);
+    await markDocumentPaid(DOC, "accountant");
+    (sendClientNotification as any).mockClear();
+
+    const r = await markDocumentPaid(DOC, "accountant");
+    expect(r.alreadyPaid).toBe(true);
+    expect(sendClientNotification).not.toHaveBeenCalled();
+  });
+
+  it("documento inexistente não explode", async () => {
+    const r = await markDocumentPaid("33333333-3333-3333-3333-333333333333", "accountant");
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("reopenDocumentPayment", () => {
+  const DOC = "44444444-4444-4444-4444-444444444444";
+
+  it("desfazer a baixa reagenda a consulta", async () => {
+    await seedGuia(DOC);
+    await markDocumentPaid(DOC, "accountant");
+    await reopenDocumentPayment(DOC);
+
+    const [check] = await testDb
+      .select()
+      .from(paymentChecks)
+      .where(eq(paymentChecks.documentId, DOC));
+    expect(check.status).toBe("PENDENTE");
+    expect(check.paidSource).toBeNull();
+    expect(check.paidDetectedAt).toBeNull();
+    expect(check.nextCheckAt).not.toBeNull();
   });
 });
 

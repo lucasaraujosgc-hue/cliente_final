@@ -18,6 +18,8 @@ import {
   checkPaymentsForDocuments,
   isFederalGuia,
   markPaymentsManual,
+  markDocumentPaid,
+  reopenDocumentPayment,
 } from "../services/paymentQuery";
 import { upload, uploadCert, validateUploadedFileContent } from "../services/upload";
 import { resolveUploadPath } from "../services/files";
@@ -712,10 +714,46 @@ export function registerAccountantRoutes(app: Express) {
     async (req, res) => {
       try {
         const { status } = req.body;
+        const [before] = await db
+          .select()
+          .from(documents)
+          .where(eq(documents.id, req.params.id));
+        if (!before) return res.status(404).json({ error: "Documento não encontrado." });
+
+        // "paid" não é um status qualquer: fecha a consulta de pagamento,
+        // registra no histórico e avisa o cliente. Antes esta rota só fazia
+        // UPDATE documents, então o sweeper continuava consultando o SERPRO
+        // por uma guia já paga e a tela de Pagamentos ficava desatualizada.
+        if (status === "paid") {
+          const r = await markDocumentPaid(req.params.id, "accountant");
+          if (!r.alreadyPaid) {
+            await logAudit(req, "payment.manual_mark", {
+              targetType: "document",
+              targetId: req.params.id,
+              summary: `Baixa manual: "${before.title}" marcada como paga`,
+              metadata: { clientId: before.clientId, notified: r.notified },
+            });
+          }
+          return res.json({ success: true, notified: r.notified });
+        }
+
         await db
           .update(documents)
           .set({ status })
           .where(eq(documents.id, req.params.id));
+
+        // Desfazendo a baixa: reabre a consulta, senão a guia sai do radar
+        // do sweeper para sempre.
+        if (before.status === "paid") {
+          await reopenDocumentPayment(req.params.id);
+          await logAudit(req, "payment.manual_unmark", {
+            targetType: "document",
+            targetId: req.params.id,
+            summary: `Baixa desfeita: "${before.title}" voltou para "${status}"`,
+            metadata: { clientId: before.clientId },
+          });
+        }
+
         res.json({ success: true });
       } catch (e: any) {
         res.status(400).json({ error: e.message });

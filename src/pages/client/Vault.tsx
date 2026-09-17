@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 
 export function ClientVault() {
   const [docs, setDocs] = useState<any[]>([]);
@@ -35,6 +36,10 @@ export function ClientVault() {
       .then(data => setDocs(data.documents || []))
       .catch(e => console.error("Error loading vault docs", e));
   };
+
+  // Contador deu baixa numa guia? A tela se refaz quando o cliente volta
+  // para ela, sem precisar apertar Atualizar.
+  useRefreshOnFocus(loadDocs);
 
   useEffect(() => loadDocs(), []);
 

@@ -1,5 +1,29 @@
 # CHANGELOG.md
 
+## Baixa de pagamento unificada (set/2026)
+
+Havia **dois caminhos** para o contador marcar uma guia como paga, com efeitos
+diferentes: a tela de Pagamentos (lote) fechava o `payment_check`, mas o botão
+dentro do cliente só fazia `UPDATE documents SET status='paid'` — deixava o
+check PENDENTE, então o sweeper continuava consultando o SERPRO por uma guia já
+paga e a tela de Pagamentos mostrava desatualizado. Nenhum dos dois avisava o
+cliente, e a tela dele só mudava se ele apertasse "Atualizar".
+
+- `paymentQuery.markDocumentPaid(documentId, source)` vira o caminho único
+  (contador, cliente e SERPRO). Cria o `payment_check` quando a guia nunca foi
+  aberta, é idempotente e registra no `audit_log`.
+- **Baixa do contador agora avisa o cliente** (push + histórico de avisos), com
+  texto próprio: "o escritório deu baixa", não "identificamos".
+- **Cliente marcando é declaração, não confirmação**: some da lista dele, mas a
+  consulta no SERPRO continua agendada — é ela que prova o pagamento, e o
+  contador enxerga o que o cliente marcou e nunca confirmou (`paidSource`).
+- `reopenDocumentPayment()` — desfazer a baixa reagenda a consulta, senão a
+  guia sairia do radar do sweeper para sempre.
+- `useRefreshOnFocus()` nas telas do cliente (Visão Geral, Atrasados, Cofre):
+  o dado se refaz quando ele volta para a aba / reabre o app, com throttle de
+  30s e `appStateChange` do Capacitor no app nativo.
+
+
 ## Exclusão de conta + histórico de avisos (set/2026)
 
 **Exclusão de conta** (destrava a publicação nas lojas — Apple 5.1.1(v) e Data

@@ -188,6 +188,7 @@ export function AccountantPayments() {
       if (!res.ok) throw new Error(data.error || "Falha ao marcar pagamento.");
       setNotice(
         `${data.marked} guia(s) marcada(s) como paga(s)` +
+          (data.marked ? " — o cliente foi avisado" : "") +
           (data.skipped ? ` (${data.skipped} já paga(s) ou sem guia).` : "."),
       );
       await load();

@@ -318,9 +318,11 @@ export async function recordGuiaInteraction(
 
 // --- applying an outcome to the DB ------------------------------------------
 
+export type PaidSource = "serpro" | "accountant" | "client";
+
 async function markGuiaPaid(
   check: typeof paymentChecks.$inferSelect,
-  source: "serpro" | "accountant",
+  source: PaidSource,
   paidAt?: string,
   notify = true,
 ) {
@@ -349,7 +351,7 @@ async function markGuiaPaid(
   await db
     .insert(auditLog)
     .values({
-      actor: source === "serpro" ? "system" : "accountant",
+      actor: source === "serpro" ? "system" : source,
       action: "payment.detected",
       targetType: "document",
       targetId: check.documentId,
@@ -359,12 +361,116 @@ async function markGuiaPaid(
     .catch(() => {});
 
   if (doc && notify) {
-    sendClientNotification(
-      check.clientId,
-      "Pagamento identificado",
-      `Confirmamos o pagamento da guia "${doc.title || "guia"}". Nada mais a fazer.`,
-    ).catch(() => {});
+    // Quando é o contador que dá a baixa, dizer "identificamos" soaria como
+    // detecção automática. O cliente precisa saber que foi o escritório.
+    const body =
+      source === "accountant"
+        ? `O escritório deu baixa no pagamento da guia "${doc.title || "guia"}". Nada mais a fazer.`
+        : `Confirmamos o pagamento da guia "${doc.title || "guia"}". Nada mais a fazer.`;
+    sendClientNotification(check.clientId, "Pagamento confirmado", body).catch(() => {});
   }
+}
+
+// --- baixa manual de UMA guia (o caminho único) ------------------------------
+//
+// Antes existiam dois jeitos de marcar pago com efeitos diferentes: a tela de
+// Pagamentos (em lote) fechava o payment_check, enquanto o botão dentro do
+// cliente só fazia `UPDATE documents SET status='paid'` — deixava o check
+// PENDENTE, então o sweeper continuava consultando o SERPRO por uma guia já
+// paga e a tela de Pagamentos mostrava desatualizado. Agora os dois passam
+// por aqui.
+export interface MarkPaidResult {
+  ok: boolean;
+  alreadyPaid: boolean;
+  notified: boolean;
+}
+
+export async function markDocumentPaid(
+  documentId: string,
+  source: PaidSource,
+  opts: { notify?: boolean } = {},
+): Promise<MarkPaidResult> {
+  const [doc] = await db.select().from(documents).where(eq(documents.id, documentId));
+  if (!doc) return { ok: false, alreadyPaid: false, notified: false };
+
+  const now = new Date();
+  // O check pode não existir: ele só nasce quando o cliente interage com a
+  // guia. Sem isto, dar baixa numa guia que ninguém abriu não registrava nada.
+  await db
+    .insert(paymentChecks)
+    .values({
+      documentId: doc.id,
+      clientId: doc.clientId,
+      status: "PENDENTE",
+      lastInteractionType: "manual",
+      lastInteractionAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: paymentChecks.documentId });
+
+  const [check] = await db
+    .select()
+    .from(paymentChecks)
+    .where(eq(paymentChecks.documentId, doc.id));
+  if (!check) return { ok: false, alreadyPaid: false, notified: false };
+
+  if (check.status === "PAGO" && doc.status === "paid") {
+    return { ok: true, alreadyPaid: true, notified: false };
+  }
+
+  // O cliente marcando por conta própria é uma declaração, não uma confirmação:
+  // some da lista dele, mas a consulta no SERPRO continua agendada — é ela que
+  // prova que o pagamento saiu, e o contador consegue ver no painel a guia que
+  // o cliente marcou e o SERPRO nunca confirmou. Baixa do contador (ou do
+  // próprio SERPRO) encerra a conferência.
+  if (source === "client") {
+    await db
+      .update(documents)
+      .set({ status: "paid" })
+      .where(and(eq(documents.id, doc.id), ne(documents.status, "paid")));
+    await db
+      .update(paymentChecks)
+      .set({
+        lastInteractionType: "manual",
+        lastInteractionAt: now,
+        nextCheckAt: check.nextCheckAt ?? nextMorningBRT(now),
+        updatedAt: now,
+      })
+      .where(eq(paymentChecks.id, check.id));
+    await db
+      .insert(auditLog)
+      .values({
+        actor: "client",
+        action: "payment.client_marked",
+        targetType: "document",
+        targetId: doc.id,
+        summary: `Cliente marcou "${doc.title || "guia"}" como paga (aguardando confirmação)`,
+        metadata: { clientId: doc.clientId },
+      })
+      .catch(() => {});
+    return { ok: true, alreadyPaid: false, notified: false };
+  }
+
+  const notify = opts.notify ?? source === "accountant";
+  await markGuiaPaid(check, source, undefined, notify);
+  return { ok: true, alreadyPaid: false, notified: notify };
+}
+
+// Desfaz a baixa: o contador errou a guia, ou o pagamento voltou. Reabre o
+// check para o sweeper voltar a conferir, senão a guia ficaria fora do radar
+// para sempre.
+export async function reopenDocumentPayment(documentId: string): Promise<void> {
+  const now = new Date();
+  await db
+    .update(paymentChecks)
+    .set({
+      status: "PENDENTE",
+      paidDetectedAt: null,
+      paidSource: null,
+      nextCheckAt: nextMorningBRT(now),
+      updatedAt: now,
+    })
+    .where(and(eq(paymentChecks.documentId, documentId), eq(paymentChecks.status, "PAGO")));
 }
 
 // Runs one payment check and writes the result. Returns the outcome so callers
@@ -548,8 +654,9 @@ export interface ManualMarkResult {
 
 // Accountant marks a set of guias as paid by hand (no SERPRO call). Same
 // portal-wide effect as a detected payment (documents.status -> "paid",
-// payment_checks -> PAGO, audit trail) but the client is NOT notified. Guias
-// already PAGO are left untouched.
+// payment_checks -> PAGO, audit trail) AND the client is notified — era o
+// contrário, e o cliente ficava sem saber que a guia dele tinha sido baixada.
+// Guias already PAGO are left untouched.
 export async function markPaymentsManual(documentIds: string[]): Promise<ManualMarkResult> {
   const ids = Array.from(new Set(documentIds)).slice(0, 150);
   const now = new Date();
@@ -580,7 +687,7 @@ export async function markPaymentsManual(documentIds: string[]): Promise<ManualM
   let marked = 0;
   for (const check of checks) {
     if (check.status === "PAGO") continue;
-    await markGuiaPaid(check, "accountant", undefined, false);
+    await markGuiaPaid(check, "accountant", undefined, true);
     marked++;
   }
 

@@ -6,6 +6,7 @@ import { Download, CheckCircle, RotateCw, Send } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 import { Skeleton } from "../../components/Skeleton";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 
 const brl = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -82,6 +83,10 @@ export function ClientOverdue() {
       setIsRefreshing(false);
     }
   };
+
+  // Contador deu baixa numa guia? A tela se refaz quando o cliente volta
+  // para ela, sem precisar apertar Atualizar.
+  useRefreshOnFocus(loadData);
 
   useEffect(() => {
     loadData();

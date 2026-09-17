@@ -685,10 +685,10 @@ export function ClientDetail() {
                            <Download className="w-4 h-4" />
                         </button>
                      )}
-                     <button onClick={() => markDocStatus(doc.id, "late")} title="Marcar como Atrasado" className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40">
+                     <button onClick={() => markDocStatus(doc.id, "late")} title="Voltar para atrasada (reabre a consulta de pagamento)" className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40">
                         <X className="w-4 h-4" />
                      </button>
-                     <button onClick={() => markDocStatus(doc.id, "paid")} title="Marcar como Em Dia / Pago" className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
+                     <button onClick={() => markDocStatus(doc.id, "paid")} title="Dar baixa: marca como paga, encerra a consulta no SERPRO e avisa o cliente" className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
                         <CheckCircle className="w-4 h-4" />
                      </button>
                      <button onClick={() => handleDeleteDoc(doc.id)} title="Excluir Arquivo" className="p-2 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40"><Trash2 className="w-4 h-4" /></button>

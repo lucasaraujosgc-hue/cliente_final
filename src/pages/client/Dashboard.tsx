@@ -25,6 +25,7 @@ import { StatusHeroCard } from "./dashboard/StatusHeroCard";
 import { FeatureGrid } from "./dashboard/FeatureGrid";
 import { NfseCallout } from "./dashboard/NfseCallout";
 import { ClientDashboardSkeleton } from "../../components/Skeleton";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 
 export function ClientDashboard() {
   const location = useLocation();
@@ -126,6 +127,10 @@ export function ClientDashboard() {
       setIsRefreshing(false);
     }
   };
+
+  // Contador deu baixa numa guia? A tela se refaz quando o cliente volta
+  // para ela, sem precisar apertar Atualizar.
+  useRefreshOnFocus(loadData);
 
   const handleSavePrefs = async () => {
     try {

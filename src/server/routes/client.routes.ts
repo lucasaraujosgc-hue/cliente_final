@@ -22,7 +22,7 @@ import {
   isReadableFile,
 } from "../services/files";
 import { getSerproToken, serproPost, isUuid, buildSerproContext } from "../services/serpro";
-import { recordGuiaInteraction, isFederalGuia } from "../services/paymentQuery";
+import { recordGuiaInteraction, isFederalGuia, markDocumentPaid } from "../services/paymentQuery";
 import { hashPassword } from "../services/password";
 import { verifyClientAuth, verifyAnyAuth } from "../middleware/auth";
 import { getClientId } from "../types";
@@ -623,7 +623,14 @@ export function registerClientRoutes(app: Express) {
       .from(documents)
       .where(eq(documents.id, docId));
     if (docs.length > 0 && docs[0].clientId === clientId) {
-      await db.update(documents).set({ status }).where(eq(documents.id, docId));
+      if (status === "paid") {
+        // Caminho único: some da lista do cliente, registra no histórico e
+        // MANTÉM a consulta no SERPRO agendada — marcar é uma declaração, a
+        // confirmação vem da consulta (e o contador vê o que nunca confirmou).
+        await markDocumentPaid(docId, "client");
+      } else {
+        await db.update(documents).set({ status }).where(eq(documents.id, docId));
+      }
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Doc not found" });
