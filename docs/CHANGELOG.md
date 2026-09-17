@@ -1,5 +1,26 @@
 # CHANGELOG.md
 
+## Exclusão de conta + histórico de avisos (set/2026)
+
+**Exclusão de conta** (destrava a publicação nas lojas — Apple 5.1.1(v) e Data
+safety do Google exigem o caminho dentro do app). Escritório de contabilidade
+tem guarda legal de 5 anos dos documentos fiscais, então o desenho é: o cliente
+pede pelo app, o app explica a retenção, o contador executa depois de encerrar
+as obrigações. Modal do rodapé virou **Minha conta** com zona de risco
+(confirmação em dois passos, motivo opcional, estado "solicitada" com cancelar);
+banner + KPI no painel do contador; página pública `/excluir-conta` (a "Account
+deletion URL" do cadastro do app). Migração `0011`.
+
+**Histórico de avisos**: os pushes eram fire-and-forget — dispensou a
+notificação, o aviso sumia. `services/push.ts` agora grava em `notification_log`
+nos dois funis de envio (`sendClientNotification` e `sendPushToClients`), então
+vale para lembrete agendado, guia nova e confirmação de pagamento sem tocar nas
+chamadas. Registra mesmo sem dispositivo cadastrado: é o que o escritório
+avisou, não prova de entrega. O modal do sino ganhou abas **Avisos** /
+**Preferências**, com badge de não lidos no sino e no tile do Visão Geral.
+Migração `0012`.
+
+
 ## Mensagens de mão dupla (set/2026)
 
 O backend sempre teve as duas direções em `messages` e o contador já via a

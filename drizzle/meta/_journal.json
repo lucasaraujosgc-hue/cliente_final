@@ -85,6 +85,13 @@
       "when": 1789636802007,
       "tag": "0011_client_deletion_request",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789637465244,
+      "tag": "0012_notification_log",
+      "breakpoints": true
     }
   ]
 }

@@ -69,6 +69,23 @@ export function ClientDashboard() {
   const [showBillingForm, setShowBillingForm] = useState(false);
 
   const [showPrefsModal, setShowPrefsModal] = useState(false);
+  // Avisos não lidos (services/push.ts grava tudo em notification_log).
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const res = await apiFetch("/api/client/notifications");
+        const data = await res.json();
+        setUnreadNotifs(Number(data.unread) || 0);
+      } catch {
+        /* o badge é enfeite: nunca derruba o dashboard */
+      }
+    };
+    void refresh();
+    window.addEventListener("notifications-read", refresh);
+    return () => window.removeEventListener("notifications-read", refresh);
+  }, []);
   const [prefsForm, setPrefsForm] = useState({
     receives_all: true,
     recurrent: true,
@@ -563,8 +580,13 @@ export function ClientDashboard() {
           <button disabled={isRefreshing} onClick={loadData} className={iconBtn} title="Atualizar" id="refresh-dashboard-btn">
             <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} strokeWidth={1.9} />
           </button>
-          <button onClick={() => setShowPrefsModal(true)} className={iconBtn} title="Notificações">
+          <button onClick={() => setShowPrefsModal(true)} className={`${iconBtn} relative`} title="Notificações">
             <Bell className="size-4" strokeWidth={1.9} />
+            {unreadNotifs > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold leading-4 tabular-nums text-white">
+                {unreadNotifs > 9 ? "9+" : unreadNotifs}
+              </span>
+            )}
           </button>
           <button onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))} className={iconBtn} title="Alterar senha">
             <Settings className="size-4" strokeWidth={1.9} />
@@ -649,6 +671,7 @@ export function ClientDashboard() {
         notificationsOn={pushGranted}
         onGoGuias={goToGuias}
         onGoCharts={scrollToCharts}
+        unreadNotifications={unreadNotifs}
         onOpenNotifications={() => setShowPrefsModal(true)}
         onEnableNotifications={() => subscribeToPush().then(() => setPushGranted(true))}
       />

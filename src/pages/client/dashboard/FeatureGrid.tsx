@@ -39,6 +39,7 @@ interface FeatureGridProps {
   uploadsCount: number;
   billingTotal: number;
   notificationsOn: boolean;
+  unreadNotifications?: number;
   onGoGuias: () => void;
   onGoCharts: () => void;
   onOpenNotifications: () => void;
@@ -55,6 +56,7 @@ export function FeatureGrid({
   uploadsCount,
   billingTotal,
   notificationsOn,
+  unreadNotifications = 0,
   onGoGuias,
   onGoCharts,
   onOpenNotifications,
@@ -113,10 +115,15 @@ export function FeatureGrid({
     {
       key: "notificacoes",
       title: "Notificações",
-      sub: notificationsOn ? "Ativadas neste aparelho" : "Toque para ativar",
+      sub:
+        unreadNotifications > 0
+          ? `${unreadNotifications} aviso${unreadNotifications === 1 ? "" : "s"} não lido${unreadNotifications === 1 ? "" : "s"}`
+          : notificationsOn
+            ? "Ativadas neste aparelho"
+            : "Toque para ativar",
       Icon: Bell,
-      accent: notificationsOn ? "brand" : "slate",
-      onClick: notificationsOn ? onOpenNotifications : onEnableNotifications,
+      accent: unreadNotifications > 0 ? "warn" : notificationsOn ? "brand" : "slate",
+      onClick: notificationsOn || unreadNotifications > 0 ? onOpenNotifications : onEnableNotifications,
     },
   ];
 

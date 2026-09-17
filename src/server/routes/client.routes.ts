@@ -11,6 +11,7 @@ import {
   serproConfig,
   guiasGeradas,
   paymentChecks,
+  notificationLog,
 } from "../schema";
 import { transporter } from "../services/mailer";
 import { upload, GUIAS_PDF_DIR, validateUploadedFileContent } from "../services/upload";
@@ -655,6 +656,34 @@ export function registerClientRoutes(app: Express) {
       res.json(result);
     },
   );
+
+  // ---- Histórico de avisos ------------------------------------------------
+  //
+  // Antes o push era fire-and-forget: se o cliente dispensasse a notificação,
+  // o aviso sumia. services/push.ts grava tudo em notification_log.
+
+  app.get("/api/client/notifications", verifyClientAuth, async (req, res) => {
+    const rows = await db
+      .select()
+      .from(notificationLog)
+      .where(eq(notificationLog.clientId, getClientId(req)))
+      .orderBy(desc(notificationLog.createdAt))
+      .limit(50);
+    res.json({
+      notifications: rows,
+      unread: rows.filter((n) => !n.read).length,
+    });
+  });
+
+  app.post("/api/client/notifications/read", verifyClientAuth, async (req, res) => {
+    await db
+      .update(notificationLog)
+      .set({ read: true })
+      .where(
+        and(eq(notificationLog.clientId, getClientId(req)), eq(notificationLog.read, false)),
+      );
+    res.json({ success: true });
+  });
 
   // ---- Exclusão de conta -------------------------------------------------
   //

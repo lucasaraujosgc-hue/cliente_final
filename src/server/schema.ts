@@ -74,6 +74,23 @@ export const messages = pgTable('messages', {
   read: boolean('read').default(false).notNull(),
 });
 
+// Histórico de avisos enviados ao cliente. Os pushes eram fire-and-forget:
+// se o cliente dispensasse a notificação, o aviso sumia para sempre. Gravado
+// dentro de services/push.ts, nos dois funis de envio, então vale para
+// lembrete agendado, guia nova e confirmação de pagamento — sem tocar nas
+// chamadas. É o registro do que o escritório avisou, não prova de entrega:
+// grava mesmo que o cliente não tenha nenhum dispositivo cadastrado.
+export const notificationLog = pgTable('notification_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  read: boolean('read').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  clientIdx: index('notification_log_client_idx').on(t.clientId, t.createdAt),
+}));
+
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
