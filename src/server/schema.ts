@@ -27,6 +27,12 @@ export const clients = pgTable('clients', {
   resetCodeHash: text('reset_code_hash'),
   resetCodeExpires: timestamp('reset_code_expires', { mode: 'date' }),
   resetCodeAttempts: integer('reset_code_attempts').default(0).notNull(),
+  // Pedido de exclusão de conta feito pelo próprio cliente (Apple 5.1.1(v) e
+  // Data safety do Google exigem o caminho dentro do app). Não apaga nada
+  // sozinho: escritório de contabilidade tem guarda legal dos documentos
+  // fiscais, então o contador é quem executa depois de encerrar as obrigações.
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true, mode: 'date' }),
+  deletionReason: text('deletion_reason'),
 });
 
 export const documents = pgTable('documents', {

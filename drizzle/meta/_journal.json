@@ -78,6 +78,13 @@
       "when": 1788683252382,
       "tag": "0010_nfse_papel_tomador",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789636802007,
+      "tag": "0011_client_deletion_request",
+      "breakpoints": true
     }
   ]
 }

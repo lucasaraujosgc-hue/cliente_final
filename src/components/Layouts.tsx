@@ -5,6 +5,7 @@ import { cn } from "../lib/utils";
 import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
+import { AccountDeletion } from "./AccountDeletion";
 
 const CHROME_FIELD =
   "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
@@ -187,7 +188,7 @@ export function ClientLayout() {
             {user.name || "Cliente"}
           </p>
           {[
-            { label: "Alterar senha", Icon: Settings, onClick: () => setShowPasswordModal(true) },
+            { label: "Minha conta", Icon: Settings, onClick: () => setShowPasswordModal(true) },
             { label: "Notificações", Icon: Bell, onClick: () => window.dispatchEvent(new CustomEvent("open-notifications")) },
           ].map(({ label, Icon, onClick }) => (
             <button
@@ -260,8 +261,8 @@ export function ClientLayout() {
             <button onClick={() => setShowPasswordModal(false)} className="absolute right-4 top-4 text-faint transition-colors hover:text-muted" aria-label="Fechar">
               <X className="size-5" />
             </button>
-            <h2 className="font-serif text-xl font-semibold text-ink">Alterar dados de acesso</h2>
-            <p className="mt-1.5 text-sm text-muted">E-mail de contato e senha do portal.</p>
+            <h2 className="font-serif text-xl font-semibold text-ink">Minha conta</h2>
+            <p className="mt-1.5 text-sm text-muted">E-mail de contato, senha do portal e exclusão da conta.</p>
 
             {modalError && (
               <div className="mt-4 rounded-lg border border-danger/25 bg-danger-wash px-3.5 py-3 text-sm text-danger">{modalError}</div>
@@ -287,6 +288,8 @@ export function ClientLayout() {
                 {isSaving ? "Salvando..." : "Confirmar alterações"}
               </button>
             </form>
+
+            <AccountDeletion />
           </div>
         </div>
       )}

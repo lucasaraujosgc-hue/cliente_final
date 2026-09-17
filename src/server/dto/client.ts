@@ -30,6 +30,9 @@ export function clientAdminDTO(c: Client) {
     firstAccessDone: c.firstAccessDone ?? false,
     accountantCategory: c.accountantCategory ?? null,
     hasIntegrationToken: Boolean(c.integrationHash || c.integrationHashDigest),
+    // Pedido de exclusão de conta feito pelo cliente — o contador precisa ver.
+    deletionRequestedAt: c.deletionRequestedAt ?? null,
+    deletionReason: c.deletionReason ?? null,
   };
 }
 

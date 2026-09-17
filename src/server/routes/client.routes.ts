@@ -33,6 +33,7 @@ import {
   billingBulkSchema,
   clientSetupProfileSchema,
   clientMessageSchema,
+  clientDeletionRequestSchema,
   clientUploadSchema,
   clientPreferencesSchema,
   clientGuiaSchema,
@@ -654,6 +655,74 @@ export function registerClientRoutes(app: Express) {
       res.json(result);
     },
   );
+
+  // ---- Exclusão de conta -------------------------------------------------
+  //
+  // Apple (5.1.1(v)) e Google exigem um caminho de exclusão DENTRO do app.
+  // Um escritório de contabilidade tem guarda legal dos documentos fiscais
+  // (5 anos), então não dá para apagar na hora: o cliente registra o pedido,
+  // o contador é avisado e executa quando as obrigações estiverem encerradas.
+  // A Apple aceita esse desenho desde que o app explique a retenção.
+
+  app.get("/api/client/account/deletion", verifyClientAuth, async (req, res) => {
+    const [c] = await db.select().from(clients).where(eq(clients.id, getClientId(req)));
+    if (!c) return res.status(404).json({ error: "Conta não encontrada." });
+    res.json({
+      requested: !!c.deletionRequestedAt,
+      requestedAt: c.deletionRequestedAt,
+      reason: c.deletionReason,
+    });
+  });
+
+  app.post(
+    "/api/client/account/deletion",
+    verifyClientAuth,
+    validateBody(clientDeletionRequestSchema),
+    async (req, res) => {
+      const clientId = getClientId(req);
+      const [c] = await db.select().from(clients).where(eq(clients.id, clientId));
+      if (!c) return res.status(404).json({ error: "Conta não encontrada." });
+      if (c.deletionRequestedAt) {
+        return res.json({ requested: true, requestedAt: c.deletionRequestedAt });
+      }
+
+      const reason = (req.body.reason || "").trim() || null;
+      const [updated] = await db
+        .update(clients)
+        .set({ deletionRequestedAt: new Date(), deletionReason: reason })
+        .where(eq(clients.id, clientId))
+        .returning();
+
+      // O contador fica sabendo pelo mesmo canal que ele já acompanha.
+      await db.insert(messages).values({
+        clientId,
+        direction: "client_to_accountant",
+        read: false,
+        content:
+          "[Pedido de exclusão de conta] O cliente solicitou a exclusão da conta e dos dados pessoais pelo portal." +
+          (reason ? `
+
+Motivo informado: ${reason}` : ""),
+      });
+
+      res.json({ requested: true, requestedAt: updated.deletionRequestedAt });
+    },
+  );
+
+  app.delete("/api/client/account/deletion", verifyClientAuth, async (req, res) => {
+    const clientId = getClientId(req);
+    await db
+      .update(clients)
+      .set({ deletionRequestedAt: null, deletionReason: null })
+      .where(eq(clients.id, clientId));
+    await db.insert(messages).values({
+      clientId,
+      direction: "client_to_accountant",
+      read: false,
+      content: "[Pedido de exclusão de conta] O cliente cancelou o pedido de exclusão.",
+    });
+    res.json({ requested: false });
+  });
 
   // Thread completa do cliente (a página /mensagens). O dashboard já devolve
   // as mensagens, mas a tela de conversa não precisa carregar o resto.

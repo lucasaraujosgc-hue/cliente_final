@@ -127,6 +127,7 @@ export function registerAccountantRoutes(app: Express) {
         clients: allClients.length,
         clientsIrregular: allClients.filter((c) => c.regularityStatus !== "green").length,
         unreadMessages,
+        deletionRequests: allClients.filter((c) => c.deletionRequestedAt).length,
         inbox: allDocs.filter(
           (d) => d.uploadedBy === "client" || d.status === "waiting_accountant",
         ).length,

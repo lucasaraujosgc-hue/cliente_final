@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Clock,
   History,
+  UserX,
 } from "lucide-react";
 import { Skeleton } from "../../components/Skeleton";
 import { openDocument } from "../../lib/apiClient";
@@ -22,6 +23,7 @@ interface Overview {
   waitingRecalc: number;
   overdue: number;
   dueSoon: number;
+  deletionRequests?: number;
 }
 
 export function AccountantDashboard() {
@@ -54,6 +56,18 @@ export function AccountantDashboard() {
     { label: "Guias vencidas", value: overview?.overdue, icon: AlertTriangle, to: "/admin/clients", tone: "text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/40" },
     { label: "Vencem em 7d", value: overview?.dueSoon, icon: Clock, to: "/admin/clients", tone: "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40" },
   ];
+
+  // Só aparece quando existe: é uma exigência legal com prazo, não um número
+  // de rotina, e some da tela quando não há nada pendente.
+  if (overview?.deletionRequests) {
+    kpis.push({
+      label: "Exclusão pedida",
+      value: overview.deletionRequests,
+      icon: UserX,
+      to: "/admin/clients",
+      tone: "text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/40",
+    });
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in">

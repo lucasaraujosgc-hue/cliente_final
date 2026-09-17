@@ -25,6 +25,7 @@ const named = <T extends Record<string, any>, K extends keyof T>(
 const Login = named(() => import("./pages/Auth"), "Login");
 const AccountantLogin = named(() => import("./pages/Auth"), "AccountantLogin");
 const SetupProfile = named(() => import("./pages/client/SetupProfile"), "SetupProfile");
+const DeleteAccountInfo = named(() => import("./pages/DeleteAccountInfo"), "DeleteAccountInfo");
 const ClientDashboard = named(() => import("./pages/client/Dashboard"), "ClientDashboard");
 const ClientOverdue = named(() => import("./pages/client/Overdue"), "ClientOverdue");
 const ClientVault = named(() => import("./pages/client/Vault"), "ClientVault");
@@ -53,6 +54,8 @@ export default function App() {
             {/* Auth */}
             <Route path="/login" element={<Login />} />
             <Route path="/setup-profile" element={<SetupProfile />} />
+            {/* Pública: é a "Account deletion URL" exigida pela App Store / Play. */}
+            <Route path="/excluir-conta" element={<DeleteAccountInfo />} />
             <Route
               path="/admin/login"
               element={NATIVE ? <Navigate to="/login" replace /> : <AccountantLogin />}

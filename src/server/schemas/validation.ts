@@ -155,6 +155,12 @@ export const clientMessageSchema = z.object({
   content: z.string().min(1, "Mensagem vazia.").max(5000),
 });
 
+// Pedido de exclusão de conta feito pelo cliente. O motivo é opcional — exigir
+// justificativa para sair seria atrito indevido (e a Apple reprova).
+export const clientDeletionRequestSchema = z.object({
+  reason: optStr(1000),
+});
+
 export const clientUploadSchema = z.object({
   title: optStr(300),
   category: z.string().min(1, "Categoria é obrigatória.").max(80),
