@@ -140,9 +140,9 @@ Abra `npm run cap:ios`. No target **App**:
    - Informe **CNPJ + senha** desse cliente + uma nota explicando o fluxo
      (login → dashboard → cofre → notas).
    - ⚠️ Sem isso a Apple rejeita em **Guideline 2.1** (não consegue testar).
-6. **Exclusão de conta** — a Apple pede um caminho de exclusão de conta/dados
-   **dentro do app** e uma **URL pública** de exclusão. **Ainda não existe** —
-   ver §6.
+6. **Exclusão de conta** — informe a URL pública
+   `https://cliente.virgulacontabil.com.br/excluir-conta`. O caminho dentro do
+   app é Minha conta → Excluir minha conta (ver §6).
 7. **Screenshots**: iPhone 6.9"/6.7" e 6.5" (retrato). Sem iPad (o app é
    iPhone-only via `UISupportedInterfaceOrientations`).
 8. **Idade / classificação**: preencher o questionário (sem conteúdo sensível →
@@ -156,7 +156,7 @@ Abra `npm run cap:ios`. No target **App**:
   nativo, câmera/galeria, share nativo de PDF. Se cair nisso, reforçar recursos
   nativos (Face ID no login é o próximo candidato).
 - **2.1** — conta demo vazia/expirada.
-- **5.1.1(v)** — exclusão de conta (§6).
+- **5.1.1(v)** — exclusão de conta: resolvido (§6).
 
 ---
 
@@ -176,19 +176,30 @@ npm run cap:android
   no `AndroidManifest.xml`.
 - **Build → Generate Signed Bundle (.aab)** → upload no Play Console.
 - Play Console também exige **política de privacidade**, **conta de teste** (em
-  "Acesso ao app") e **exclusão de conta** (Data safety → deletion).
+  "Acesso ao app") e **exclusão de conta** (Data safety → deletion): use a mesma
+  URL `https://cliente.virgulacontabil.com.br/excluir-conta`.
 
 ---
 
-## 6. PENDENTE antes de publicar: exclusão de conta
+## 6. Exclusão de conta — ✅ implementado
 
-Apple (5.1.1) e Google (Data safety) exigem que o usuário consiga pedir a
-exclusão da conta/dados **pelo app** + uma **URL pública**. Hoje não existe.
-Opção mínima: uma tela "Excluir minha conta" na área do cliente que dispara
-`POST /api/client/account-deletion-request` → e-mail pro contador + registro em
-`audit_log`, e uma rota pública `GET /excluir-conta` explicando o processo.
+Apple (5.1.1(v)) e Google (Data safety) exigem que o usuário consiga pedir a
+exclusão da conta/dados **pelo app** + uma **URL pública**. Está pronto:
 
-Peça pro Claude implementar quando for publicar.
+- **No app**: Minha conta (rodapé da sidebar / engrenagem no Visão Geral) →
+  **Excluir minha conta**. Confirmação em dois passos, motivo opcional, e
+  depois o estado "Exclusão solicitada" com opção de cancelar.
+- **URL pública** para o cadastro do app nas duas lojas:
+  **`https://cliente.virgulacontabil.com.br/excluir-conta`**
+  (abre sem login; explica como pedir, o que é apagado e o que fica retido).
+- O pedido aparece para o contador como banner no cliente, KPI no inbox e
+  mensagem na caixa de entrada. Quem executa é o contador, pelo botão de
+  excluir cliente — a guarda legal de 5 anos dos documentos fiscais não
+  permite apagar na hora, e a Apple aceita esse desenho desde que o app
+  explique a retenção (explica).
+
+> No formulário do App Store Connect e do Play Console, informe essa URL no
+> campo de exclusão de conta.
 
 ---
 

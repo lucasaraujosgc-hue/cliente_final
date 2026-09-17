@@ -9,8 +9,8 @@ Estratégia mobile e o que **de fato** existe no código hoje (branch
 
 O usuário-alvo é o **cliente no celular**. Duas formas de entrega:
 
-1. **App Android/iOS via Capacitor** — é o produto principal pretendido, mas o
-   **projeto wrapper Capacitor não está neste repositório** (ver §Capacitor).
+1. **App Android/iOS via Capacitor** — o wrapper **está neste repositório**
+   desde set/2026 (ver §Capacitor).
 2. **PWA** instalável (funciona hoje; ver §PWA).
 
 O SPA (`src/`) é servido igual nos dois casos; alguns pontos do código detectam
@@ -43,14 +43,17 @@ Celular + tablet (< lg):            Desktop / PWA (≥ lg):
 - **Bottom nav** (`lg:hidden`, `flex` sibling do scroll — não é `position:
   fixed`, então o conteúdo nunca fica escondido atrás dela). 4 itens: `Visão
   Geral / Atrasados / Cofre / Envios`. Item ativo em `virgula-green`.
-  `padding-bottom: env(safe-area-inset-bottom)` próprio.
+  `padding-bottom: env(safe-area-inset-bottom)` próprio. Desde set/2026 são
+  **5 itens** (`Conversa` entrou, com badge de mensagens não lidas).
 - **Sidebar** (`hidden lg:flex lg:w-60`): logo, 4 itens (`Visão Geral /
-  Atrasados / Cofre Digital / Meus Envios`), rodapé com nome da empresa +
-  Alterar senha + Notificações + Sair.
+  Atrasados / Cofre Digital / Meus Envios / Mensagens`), rodapé com nome da
+  empresa + **Minha conta** (e-mail, senha e exclusão de conta) + Notificações
+  + Sair.
 - **Engrenagem e sino** saíram do header no mobile — vivem na tela **Visão
   Geral** (`client/Dashboard.tsx`, ao lado do botão Atualizar). A engrenagem
   dispara `open-password-change-modal` (o modal continua no `ClientLayout`); o
-  sino abre o modal de preferências de push. No desktop, ambos ficam no rodapé
+  sino abre o modal de notificações (abas Avisos / Preferências), com badge de
+  avisos não lidos. No desktop, ambos ficam no rodapé
   da sidebar.
 - **Header mobile** (`h-12`, `lg:hidden`): só nome da empresa + Sair.
 - `renderSidebarContent()` / `mobileSidebarOpen` (código morto) foram removidos.
@@ -215,7 +218,7 @@ menos com "wrapper de site"). Toda atualização de UI exige nova build/submiss�
 | Sidebar (contador, desktop) + drawer (contador, mobile) | ✅ implementado |
 | Bottom navigation (cliente, < lg) | ✅ implementado |
 | Sidebar (cliente, ≥ lg) | ✅ implementado |
-| Exclusão de conta in-app (exigência Apple 5.1.1 / Google) | ❌ `[PENDENTE p/ publicar]` — ver MOBILE_BUILD.md §6 |
+| Exclusão de conta in-app (exigência Apple 5.1.1 / Google) | ✅ implementado — Minha conta + `/excluir-conta` |
 | Login biométrico (Face ID / Touch ID) | ❌ `[PLANEJADO]` (reforça o 4.2) |
 | Ícone/splash gerados (`@capacitor/assets`) | ❌ `[PLANEJADO]` |
 | Badge de "atrasados" na bottom nav | ❌ `[PLANEJADO]` |
