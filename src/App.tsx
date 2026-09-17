@@ -30,8 +30,10 @@ const ClientOverdue = named(() => import("./pages/client/Overdue"), "ClientOverd
 const ClientVault = named(() => import("./pages/client/Vault"), "ClientVault");
 const ClientUploads = named(() => import("./pages/client/MyUploads"), "ClientUploads");
 const ClientNfse = named(() => import("./pages/client/Nfse"), "ClientNfse");
+const ClientMessages = named(() => import("./pages/client/Messages"), "ClientMessages");
 const AccountantDashboard = named(() => import("./pages/accountant/Dashboard"), "AccountantDashboard");
 const AccountantNfse = named(() => import("./pages/accountant/nfse"), "AccountantNfse");
+const AccountantMessages = named(() => import("./pages/accountant/Messages"), "AccountantMessages");
 const ClientsList = named(() => import("./pages/accountant/ClientsList"), "ClientsList");
 const ClientDetail = named(() => import("./pages/accountant/ClientDetail"), "ClientDetail");
 const AccountantNotifications = named(() => import("./pages/accountant/Notifications"), "AccountantNotifications");
@@ -64,6 +66,7 @@ export default function App() {
               <Route path="/vault" element={<ClientVault />} />
               <Route path="/uploads" element={<ClientUploads />} />
               <Route path="/nfse" element={<ClientNfse />} />
+              <Route path="/mensagens" element={<ClientMessages />} />
             </Route>
 
             {/* Accountant Routes — bloqueadas no app nativo (só cliente) */}
@@ -73,6 +76,7 @@ export default function App() {
             >
               <Route index element={<AccountantDashboard />} />
               <Route path="nfse" element={<AccountantNfse />} />
+              <Route path="mensagens" element={<AccountantMessages />} />
               <Route path="clients" element={<ClientsList />} />
               <Route path="client/:id" element={<ClientDetail />} />
               <Route path="notifications" element={<AccountantNotifications />} />

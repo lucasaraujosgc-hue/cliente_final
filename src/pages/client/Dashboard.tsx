@@ -10,6 +10,7 @@ import {
   ChevronRight,
   RefreshCw,
   Settings,
+  ArrowRight,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
@@ -613,6 +614,12 @@ export function ClientDashboard() {
               </span>
             </div>
             <p className="mt-1.5 text-sm leading-relaxed text-ink">{msg.content}</p>
+            <button
+              onClick={() => navigate("/mensagens")}
+              className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-fg transition-colors hover:text-brand-strong"
+            >
+              Responder <ArrowRight className="size-3.5" strokeWidth={2.2} />
+            </button>
           </div>
         ))}
 

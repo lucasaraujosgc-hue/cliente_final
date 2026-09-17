@@ -26,6 +26,7 @@ import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { upsertBilling } from "../services/billing";
 import { logAudit } from "../services/audit";
+import { buildConversations } from "../services/messages";
 import {
   generateIntegrationToken,
   setIntegrationToken,
@@ -45,6 +46,7 @@ import {
   accountantMessageSchema,
   accountantBulkMessageSchema,
   accountantEditMessageSchema,
+  accountantMarkReadSchema,
   accountantUploadDocSchema,
   accountantUpdateDocSchema,
   accountantResolveSolicitacaoSchema,
@@ -114,9 +116,17 @@ export function registerAccountantRoutes(app: Express) {
         else if (due <= in7) dueSoon++;
       }
 
+      const unreadMessages = (
+        await db
+          .select()
+          .from(messages)
+          .where(and(eq(messages.direction, "client_to_accountant"), eq(messages.read, false)))
+      ).length;
+
       res.json({
         clients: allClients.length,
         clientsIrregular: allClients.filter((c) => c.regularityStatus !== "green").length,
+        unreadMessages,
         inbox: allDocs.filter(
           (d) => d.uploadedBy === "client" || d.status === "waiting_accountant",
         ).length,
@@ -610,6 +620,53 @@ export function registerAccountantRoutes(app: Express) {
     }
   );
 
+
+  // Caixa de entrada única: uma linha por cliente que já trocou mensagens,
+  // com a última mensagem e quantas do cliente ainda não foram lidas.
+  // Sem isso, as mensagens só apareciam dentro de cada ClientDetail e o
+  // contador não descobria que alguém tinha escrito.
+  app.get("/api/accountant/messages", verifyAccountantAuth, async (_req, res) => {
+    const [allClients, allMsgs] = await Promise.all([
+      db.select().from(clients),
+      db.select().from(messages).orderBy(desc(messages.createdAt)),
+    ]);
+    res.json({ conversations: buildConversations(allClients, allMsgs) });
+  });
+
+  // Thread completa de um cliente (para responder sem sair da caixa de entrada).
+  app.get("/api/accountant/messages/:clientId", verifyAccountantAuth, async (req, res) => {
+    const [client] = await db.select().from(clients).where(eq(clients.id, req.params.clientId));
+    if (!client) return res.status(404).json({ error: "Cliente não encontrado." });
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.clientId, client.id))
+      .orderBy(messages.createdAt);
+    res.json({
+      client: { id: client.id, name: client.name, cnpj: client.cnpj },
+      messages: msgs,
+    });
+  });
+
+  app.post(
+    "/api/accountant/messages/read",
+    verifyAccountantAuth,
+    validateBody(accountantMarkReadSchema),
+    async (req, res) => {
+      await db
+        .update(messages)
+        .set({ read: true })
+        .where(
+          and(
+            eq(messages.clientId, req.body.clientId),
+            eq(messages.direction, "client_to_accountant"),
+            eq(messages.read, false),
+          ),
+        );
+      res.json({ success: true });
+    },
+  );
+
   app.post(
     "/api/accountant/message",
     verifyAccountantAuth,
@@ -620,6 +677,7 @@ export function registerAccountantRoutes(app: Express) {
       await db.insert(messages).values({
         clientId,
         content,
+        direction: "accountant_to_client",
         read: false,
       });
 
@@ -637,6 +695,7 @@ export function registerAccountantRoutes(app: Express) {
       const newMessages = clientIds.map((id: string) => ({
         clientId: id,
         content,
+        direction: "accountant_to_client",
         read: false,
       }));
 

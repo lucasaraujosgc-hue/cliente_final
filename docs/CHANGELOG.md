@@ -1,5 +1,36 @@
 # CHANGELOG.md
 
+## Mensagens de mão dupla (set/2026)
+
+O backend sempre teve as duas direções em `messages` e o contador já via a
+thread dentro de `ClientDetail`, mas **o cliente não tinha como responder** (só
+recebia um aviso read-only no Visão Geral) e o contador **só descobria uma
+mensagem abrindo cliente por cliente**.
+
+- **Cliente** `/mensagens`: conversa completa com balões, separador de dia e
+  compositor (Enter envia). Item na sidebar e na bottom nav com badge de não
+  lidas; abrir a tela marca como lidas e some o aviso do Visão Geral. O card de
+  recado no dashboard ganhou "Responder".
+- **Contador** `/admin/mensagens`: caixa de entrada única com uma linha por
+  cliente (última mensagem + não lidas), thread e resposta sem sair da tela.
+  Badge no menu vindo de `overview.unreadMessages`.
+- Rotas novas: `GET/POST /api/client/messages*`,
+  `GET /api/accountant/messages`, `GET /api/accountant/messages/:clientId`,
+  `POST /api/accountant/messages/read`.
+- `services/messages.ts` `buildConversations()` (agregação pura, 6 testes).
+- Os inserts do contador passaram a gravar `direction` explicitamente em vez de
+  depender do default da coluna.
+
+## Tema escuro do painel do contador (set/2026)
+
+`Dashboard` (inbox), `ClientsList` e `ClientDetail` não tinham **nenhuma**
+variante `dark:` — com o toggle em escuro viravam cards cinza-lama, subtítulo
+invisível e halo branco (`shadow-slate-200` sobre fundo escuro). `Payments` e
+`Audit` estavam parciais. Aplicada a convenção que `Settings`/`Notifications`/
+`nfse` já usavam (superfícies, bordas, texto, sombras, chips, CTA escuro ->
+indigo). `Layouts` ficou de fora: a sidebar do contador é escura por design.
+
+
 Registro das alterações relevantes. Não lista cada arquivo — ver `git log` para
 detalhe. Datas relativas convertidas: trabalho feito em agosto/2026.
 

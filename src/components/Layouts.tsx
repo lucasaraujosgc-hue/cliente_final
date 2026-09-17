@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History, Receipt, FileText } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History, Receipt, FileText, MessageSquare } from "lucide-react";
 import { cn } from "../lib/utils";
 import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
@@ -30,6 +30,28 @@ export function ClientLayout() {
   const [modalError, setModalError] = useState("");
   const [modalSuccess, setModalSuccess] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  // Badge de mensagens não lidas do escritório (some ao abrir /mensagens).
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!token) return;
+    const refresh = async () => {
+      try {
+        const res = await apiFetch("/api/client/messages");
+        const data = await res.json();
+        setUnread(
+          (data.messages || []).filter(
+            (m: any) => !m.read && m.direction !== "client_to_accountant",
+          ).length,
+        );
+      } catch {
+        /* silencioso: o badge é enfeite, não pode quebrar o layout */
+      }
+    };
+    void refresh();
+    window.addEventListener("messages-read", refresh);
+    return () => window.removeEventListener("messages-read", refresh);
+  }, [token]);
 
   const handleLogout = () => {
     void logout("client");
@@ -125,6 +147,7 @@ export function ClientLayout() {
     { to: "/overdue", label: "Atrasados", short: "Atrasados", Icon: AlertCircle },
     { to: "/vault", label: "Cofre Digital", short: "Cofre", Icon: Folder },
     { to: "/uploads", label: "Meus Envios", short: "Envios", Icon: Upload },
+    { to: "/mensagens", label: "Mensagens", short: "Conversa", Icon: MessageSquare },
   ];
   const isActive = (to: string) =>
     location.pathname === to || (to === "/dashboard" && location.pathname === "/");
@@ -150,7 +173,12 @@ export function ClientLayout() {
               )}
             >
               <Icon className="size-[18px] shrink-0" strokeWidth={isActive(to) ? 2.2 : 1.8} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {to === "/mensagens" && unread > 0 && (
+                <span className="grid min-w-5 place-items-center rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
+                  {unread}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
@@ -210,7 +238,14 @@ export function ClientLayout() {
                   active ? "text-brand" : "text-faint",
                 )}
               >
-                <Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} />
+                <span className="relative">
+                  <Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} />
+                  {to === "/mensagens" && unread > 0 && (
+                    <span className="absolute -right-1.5 -top-1 grid min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold leading-4 tabular-nums text-white">
+                      {unread > 9 ? "9+" : unread}
+                    </span>
+                  )}
+                </span>
                 {short}
               </Link>
             );
@@ -267,6 +302,9 @@ export function AccountantLayout() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [totalSize, setTotalSize] = useState<number | null>(null);
+  // Mensagens de cliente ainda não lidas — o badge é o que faz o contador
+  // descobrir que alguém escreveu sem precisar abrir cliente por cliente.
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -287,8 +325,19 @@ export function AccountantLayout() {
     };
     fetchStats();
 
+    const fetchUnread = async () => {
+      try {
+        const res = await apiFetch("/api/accountant/overview", {}, "accountant");
+        const data = await res.json();
+        setUnreadMsgs(Number(data.unreadMessages) || 0);
+      } catch (e) {}
+    };
+    fetchUnread();
+    window.addEventListener("accountant-messages-read", fetchUnread);
+
     return () => {
       window.removeEventListener("unauthorized", handleUnauthorized);
+      window.removeEventListener("accountant-messages-read", fetchUnread);
     };
   }, []);
 
@@ -313,6 +362,7 @@ export function AccountantLayout() {
   const menu = [
     { name: "Inbox", path: "/admin", icon: Upload },
     { name: "Clientes", path: "/admin/clients", icon: Users },
+    { name: "Mensagens", path: "/admin/mensagens", icon: MessageSquare, badge: unreadMsgs },
     { name: "NFS-e", path: "/admin/nfse", icon: FileText },
     { name: "Pagamentos", path: "/admin/payments", icon: Receipt },
     { name: "Notificações", path: "/admin/notifications", icon: Bell },
@@ -350,8 +400,13 @@ export function AccountantLayout() {
                 active ? "bg-slate-800 text-white shadow-inner" : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
               )}
             >
-              <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-500")} />
-              {item.name}
+              <Icon className={cn("w-5 h-5 mr-3 shrink-0", active ? "text-virgula-green" : "text-slate-500")} />
+              <span className="flex-1 truncate">{item.name}</span>
+              {"badge" in item && Number(item.badge) > 0 && (
+                <span className="ml-2 grid min-w-5 place-items-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}

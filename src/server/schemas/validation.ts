@@ -71,6 +71,11 @@ export const accountantEditMessageSchema = z.object({
   content: z.string().min(1, "Mensagem vazia.").max(5000),
 });
 
+// Marca como lidas as mensagens client_to_accountant de um cliente.
+export const accountantMarkReadSchema = z.object({
+  clientId: uuid,
+});
+
 const billingEntrySchema = z.object({
   month: z.string().min(1, "Competência é obrigatória."),
   servicesRevenue: z.number().nonnegative().optional(),

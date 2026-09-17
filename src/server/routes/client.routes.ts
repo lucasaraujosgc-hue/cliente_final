@@ -1,7 +1,7 @@
 import { Express } from "express";
 import fs from "fs";
 import path from "path";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { db } from "../db";
 import {
   clients,
@@ -654,6 +654,33 @@ export function registerClientRoutes(app: Express) {
       res.json(result);
     },
   );
+
+  // Thread completa do cliente (a página /mensagens). O dashboard já devolve
+  // as mensagens, mas a tela de conversa não precisa carregar o resto.
+  app.get("/api/client/messages", verifyClientAuth, async (req, res) => {
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.clientId, getClientId(req)))
+      .orderBy(messages.createdAt);
+    res.json({ messages: msgs });
+  });
+
+  // Ao abrir a conversa, o que veio do escritório deixa de ser "não lida"
+  // (é o que apaga o aviso no topo do Visão Geral).
+  app.post("/api/client/messages/read", verifyClientAuth, async (req, res) => {
+    await db
+      .update(messages)
+      .set({ read: true })
+      .where(
+        and(
+          eq(messages.clientId, getClientId(req)),
+          eq(messages.direction, "accountant_to_client"),
+          eq(messages.read, false),
+        ),
+      );
+    res.json({ success: true });
+  });
 
   app.post("/api/client/message", verifyClientAuth, validateBody(clientMessageSchema), async (req, res) => {
     try {
