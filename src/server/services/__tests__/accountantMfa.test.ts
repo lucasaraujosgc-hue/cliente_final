@@ -71,4 +71,26 @@ describe("accountantMfa — env gating", () => {
     process.env.ACCOUNTANT_2FA = "off";
     expect(accountantMfaEnabled()).toBe(false);
   });
+
+  // Spellings that reach the env from a deploy panel. Before, only a bare
+  // `off` disabled 2FA — `"off"` with quotes silently kept it on.
+  it.each(['"off"', "'off'", " OFF ", "false", "0", "no", "nao", "não", "Desligado"])(
+    "ACCOUNTANT_2FA=%s disables it",
+    (value) => {
+      process.env.ACCOUNTANT_MFA_EMAIL = "primary@x.com";
+      process.env.ACCOUNTANT_2FA = value;
+      expect(accountantMfaEnabled()).toBe(false);
+    },
+  );
+
+  it.each(["on", '"on"', "true", "1", ""])("ACCOUNTANT_2FA=%s keeps it on", (value) => {
+    process.env.ACCOUNTANT_MFA_EMAIL = "primary@x.com";
+    process.env.ACCOUNTANT_2FA = value;
+    expect(accountantMfaEnabled()).toBe(true);
+  });
+
+  it("strips quotes from the address", () => {
+    process.env.ACCOUNTANT_MFA_EMAIL = '"primary@x.com"';
+    expect(accountantMfaEmail()).toBe("primary@x.com");
+  });
 });

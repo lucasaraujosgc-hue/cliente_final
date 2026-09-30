@@ -58,4 +58,11 @@ describe("collectEnvIssues", () => {
       collectEnvIssues({ ...noEmail, EMAIL_USER: "x@y.com" } as NodeJS.ProcessEnv).warnings.join(" "),
     ).not.toContain("2FA");
   });
+
+  it("reminds in production when 2FA was switched off on purpose", () => {
+    const prod = { ...good, NODE_ENV: "production", ACCOUNTANT_2FA: '"off"' } as NodeJS.ProcessEnv;
+    const { problems, warnings } = collectEnvIssues(prod);
+    expect(problems).toEqual([]);
+    expect(warnings.join(" ")).toContain("2FA is OFF");
+  });
 });

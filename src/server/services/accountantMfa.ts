@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { generateResetCode, hashResetCode } from "./resetCode";
+import { accountantMfaAddress } from "../env";
 
 // Second factor for the single accountant account: after username+password, a
 // 6-digit code is emailed and must be confirmed at /api/auth/accountant/verify.
@@ -91,12 +92,10 @@ export function pendingChallengeCount(): number {
 }
 
 // Where the accountant's 2FA code is emailed, or null when 2FA is off
-// (explicit ACCOUNTANT_2FA=off, or no address to send to). env.ts surfaces a
-// boot warning when it ends up off by accident.
+// (ACCOUNTANT_2FA switched off, or no address to send to). Read on every login,
+// so it follows the env; env.ts surfaces a boot warning when it ends up off.
 export function accountantMfaEmail(): string | null {
-  if (String(process.env.ACCOUNTANT_2FA || "").toLowerCase() === "off") return null;
-  const email = process.env.ACCOUNTANT_MFA_EMAIL || process.env.EMAIL_USER || "";
-  return email.includes("@") ? email : null;
+  return accountantMfaAddress(process.env);
 }
 
 export function accountantMfaEnabled(): boolean {

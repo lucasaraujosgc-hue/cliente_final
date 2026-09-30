@@ -23,6 +23,35 @@ const RECOMMENDED = [
   "SECRETS_KEY",
 ] as const;
 
+// ACCOUNTANT_2FA switches the accountant's emailed login code on/off. Lenient
+// on purpose: in a deploy panel the value easily arrives quoted ("off"), as
+// false/0, or in Portuguese — and before, only a bare `off` disabled it; any
+// other spelling silently left 2FA on.
+const TWO_FA_OFF_VALUES = new Set([
+  "off", "false", "0", "no", "nao", "não", "desligado", "desativado", "disabled",
+]);
+
+/** An env value without surrounding whitespace or quotes. */
+export function envValue(raw: string | undefined): string {
+  const v = String(raw ?? "").trim();
+  const quoted = v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0];
+  return (quoted ? v.slice(1, -1) : v).trim();
+}
+
+export function accountant2faSwitchedOff(env: NodeJS.ProcessEnv = process.env): boolean {
+  return TWO_FA_OFF_VALUES.has(envValue(env.ACCOUNTANT_2FA).toLowerCase());
+}
+
+/**
+ * Where the accountant's 2FA code goes, or null when 2FA is off — switched off
+ * by ACCOUNTANT_2FA, or no address (ACCOUNTANT_MFA_EMAIL, else EMAIL_USER).
+ */
+export function accountantMfaAddress(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (accountant2faSwitchedOff(env)) return null;
+  const email = envValue(env.ACCOUNTANT_MFA_EMAIL) || envValue(env.EMAIL_USER);
+  return email.includes("@") ? email : null;
+}
+
 export interface EnvReport {
   problems: string[];
   warnings: string[];
@@ -60,11 +89,12 @@ export function collectEnvIssues(env: NodeJS.ProcessEnv = process.env): EnvRepor
     if (!env[name]) warnings.push(`${name} is not set — the related feature will be limited.`);
   }
 
-  // Accountant 2FA is on unless ACCOUNTANT_2FA=off. Warn if it ends up off for
-  // lack of an address to email the code to.
-  const twoFaOff = String(env.ACCOUNTANT_2FA || "").toLowerCase() === "off";
-  const mfaEmail = env.ACCOUNTANT_MFA_EMAIL || env.EMAIL_USER || "";
-  if (!twoFaOff && !mfaEmail.includes("@")) {
+  // Accountant 2FA is on unless ACCOUNTANT_2FA switches it off. Warn if it ends
+  // up off for lack of an address to email the code to — and, in production,
+  // remind that it was switched off on purpose.
+  if (accountant2faSwitchedOff(env)) {
+    if (env.NODE_ENV === "production") warnings.push("Accountant 2FA is OFF (ACCOUNTANT_2FA) — /admin login asks only for user + password.");
+  } else if (!accountantMfaAddress(env)) {
     warnings.push(
       "Accountant 2FA is inactive — set ACCOUNTANT_MFA_EMAIL (or EMAIL_USER), or ACCOUNTANT_2FA=off to silence.",
     );

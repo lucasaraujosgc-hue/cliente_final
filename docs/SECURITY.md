@@ -51,7 +51,12 @@ armazenamento no cliente muda.
 
 `src/server/services/accountantMfa.ts`. Ativo por padrão sempre que há para onde
 mandar o código (`ACCOUNTANT_MFA_EMAIL`, ou `EMAIL_USER` como fallback);
-`ACCOUNTANT_2FA=off` desativa. `env.ts` avisa no boot se ficou off sem querer.
+`ACCOUNTANT_2FA=off` desativa — também aceita `false`/`0`/`no`/`nao`/`desligado`,
+com ou sem aspas e em qualquer caixa (antes só `off` exato desligava; `"off"`
+com aspas deixava ligado sem aviso). Qualquer outro valor (ou vazio) = ligado.
+A leitura é `accountant2faSwitchedOff()` em `env.ts`, a mesma no login e no
+boot. `env.ts` avisa no boot se ficou off sem querer (sem e-mail) e, em
+produção, lembra quando foi desligado de propósito.
 
 - Passo 1 (`/accountant/login`): valida `ADMIN`/`PASSWORD` → gera código de
   6 dígitos → `sha256(código + pepper)` guardado **só em memória** (1 conta,

@@ -1,5 +1,24 @@
 # CHANGELOG.md
 
+## Painel do contador no celular + 2FA do contador pelo .env (set/2026)
+
+- **Botões que sumiam no celular.** Na tela do cliente (documentos: editar,
+  baixar, voltar para atrasada, dar baixa, excluir, OK; mural de recados:
+  editar/excluir) e na lista de clientes (resetar senha, editar, excluir) as
+  ações eram `opacity-0 group-hover:…` — só apareciam com o mouse em cima, e
+  em tela de toque não existe hover. Agora ficam escondidas até o hover só
+  quando há mouse (`pointer-fine:`); no toque aparecem sempre. As linhas
+  empilham no celular (info em cima, ações embaixo).
+- Cabeçalho da lista de clientes quebrava para fora da tela ("Novo Cliente"
+  sumia à direita); os cabeçalhos de altura fixa (`h-16`) viraram `min-h-16`.
+  Auditoria automática das 11 telas do `/admin` em 375px: nenhum botão fora
+  da tela ou invisível.
+- **`ACCOUNTANT_2FA`** (on/off) no `.env`: a leitura passa a aceitar aspas,
+  maiúsculas, `false`/`0`/`nao`/`desligado` — antes só `off` exato desligava e
+  `"off"` com aspas deixava o 2FA ligado sem aviso. Leitura única em
+  `env.ts` (`accountant2faSwitchedOff`), usada no login e no aviso de boot; em
+  produção o boot lembra quando o 2FA foi desligado de propósito.
+
 ## App Android pronto para o Google Play + política de privacidade (set/2026)
 
 - **appId passa a `br.com.virgulacontabil.cliente`** (era `.portal`), igual ao
