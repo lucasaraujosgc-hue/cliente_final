@@ -4,7 +4,7 @@ O app nativo (Capacitor) é **só o Portal do Cliente**. O contador continua no
 navegador. O código-fonte é o mesmo SPA de `src/`; o shell nativo vive em
 `ios/` e `android/` **neste repositório**.
 
-- `capacitor.config.ts` — `appId: br.com.virgulacontabil.portal` (⚠️ PERMANENTE
+- `capacitor.config.ts` — `appId: br.com.virgulacontabil.cliente` (⚠️ PERMANENTE
   após a 1ª publicação — troque agora se quiser outro).
 - Bundle web do app: `npm run build:mobile` → `./www` (não versionado).
 - Push: **FCM** nos dois SO (`@capacitor-firebase/messaging`), casando com o
@@ -30,12 +30,12 @@ Sem Mac para iOS: alternativas são Mac na nuvem (MacStadium / MacinCloud) ou CI
 1. [console.firebase.google.com](https://console.firebase.google.com) → **Criar
    projeto** (ex.: `virgula-portal-cliente`). Pode desativar o Google Analytics.
 2. **Adicionar app iOS**:
-   - Bundle ID: `br.com.virgulacontabil.portal` (igual ao `appId`).
+   - Bundle ID: `br.com.virgulacontabil.cliente` (igual ao `appId`).
    - Baixe **`GoogleService-Info.plist`** → coloque em **`ios/App/App/`**
      (arraste para dentro do target **App** no Xcode: "Copy items if needed",
      marque o target). O arquivo está no `.gitignore`.
 3. **Adicionar app Android**:
-   - Nome do pacote: `br.com.virgulacontabil.portal`.
+   - Nome do pacote: `br.com.virgulacontabil.cliente`.
    - Baixe **`google-services.json`** → coloque em **`android/app/`**
      (também no `.gitignore`). O Gradle já aplica o plugin automaticamente
      quando o arquivo existe.
@@ -86,7 +86,7 @@ Abra `npm run cap:ios`. No target **App**:
 
 1. **Signing & Capabilities**:
    - **Team**: sua conta Apple Developer. Xcode cria o provisioning profile.
-   - **Bundle Identifier**: `br.com.virgulacontabil.portal`.
+   - **Bundle Identifier**: `br.com.virgulacontabil.cliente`.
    - **+ Capability** → **Push Notifications** (o Xcode detecta o
      `ios/App/App/App.entitlements` já existente e o vincula ao target — se
      pedir p/ criar um novo, aponte para esse).
@@ -160,24 +160,70 @@ Abra `npm run cap:ios`. No target **App**:
 
 ---
 
-## 5. Android / Play (resumo)
+## 5. Android / Google Play
 
-Você já conhece o fluxo. Específico deste projeto:
+### 5.1 Assinatura (upload key)
+
+- Keystore: `android/portal-virgula-upload.jks` (PKCS12, alias `portal`,
+  RSA 2048, validade 25 anos). **Fora do Git** (`*.jks` no `.gitignore`).
+- Senhas: `android/keystore.properties` (**fora do Git**; modelo em
+  `android/keystore.properties.example`). PKCS12 ⇒ senha do keystore = senha
+  da chave. O `android/app/build.gradle` lê esse arquivo e assina o release
+  sozinho; sem ele o release sai sem assinatura.
+- **Backup obrigatório** do `.jks` + `keystore.properties` (cofre de senhas +
+  cópia offline). Com Play App Signing, perder a upload key tem conserto (pedido
+  de reset no Play Console), mas leva dias.
+- Certificado da upload key (público — útil p/ conferir no Play Console):
+  - SHA-1 `7C:01:B7:BF:4F:59:C4:E5:F5:4F:74:2F:DA:CF:9F:35:16:A3:30:66`
+  - SHA-256 `E9:A1:D8:D7:F8:F9:5C:C8:7B:B3:77:E9:D7:8B:6A:A1:30:26:6A:80:8B:9C:AB:AC:B3:07:BE:3D:26:05:90:74`
+
+### 5.2 Gerar o .aab
 
 ```bash
-npm run cap:android
+npm run cap:sync
+cd android && ./gradlew bundleRelease
 ```
 
-- `google-services.json` em `android/app/` (§1.3).
-- `android/app/build.gradle`: `versionCode` (incremental) e `versionName`.
-- Ícone de push branco/transparente recomendado (senão o Android mostra um
-  quadrado). Opcional: `<meta-data
-  android:name="com.google.firebase.messaging.default_notification_icon" .../>`
-  no `AndroidManifest.xml`.
-- **Build → Generate Signed Bundle (.aab)** → upload no Play Console.
-- Play Console também exige **política de privacidade**, **conta de teste** (em
-  "Acesso ao app") e **exclusão de conta** (Data safety → deletion): use a mesma
-  URL `https://cliente.virgulacontabil.com.br/excluir-conta`.
+Saída: `android/app/build/outputs/bundle/release/app-release.aab` (já
+assinado). No Android Studio dá no mesmo: **Build → Generate Signed App Bundle
+or APK → Android App Bundle**, keystore acima, alias `portal`, variante
+`release`. No Windows, o `gradlew` usa o JDK do Android Studio
+(`JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"`).
+
+- `google-services.json` em `android/app/` (§1.3) — o `package_name` dele tem
+  de ser `br.com.virgulacontabil.cliente`, senão o build falha.
+- A cada envio ao Play: **subir `versionCode`** (1, 2, 3…) em
+  `android/app/build.gradle`; `versionName` é o texto que o usuário vê.
+
+### 5.3 Ícone, splash e imagens da loja
+
+Gerados por `scripts/app-assets/gen-assets.cjs` a partir da arte do
+`favicon.html` (ícone: vírgula laranja no quadrado verde) e do
+`exportar-logo.html` (wordmark "Vírgula, CONTÁBIL"), replicadas em
+`scripts/app-assets/gen.html`:
+
+| Saída | Onde |
+|---|---|
+| Ícone do launcher (legado, round, adaptativo fg/bg, monocromático p/ ícones temáticos do Android 13+) | `android/app/src/main/res/mipmap-*/` |
+| Ícone de push (vírgula branca) — ligado no `AndroidManifest.xml` | `res/drawable-*/ic_stat_notify.png` |
+| Splash: ícone central + wordmark embaixo, fundo `#f8fafc` | `res/drawable-*/splash_icon.png`, `splash_branding.png`, `res/drawable/splash.xml`, `res/values*/styles.xml` |
+| Ícone da loja 512×512, gráfico de recursos 1024×500, 6 capturas 1080×1920 | `store-assets/google-play/` |
+
+As capturas são montadas sobre `blog-screenshots/*-mobile.png` (dados
+simulados). Para regerar tudo: ver o cabeçalho do script.
+
+### 5.4 Play Console — o que ele cobra
+
+- **Política de privacidade**: `https://cliente.virgulacontabil.com.br/privacidade`
+  (`src/pages/PrivacyPolicy.tsx`; também linkada no login e em Minha conta,
+  como o Google exige). **Acesso ao app** (conta de teste
+  com CNPJ + senha para o revisor), **Segurança dos dados**, **Classificação
+  de conteúdo**, **Público-alvo**, **Anúncios** (não tem).
+- **Exclusão de conta** (Segurança dos dados → exclusão): use
+  `https://cliente.virgulacontabil.com.br/excluir-conta`.
+- Conta de desenvolvedor **pessoal** criada depois de nov/2023: antes da
+  produção é obrigatório um **teste fechado com ≥ 12 testadores por 14 dias
+  seguidos**. Conta de **organização** (com D-U-N-S) não tem essa exigência.
 
 ---
 
@@ -228,3 +274,7 @@ exclusão da conta/dados **pelo app** + uma **URL pública**. Está pronto:
 | `ios/App/App/Info.plist` | flags de App Store (encryption, permissões, orientação) |
 | `ios/App/App/AppDelegate.swift` | `FirebaseApp.configure()` + repasse de APNs |
 | `ios/App/App/App.entitlements` | `aps-environment` (push) |
+| `android/app/build.gradle` | `versionCode`/`versionName` + assinatura do release via `keystore.properties` |
+| `android/keystore.properties` | senhas da upload key (**fora do Git**; modelo `.example`) |
+| `scripts/app-assets/` | gerador de ícones/splash/imagens da Play Store |
+| `store-assets/google-play/` | ícone 512, gráfico de recursos, capturas para a ficha da loja |

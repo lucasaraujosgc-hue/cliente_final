@@ -91,7 +91,7 @@ contador continua no navegador. Passo a passo de build/publicação em
 [`docs/MOBILE_BUILD.md`](./MOBILE_BUILD.md).
 
 ```
-capacitor.config.ts     appId br.com.virgulacontabil.portal, webDir ./www
+capacitor.config.ts     appId br.com.virgulacontabil.cliente, webDir ./www
 ios/  android/           projetos nativos (versionados; .gitignore próprio p/ build)
 www/                     bundle web do app — gerado por `npm run build:mobile`, NÃO versionado
 ```

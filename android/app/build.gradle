@@ -1,10 +1,20 @@
 apply plugin: 'com.android.application'
 
+// Assinatura do release (upload key do Google Play), lida de
+// android/keystore.properties — arquivo local, fora do Git (modelo em
+// keystore.properties.example). Sem ele o release sai sem assinatura e ainda
+// dá para assinar pelo "Generate Signed App Bundle" do Android Studio.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
-    namespace = "br.com.virgulacontabil.portal"
+    namespace = "br.com.virgulacontabil.cliente"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "br.com.virgulacontabil.portal"
+        applicationId "br.com.virgulacontabil.cliente"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,10 +26,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

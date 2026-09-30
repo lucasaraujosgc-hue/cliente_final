@@ -8,7 +8,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 //
 // appId é PERMANENTE depois da 1ª publicação nas lojas — confirme antes de subir.
 const config: CapacitorConfig = {
-  appId: "br.com.virgulacontabil.portal",
+  appId: "br.com.virgulacontabil.cliente",
   appName: "Portal do Cliente",
   webDir: "www",
   // Sem `server.url`: os assets vão embutidos no app (a App Store implica menos
@@ -21,7 +21,9 @@ const config: CapacitorConfig = {
   },
   android: {
     // androidScheme 'https' (padrão do Capacitor) → origin https://localhost
-    backgroundColor: "#0f172a",
+    // Fundo do WebView enquanto carrega = fundo da splash e do app (#f8fafc),
+    // para a abertura não piscar escuro.
+    backgroundColor: "#f8fafc",
   },
   plugins: {
     // Push via FCM (iOS + Android). Ver docs/MOBILE_BUILD.md p/ o setup Firebase.
@@ -31,7 +33,9 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 700,
       launchAutoHide: true,
-      backgroundColor: "#0f172a",
+      // Android: a splash vem do tema (res/values*/styles.xml, gerada de
+      // favicon.html + exportar-logo.html); esta cor vale no fallback legado.
+      backgroundColor: "#f8fafc",
       showSpinner: false,
     },
   },

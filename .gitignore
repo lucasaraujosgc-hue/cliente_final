@@ -21,3 +21,12 @@ www/
 /android/app/src/main/assets/public/
 /android/app/src/main/assets/capacitor.config.json
 /android/app/google-services.json
+
+# Assinatura Android (upload key do Google Play) — NUNCA versionar. Perder o
+# keystore ou a senha = pedir reset da upload key ao Google.
+*.jks
+*.keystore
+/android/keystore.properties
+
+# Configuração local do Android Studio
+/android/.idea/

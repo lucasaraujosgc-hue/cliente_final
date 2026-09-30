@@ -1,5 +1,23 @@
 # CHANGELOG.md
 
+## App Android pronto para o Google Play + política de privacidade (set/2026)
+
+- **appId passa a `br.com.virgulacontabil.cliente`** (era `.portal`), igual ao
+  app registrado no Firebase — com o nome antigo o `google-services` quebrava o
+  build. Nada tinha sido publicado, então a troca foi gratuita; a partir do 1º
+  envio ao Play ele é permanente.
+- **Assinatura do release**: upload key em `android/portal-virgula-upload.jks`
+  + senhas em `android/keystore.properties` (os dois fora do Git); o
+  `app/build.gradle` assina o `bundleRelease` sozinho. Ver `MOBILE_BUILD.md` §5.
+- **Ícone, splash e push**: ícone adaptativo (+ monocromático do Android 13),
+  splash com o ícone e o wordmark, ícone de notificação branco ligado ao FCM.
+  Gerados por `scripts/app-assets/` a partir da arte do favicon e do logo.
+- **`/privacidade`** — política de privacidade pública (LGPD), exigida pelo
+  Play e pela App Store, com link no login, em Minha conta e em
+  `/excluir-conta` (o Google exige a política acessível dentro do app). O
+  texto descreve o que o sistema coleta de fato; se isso mudar, atualizar a
+  página e a declaração de Segurança dos dados do Play.
+
 ## Baixa de pagamento unificada (set/2026)
 
 Havia **dois caminhos** para o contador marcar uma guia como paga, com efeitos

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash (fundo da tela de abertura). Mesmo desenho da splash do sistema
+     (Android 12+): ícone no centro + wordmark embaixo. Layer-list em vez de
+     PNG de tela cheia para não distorcer em telas de proporções diferentes. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:width="288dp"
+        android:height="288dp"
+        android:drawable="@drawable/splash_icon"
+        android:gravity="center" />
+    <item
+        android:width="200dp"
+        android:height="80dp"
+        android:bottom="48dp"
+        android:drawable="@drawable/splash_branding"
+        android:gravity="bottom|center_horizontal" />
+</layer-list>
