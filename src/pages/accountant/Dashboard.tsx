@@ -71,7 +71,7 @@ export function AccountantDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in">
-      <header className="h-16 flex items-center justify-between px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm -mx-4">
+      <header className="min-h-16 py-3 flex items-center justify-between px-5 sm:px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm -mx-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Visão Geral</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">Central de recebimento e acompanhamento de clientes.</p>

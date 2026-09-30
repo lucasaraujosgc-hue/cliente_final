@@ -202,12 +202,14 @@ export function ClientsList() {
 
   return (
     <div className="space-y-8 animate-in fade-in relative">
-      <header className="h-16 flex items-center justify-between px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm -mx-4">
+      <header className="min-h-16 py-3 flex flex-col items-start gap-3 px-5 sm:flex-row sm:items-center sm:justify-between sm:px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-white dark:border-slate-800 rounded-2xl shadow-sm -mx-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Clientes</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">Gerencie a carteira de clientes do escritório.</p>
         </div>
-        <div className="flex gap-3 relative">
+        {/* No celular os botões quebram de linha (antes "Novo Cliente" ficava
+            fora da tela, à direita). */}
+        <div className="flex flex-wrap items-start gap-2 sm:gap-3 relative">
           <button onClick={() => setShowMuralModal(true)} className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors">
             <Megaphone className="w-4 h-4 mr-2" /> Mural de Recados
           </button>
@@ -225,7 +227,7 @@ export function ClientsList() {
                  <Upload className="w-4 h-4 mr-2" /> {isImporting ? "Importando..." : "Importar .xlsx"}
                </button>
             </div>
-            <button onClick={handleDownloadTemplate} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline absolute -bottom-5 whitespace-nowrap" title="Baixar planilha de exemplo">
+            <button onClick={handleDownloadTemplate} className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline whitespace-nowrap sm:absolute sm:-bottom-5 sm:mt-0" title="Baixar planilha de exemplo">
               Baixar Exemplo
             </button>
           </div>
@@ -394,9 +396,9 @@ export function ClientsList() {
             <div key={client.id} className="group relative">
               <Link 
                 to={`/admin/client/${client.id}`}
-                className="flex items-center justify-between p-4 px-6 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
+                className="flex flex-col gap-3 p-4 px-6 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-center">
+                <div className="flex min-w-0 items-center">
                   <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-sm mr-4 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors">
                     {client.name.charAt(0)}
                   </div>
@@ -420,8 +422,10 @@ export function ClientsList() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center justify-end gap-3 sm:gap-4">
+                  {/* Com mouse: aparecem no hover. Em tela de toque ficam sempre
+                      visíveis (antes o "Resetar senha" sumia no celular). */}
+                  <div className="flex items-center gap-2 mr-auto sm:mr-2 transition-opacity pointer-fine:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                     <button 
                       onClick={(e) => handleResetPassword(client.id, e)}
                       className="p-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-lg transition-colors"

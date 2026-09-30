@@ -377,7 +377,7 @@ export function ClientDetail() {
                     <p className="font-medium">{m.content}</p>
                     <div className="flex justify-between items-end">
                        <span className={`text-[10px] uppercase font-bold mt-2 block ${isFromClient ? 'text-amber-500/80' : 'text-blue-400/80'}`}>{format(parseISO(m.createdAt), "dd MMM HH:mm", {locale: ptBR})}</span>
-                       <div className="hidden group-hover:flex gap-2">
+                       <div className="flex gap-3 pointer-fine:hidden group-hover:flex group-focus-within:flex">
                           <button type="button" onClick={() => deleteMessage(m.id)} title="Excluir"><Trash2 className="w-4 h-4 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"/></button>
                           {!isFromClient && <button type="button" onClick={() => setEditingMsg(m)} title="Editar"><Edit3 className="w-4 h-4 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"/></button>}
                        </div>
@@ -632,8 +632,8 @@ export function ClientDetail() {
               }
 
               return (
-                <div key={doc.id} className={`p-4 px-6 hover:bg-white dark:hover:bg-slate-800 flex items-center justify-between group transition-colors ${isLate ? 'bg-rose-50/30 dark:bg-rose-950/20' : ''}`}>
-                  <div className="flex items-center">
+                <div key={doc.id} className={`p-4 px-6 hover:bg-white dark:hover:bg-slate-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between group transition-colors ${isLate ? 'bg-rose-50/30 dark:bg-rose-950/20' : ''}`}>
+                  <div className="flex min-w-0 items-center">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${isLate ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : (doc.uploadedBy === 'client' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400')}`}>
                       {isLate ? <AlertCircle className="w-5 h-5 animate-pulse" /> : (doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />)}
                     </div>
@@ -662,7 +662,9 @@ export function ClientDetail() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+                  {/* Com mouse: aparecem no hover. Em tela de toque não existe hover —
+                      ficam sempre visíveis (antes sumiam no celular). */}
+                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto sm:ml-4 transition-opacity pointer-fine:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                      <button 
                         onClick={() => {
                           setEditingDocId(doc.id);

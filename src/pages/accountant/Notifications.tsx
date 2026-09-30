@@ -226,7 +226,7 @@ export function AccountantNotifications() {
     <div className="space-y-8 animate-in fade-in max-w-6xl mx-auto pb-16">
       
       {/* HEADER SECTION */}
-      <header className="h-16 flex items-center justify-between px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm">
+      <header className="min-h-16 py-3 flex items-center justify-between px-5 sm:px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Notificações Push</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">Disparar ou agendar alertas automáticos para seus clientes fiscais.</p>
