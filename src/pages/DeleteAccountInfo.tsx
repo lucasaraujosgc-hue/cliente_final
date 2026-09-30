@@ -104,7 +104,10 @@ export function DeleteAccountInfo() {
         </section>
 
         <p className="mt-10 text-center text-xs text-faint">
-          Vírgula Contábil · Portal do Cliente
+          Vírgula Contábil · Portal do Cliente ·{" "}
+          <Link to="/privacidade" className="hover:text-muted hover:underline">
+            Política de privacidade
+          </Link>
         </p>
       </div>
     </div>

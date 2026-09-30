@@ -290,6 +290,17 @@ export function ClientLayout() {
             </form>
 
             <AccountDeletion />
+
+            {/* Exigência do Google Play: a política precisa estar acessível dentro do app */}
+            <p className="mt-4 text-center">
+              <Link
+                to="/privacidade"
+                onClick={() => setShowPasswordModal(false)}
+                className="text-xs font-medium text-muted hover:text-ink hover:underline"
+              >
+                Política de privacidade
+              </Link>
+            </p>
           </div>
         </div>
       )}

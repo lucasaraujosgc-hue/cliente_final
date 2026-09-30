@@ -285,13 +285,21 @@ export function Login() {
             </form>
           )}
 
-          <div className="mt-10 border-t border-line pt-5 text-center">
+          <div className="mt-10 flex items-center justify-center gap-3 border-t border-line pt-5 text-center">
             <button
               type="button"
               onClick={() => navigate("/admin/login")}
               className="text-xs font-medium text-faint hover:text-muted"
             >
               Acesso para contadores
+            </button>
+            <span aria-hidden className="text-xs text-faint">·</span>
+            <button
+              type="button"
+              onClick={() => navigate("/privacidade")}
+              className="text-xs font-medium text-faint hover:text-muted"
+            >
+              Política de privacidade
             </button>
           </div>
         </div>
