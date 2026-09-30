@@ -1,39 +1,65 @@
-export interface Client {
-  id: string;
-  cnpj: string; // Storing the numeric part or formatted? Let's just keep as string (formatted or raw)
-  name: string;
-  passwordHash: string; // bcrypt hash (legacy accounts may still be plaintext until their next login, which triggers an automatic upgrade)
-  regularityStatus: "green" | "warning" | "red";
-  email?: string;
-  firstAccessDone?: boolean;
-  integrationHash?: string;
+import type { Request } from "express";
+import type { InferSelectModel } from "drizzle-orm";
+import type {
+  clients,
+  documents,
+  billingData,
+  messages,
+  nfseConfig,
+  nfseAtividades,
+  nfseEmissoes,
+} from "./schema";
+
+// Row types inferred straight from the Drizzle schema — the single source of
+// truth. Prefer these over hand-written interfaces.
+export type Client = InferSelectModel<typeof clients>;
+export type Document = InferSelectModel<typeof documents>;
+export type BillingRow = InferSelectModel<typeof billingData>;
+export type Message = InferSelectModel<typeof messages>;
+export type NfseConfigRow = InferSelectModel<typeof nfseConfig>;
+export type NfseAtividadeRow = InferSelectModel<typeof nfseAtividades>;
+export type NfseEmissaoRow = InferSelectModel<typeof nfseEmissoes>;
+
+// Access-token JWT payload. Signed in services/session.ts.
+export interface AuthPayload {
+  role: "client" | "accountant";
+  name?: string;
+  clientId?: string; // present for role === "client"
+  sid?: string;      // auth_sessions.id this access token belongs to
+  typ?: "access";
 }
 
-export interface Document {
-  id: string;
-  clientId: string;
-  title: string;
-  category: "company" | "taxes" | "payroll" | "upload" | "other";
-  dueDate?: string; // ISO date string
-  status: "pending" | "paid" | "viewed" | "new";
-  uploadedBy: "accountant" | "client";
-  createdAt: string;
-  fileUrl?: string; // Fake URL
+// Populated by the auth middleware. Augmenting Express.Request lets route
+// handlers read req.user / req.integrationClient without `as any`.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      user?: AuthPayload;
+      integrationClient?: Client;
+      // Correlation id assigned by the requestLog middleware.
+      id?: string;
+    }
+  }
 }
 
-export interface BillingData {
-  id: string;
-  clientId: string;
-  month: string; // e.g. "2026-06"
-  revenue: number;
-  expenses: number;
-  payroll: number;
+// Narrow accessors for authenticated routes. They throw if the expected auth
+// middleware didn't run — which shouldn't be possible on a guarded route, but
+// keeps the types honest without `!` littered everywhere.
+export function getAuth(req: Request): AuthPayload {
+  if (!req.user) throw Object.assign(new Error("Not authenticated"), { status: 401 });
+  return req.user;
 }
 
-export interface Message {
-  id: string;
-  clientId: string;
-  content: string;
-  createdAt: string;
-  read: boolean;
+export function getClientId(req: Request): string {
+  const id = req.user?.clientId;
+  if (!id) throw Object.assign(new Error("Client token required"), { status: 403 });
+  return id;
+}
+
+export function getIntegrationClient(req: Request): Client {
+  if (!req.integrationClient) {
+    throw Object.assign(new Error("Integration token required"), { status: 401 });
+  }
+  return req.integrationClient;
 }
