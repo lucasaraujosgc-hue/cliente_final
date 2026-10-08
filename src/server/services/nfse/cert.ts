@@ -1,5 +1,6 @@
 import fs from "fs";
 import https from "https";
+import tls from "tls";
 import forge from "node-forge";
 import { db } from "../../db";
 import { nfseConfig } from "../../schema";
@@ -7,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { decryptBytes, decryptSecret } from "../secretbox";
 import { normalizeInscricao, inscricaoRaizMatches } from "./inscricao";
 import { NfseError, certMissing, notConfigured } from "./errors";
+import { nfseLog } from "./log";
 import type { NfseConfigRow } from "../../types";
 
 // Certificate handling for the NFS-e emitter.
@@ -24,6 +26,9 @@ export interface ParsedCert {
   notAfter: Date;
   keyPem: string;
   certPem: string;
+  // Leaf + intermediate CAs (issuer order, root left out) — what the mTLS
+  // handshake presents when the .pfx itself can't be handed to OpenSSL.
+  chainPem: string;
 }
 
 // OID 2.16.76.1.3.3 (ICP-Brasil: CNPJ da pessoa jurídica) → DER marker.
@@ -44,6 +49,20 @@ function cnpjFromDer(der: Buffer): string | null {
   const window = der.subarray(at + OID_ICPBR_CNPJ.length, at + OID_ICPBR_CNPJ.length + 40).toString("latin1");
   const m = window.toUpperCase().match(/[0-9A-Z]{14}/);
   return m ? m[0] : null;
+}
+
+// Leaf first, then each issuer found in the .pfx, stopping at (and leaving
+// out) a self-signed root — the order Node's `cert` option expects.
+function chainFrom(leaf: forge.pki.Certificate, all: forge.pki.Certificate[]): forge.pki.Certificate[] {
+  const chain = [leaf];
+  let current = leaf;
+  for (let i = 0; i < all.length; i++) {
+    const parent = all.find((c) => !chain.includes(c) && current.isIssuer(c));
+    if (!parent || parent.isIssuer(parent)) break;
+    chain.push(parent);
+    current = parent;
+  }
+  return chain;
 }
 
 // Parse a .pfx/.p12 buffer. Throws NfseError (status 400) on a wrong password or
@@ -92,7 +111,48 @@ export function parsePfx(pfxBuffer: Buffer, senha: string): ParsedCert {
     notAfter: leaf.validity.notAfter,
     keyPem: forge.pki.privateKeyToPem(keyObj as forge.pki.rsa.PrivateKey),
     certPem: forge.pki.certificateToPem(leaf),
+    chainPem: chainFrom(leaf, certs).map((c) => forge.pki.certificateToPem(c)).join(""),
   };
+}
+
+// --- mTLS credentials ---------------------------------------------------------
+
+export type MtlsCredentials =
+  | { modo: "pfx"; options: { pfx: Buffer; passphrase: string } }
+  | { modo: "pem"; options: { key: string; cert: string } };
+
+// What to give https.Agent for the client certificate.
+//
+// Node/OpenSSL 3 refuses a .pfx encrypted with legacy algorithms (RC2-40 — still
+// what many A1 exporters write): `ERR_CRYPTO_UNSUPPORTED_OPERATION: Unsupported
+// PKCS12 PFX data`. And https.Agent builds its TLS context lazily, so that only
+// surfaced at connect time, as if the portal were unreachable. node-forge (pure
+// JS) does open those files, so when OpenSSL refuses the .pfx we present the
+// key + chain forge extracted. The .pfx stays the first choice: a certificate
+// that already works keeps the exact same path.
+//
+// Both paths are checked here (createSecureContext), so an unusable certificate
+// fails at load with a clear message instead of in the middle of an emission.
+export function mtlsCredentials(pfxBuffer: Buffer, senha: string, parsed?: ParsedCert): MtlsCredentials {
+  try {
+    tls.createSecureContext({ pfx: pfxBuffer, passphrase: senha });
+    return { modo: "pfx", options: { pfx: pfxBuffer, passphrase: senha } };
+  } catch (nativeErr: any) {
+    const p = parsed ?? parsePfx(pfxBuffer, senha);
+    try {
+      tls.createSecureContext({ key: p.keyPem, cert: p.chainPem });
+    } catch (pemErr: any) {
+      nfseLog("error", "cert.incompativel", {
+        pfx: `${nativeErr?.code || ""} ${nativeErr?.message || nativeErr}`.trim(),
+        pem: `${pemErr?.code || ""} ${pemErr?.message || pemErr}`.trim(),
+      });
+      throw new NfseError(
+        "O certificado digital não pôde ser usado para conectar ao portal nacional. Exporte o .pfx novamente (com a chave privada) e reenvie.",
+        { status: 400, reason: "cert_invalid" },
+      );
+    }
+    return { modo: "pem", options: { key: p.keyPem, cert: p.chainPem } };
+  }
 }
 
 // --- mTLS agent (cached per client + cert mtime) ------------------------------
@@ -141,9 +201,10 @@ export async function loadClientCertContext(clientId: string): Promise<ClientCer
     parsed = cached.parsed;
   } else {
     parsed = parsePfx(pfxBuffer, senha);
+    const creds = mtlsCredentials(pfxBuffer, senha, parsed);
+    if (creds.modo === "pem") nfseLog("info", "cert.pfx_legado", { clientId, cnpj: parsed.cnpj });
     agent = new https.Agent({
-      pfx: pfxBuffer,
-      passphrase: senha,
+      ...creds.options,
       keepAlive: true,
       rejectUnauthorized: true,
     });

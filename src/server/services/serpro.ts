@@ -3,6 +3,7 @@ import fs from "fs";
 import { db } from "../db";
 import { serproConfig } from "../schema";
 import { decryptSecret, decryptBytes } from "./secretbox";
+import { mtlsCredentials } from "./nfse/cert";
 
 export function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -56,9 +57,12 @@ export async function buildSerproContext(): Promise<SerproContext> {
     }
     try {
       const pfx = decryptBytes(await fs.promises.readFile(config.certPath));
+      // Same guard as the NFS-e agent (nfse/cert.ts): a .pfx in a legacy
+      // encryption OpenSSL 3 refuses would only fail at connect time, as
+      // "Unsupported PKCS12 PFX data". A .pfx OpenSSL accepts is used as before.
+      const creds = mtlsCredentials(pfx, config.certSenha || "");
       certAgent = new https.Agent({
-        pfx,
-        passphrase: config.certSenha || "",
+        ...creds.options,
         rejectUnauthorized: true,
       });
     } catch (err: any) {
@@ -69,7 +73,9 @@ export async function buildSerproContext(): Promise<SerproContext> {
       });
       throw Object.assign(
         new Error(
-          "Certificado digital não encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configurações do Integra Contador.",
+          err?.reason === "cert_invalid"
+            ? "O certificado digital do Integra Contador não pôde ser aberto (arquivo ou senha inválidos). Reenvie o arquivo .pfx/.p12 nas configurações do Integra Contador."
+            : "Certificado digital não encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configurações do Integra Contador.",
         ),
         { status: 400, reason: "cert_missing" },
       );

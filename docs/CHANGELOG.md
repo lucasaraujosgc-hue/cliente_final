@@ -1,5 +1,34 @@
 # CHANGELOG.md
 
+## Certificado A1 em formato legado + vírgula na alíquota (out/2026)
+
+- **`Unsupported PKCS12 PFX data`** — uma empresa nova (certificado emitido em
+  07/10/2026) não consultava nem emitia NFS-e. Log de produção:
+  `distribuicao.conexao … code: ERR_CRYPTO_UNSUPPORTED_OPERATION`, em 200 ms; a
+  emissão ficava `processando` com o mesmo texto em `erro_msg`. Causa: o `.pfx`
+  veio cifrado com algoritmo legado (RC2-40), que o Node/OpenSSL 3 recusa. O
+  cadastro passava porque `parsePfx` usa node-forge (JS puro, abre legado), mas
+  o agente mTLS recebia o `.pfx` bruto — e o `https.Agent` só monta o contexto
+  TLS ao conectar, então o erro aparecia como "portal fora do ar". Reproduzido
+  com um `.pfx` de teste no mesmo formato. Nenhuma mudança de código ou do
+  governo: a outra empresa configurada seguiu funcionando.
+- `nfse/cert.ts mtlsCredentials()`: o `.pfx` continua sendo a 1ª opção (quem já
+  funciona não muda de caminho); se o OpenSSL recusar, o mTLS usa a chave + a
+  cadeia (folha + intermediárias, sem a raiz) que o forge extraiu. As duas
+  opções são validadas no carregamento (`createSecureContext`), então um
+  certificado inutilizável falha com mensagem clara **antes** de numerar/enviar
+  a DPS — não vira mais uma emissão "enviada, aguardando o Sefin" que nunca
+  saiu do servidor. Log `cert.pfx_legado` quando o caminho alternativo é usado.
+- Mesma proteção no agente do SERPRO (`services/serpro.ts`), que carregava o
+  certificado do escritório do mesmo jeito.
+- Testes (`nfse/__tests__/cert.test.ts`): servidor TLS local que exige
+  certificado de cliente e confia só na raiz — conecta com `.pfx` legado e
+  moderno, e é recusado sem a intermediária (prova que a cadeia vai junto).
+- **Alíquota ISS (%)** e demais percentuais do `AtividadeForm` (PIS, COFINS,
+  retenções) não aceitavam vírgula nem ponto: o campo era controlado pelo
+  número, então "2," virava 2 e o separador sumia. Agora o campo guarda o
+  texto (`lib/decimalInput.ts`), mostra com vírgula e envia número.
+
 ## Painel do contador no celular + 2FA do contador pelo .env (set/2026)
 
 - **Botões que sumiam no celular.** Na tela do cliente (documentos: editar,
