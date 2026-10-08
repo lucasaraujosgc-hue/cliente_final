@@ -8,6 +8,13 @@ import {
   tipoInscricao,
   inscricaoParaId,
 } from "./inscricao";
+import {
+  resolveRegApTribSN,
+  regraAliquota,
+  resolveTotTrib,
+  tomadorExigeEndereco,
+  ALIQUOTA_MIN_SN_RETIDO,
+} from "./regras";
 
 // Monta o XML da DPS (Declaração de Prestação de Serviços) para o Sistema
 // Nacional NFS-e. A ORDEM dos elementos segue a sequência do XSD
@@ -89,6 +96,12 @@ export interface DpsValores {
   pisCofinsCST?: string | null; // CST PIS/COFINS (2 díg.) — emite o bloco piscofins
   aliqPis?: number; // %
   aliqCofins?: number; // %
+  // % aproximado dos tributos pela alíquota do Simples — obrigatório p/ ME/EPP
+  // (regras.ts resolveTotTrib).
+  pTotTribSN?: number | null;
+  // Convênio do município de incidência ativo? Decide o pAliq fora do "SN com
+  // ISS pelo SN" (regras.ts regraAliquota).
+  municipioConveniado?: boolean | null;
 }
 
 // Grupo IBSCBS declarado (mínimo do XSD v1.01): finNFSe(0) + cIndOp + indDest +
@@ -240,11 +253,11 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   const regTrib = prest.ele("regTrib");
   const op = opSimpNac(input.prestador.regimeTributario);
   regTrib.ele("opSimpNac").txt(op);
-  // regApTribSN: só para SN ME/EPP (opSimpNac = 3) e quando o contador definiu.
-  if (op === "3" && ["1", "2", "3"].includes(String(input.prestador.regApTribSN))) {
-    regTrib.ele("regApTribSN").txt(String(input.prestador.regApTribSN));
-  }
-  regTrib.ele("regEspTrib").txt(String(input.prestador.regEspTrib ?? "0"));
+  // regApTribSN: obrigatório para SN ME/EPP (E0166), proibido para os demais (E0162).
+  const regApTribSN = resolveRegApTribSN(op, input.prestador.regApTribSN);
+  if (regApTribSN) regTrib.ele("regApTribSN").txt(regApTribSN);
+  const regEspTrib = String(input.prestador.regEspTrib ?? "0");
+  regTrib.ele("regEspTrib").txt(regEspTrib);
 
   // toma (opcional)
   if (input.tomador && (isCnpj(tomadorDoc) || isCpf(tomadorDoc))) {
@@ -262,7 +275,15 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     const xLgr = sanitizeText(e?.logradouro).slice(0, 255);
     const nro = sanitizeText(e?.numero).slice(0, 60);
     const xBairro = sanitizeText(e?.bairro).slice(0, 60);
-    if (e && xLgr && nro && xBairro && cMun.length === 7 && cep.length === 8) {
+    const enderecoCompleto = !!(e && xLgr && nro && xBairro && cMun.length === 7 && cep.length === 8);
+    // E0235 / E0237: com tomador CNPJ (ou ISS retido) o endereço é obrigatório.
+    if (!enderecoCompleto && tomadorExigeEndereco(isCnpj(tomadorDoc), !!input.valores.issRetido)) {
+      throw new NfseError(
+        "Falta o endereço completo do tomador (CEP, logradouro, número, bairro e município). Ele é obrigatório quando o tomador é identificado por CNPJ.",
+        { status: 400, reason: "tomador_endereco" },
+      );
+    }
+    if (enderecoCompleto && e) {
       const end = toma.ele("end");
       const endNac = end.ele("endNac");
       endNac.ele("cMun").txt(cMun);
@@ -300,9 +321,28 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     : "1";
   tribMun.ele("tribISSQN").txt(tribISSQN);
   tribMun.ele("tpRetISSQN").txt(input.valores.issRetido ? "2" : "1"); // 2 = retido pelo tomador
-  // pAliq só quando há incidência (tribISSQN = 1) e alíquota informada.
-  if (tribISSQN === "1" && input.valores.aliquotaIss > 0) {
-    tribMun.ele("pAliq").txt(input.valores.aliquotaIss.toFixed(2));
+  // pAliq: obrigatória ou proibida conforme o regime (E0600–E0640) — nunca
+  // "se tiver alíquota cadastrada". No Simples com ISS pelo SN só vai com retenção.
+  const aliquota = Number(input.valores.aliquotaIss) || 0;
+  const regra = regraAliquota({
+    op,
+    regApTribSN,
+    tribISSQN,
+    regEspTrib,
+    issRetido: !!input.valores.issRetido,
+    municipioConveniado: input.valores.municipioConveniado,
+  });
+  if (regra === "obrigatoria") {
+    const minimo = op === "3" && regApTribSN === "1" ? ALIQUOTA_MIN_SN_RETIDO : 0;
+    if (!(aliquota > 0) || aliquota < minimo || aliquota > 5) {
+      throw new NfseError(
+        op === "3" && regApTribSN === "1"
+          ? "ISS retido no Simples Nacional exige a alíquota do ISS na atividade (entre 1,8% e 5%). O escritório precisa preencher “Alíquota ISS (%)”."
+          : "Esta nota exige a alíquota do ISS (até 5%). O escritório precisa preencher “Alíquota ISS (%)” na atividade.",
+        { status: 400, reason: "aliquota_ausente" },
+      );
+    }
+    tribMun.ele("pAliq").txt(aliquota.toFixed(2));
   }
 
   const vBase = input.valores.valorServicosCentavos / 100;
@@ -312,7 +352,8 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   const pisCofinsCST = String(input.valores.pisCofinsCST || "").replace(/\D/g, "").padStart(2, "0").slice(-2);
   const emitePisCofins = /^\d{2}$/.test(pisCofinsCST) && pisCofinsCST !== "00";
 
-  if (emitePisCofins || vRetInss > 0 || vRetIrrf > 0 || vRetCsll > 0) {
+  // E0676: MEI não informa tributos federais.
+  if (op !== "2" && (emitePisCofins || vRetInss > 0 || vRetIrrf > 0 || vRetCsll > 0)) {
     const tribFed = trib.ele("tribFed");
     if (emitePisCofins) {
       const pc = tribFed.ele("piscofins");
@@ -332,7 +373,9 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     if (vRetCsll > 0) tribFed.ele("vRetCSLL").txt(vRetCsll.toFixed(2));
   }
 
-  trib.ele("totTrib").ele("indTotTrib").txt("0"); // não informa os tributos totais
+  // totTrib é um choice que depende do regime (E0710/E0712/E0713).
+  const totTrib = resolveTotTrib(op, input.valores.pTotTribSN);
+  trib.ele("totTrib").ele(totTrib.campo).txt(totTrib.valor);
 
   // IBSCBS (reforma) — grupo mínimo do XSD v1.01. Só emitido com
   // NFSE_IBSCBS_ENVIAR=1 e os 3 códigos preenchidos pelo contador.

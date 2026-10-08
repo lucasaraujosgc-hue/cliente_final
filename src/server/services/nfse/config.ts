@@ -242,6 +242,7 @@ export interface AtividadeInput {
   municipioIncidencia?: string | null;
   regApTribSn?: string | null;
   codAtividadeSn?: string | null;
+  pTotTribSn?: number | null;
   retIrrf?: number;
   retPis?: number;
   retCofins?: number;
@@ -279,6 +280,8 @@ function normalizeAtividade(input: AtividadeInput) {
     municipioIncidencia: digitsOrNull(input.municipioIncidencia, 7),
     regApTribSn: ["1", "2", "3"].includes(String(input.regApTribSn)) ? String(input.regApTribSn) : null,
     codAtividadeSn: digitsOrNull(input.codAtividadeSn, 2),
+    // 0 / vazio = não informado (a emissão de ME/EPP cobra o valor).
+    pTotTribSn: Number(input.pTotTribSn) > 0 ? clampPct(input.pTotTribSn) : null,
     retIrrf: clampPct(input.retIrrf),
     retPis: clampPct(input.retPis),
     retCofins: clampPct(input.retCofins),

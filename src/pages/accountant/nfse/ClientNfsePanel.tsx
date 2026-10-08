@@ -375,6 +375,12 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
                   <p className="truncate text-xs text-slate-500">
                     ISS {a.aliquotaIss}%{a.issRetido ? " · retido" : ""} · {a.descricaoPadrao || "sem descrição padrão"}
                   </p>
+                  {/* ME/EPP não emite sem o % de tributos do Simples (E0712) */}
+                  {a.ativo && form.regimeTributario === "simples_nacional" && !(Number(a.pTotTribSn) > 0) && (
+                    <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      Falta “Tributos aproximados — Simples (%)”: o cliente não consegue emitir até preencher.
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <button onClick={() => setEditingAtv(a)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800">

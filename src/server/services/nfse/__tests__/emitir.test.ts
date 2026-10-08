@@ -61,7 +61,11 @@ function okResult(over: Record<string, unknown> = {}) {
 
 const input = {
   atividadeId: "",
-  tomador: { doc: "98765432000110", nome: "Tomadora SA" },
+  tomador: {
+    doc: "98765432000110",
+    nome: "Tomadora SA",
+    endereco: { logradouro: "Av. Paulista", numero: "1000", bairro: "Bela Vista", codigoMunicipio: "3550308", cep: "01310100" },
+  },
   descricao: "Serviço de teste",
   valor: 25000,
   competencia: "08/2026",
@@ -104,6 +108,7 @@ beforeEach(async () => {
       itemListaServico: "4.16",
       codTributacaoNac: "040160",
       aliquotaIss: 2,
+      pTotTribSn: 6,
     })
     .returning();
   atividadeId = atv.id;
@@ -161,7 +166,7 @@ describe("emitirNfse — orquestração", () => {
 
   it("CNPJ do tomador alfanumérico é preservado como string", async () => {
     postNfse.mockResolvedValueOnce(okResult());
-    const row = await emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "12ABC678000D99", nome: "Alfa SA" } });
+    const row = await emitirNfse(CLIENT_ID, { ...input, tomador: { ...input.tomador, doc: "12ABC678000D99", nome: "Alfa SA" } });
     expect(row.tomadorDoc).toBe("12ABC678000D99");
   });
 });

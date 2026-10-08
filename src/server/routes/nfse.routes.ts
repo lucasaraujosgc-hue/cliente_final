@@ -17,6 +17,7 @@ import {
   nfseConfigSchema,
   nfseAtividadeSchema,
   nfseCnpjLookupSchema,
+  nfseCepLookupSchema,
   nfseEmitSchema,
   nfseCancelSchema,
 } from "../schemas/validation";
@@ -37,6 +38,7 @@ import {
   nfseClientsOverview,
   loadClientCertContext,
   lookupCnpj,
+  lookupCep,
   emitirNfse,
   reconcileEmissao,
   sincronizarDistribuicao,
@@ -158,6 +160,25 @@ export function registerNfseRoutes(app: Express) {
       if (!status.enabled) return res.status(403).json({ error: "Emissão de NFS-e não habilitada." });
       try {
         res.json({ tomador: await lookupCnpj(req.body.cnpj) });
+      } catch (e) {
+        if (sendNfseError(res, e)) return;
+        throw e;
+      }
+    },
+  );
+
+  // Endereço do tomador pelo CEP (dá o código IBGE do município que a DPS
+  // exige). Usado quando a consulta de CNPJ falha ou vem incompleta.
+  app.post(
+    "/api/nfse/lookup-cep",
+    verifyClientAuth,
+    nfseLookupLimiter,
+    validateBody(nfseCepLookupSchema),
+    async (req, res) => {
+      const status = await nfseStatusForClient(getClientId(req));
+      if (!status.enabled) return res.status(403).json({ error: "Emissão de NFS-e não habilitada." });
+      try {
+        res.json({ endereco: await lookupCep(req.body.cep) });
       } catch (e) {
         if (sendNfseError(res, e)) return;
         throw e;

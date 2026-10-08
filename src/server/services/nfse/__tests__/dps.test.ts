@@ -33,6 +33,7 @@ const base: BuildDpsInput = {
     aliquotaIss: 2,
     issRetido: false,
     exigibilidadeIss: "1",
+    pTotTribSN: 6,
   },
 };
 
@@ -80,7 +81,8 @@ describe("buildDpsXml", () => {
   it("maps Simples Nacional to opSimpNac 3 and ISS não retido", () => {
     expect(built.xml).toContain("<opSimpNac>3</opSimpNac>");
     expect(built.xml).toContain("<tpRetISSQN>1</tpRetISSQN>");
-    expect(built.xml).toContain("<pAliq>2.00</pAliq>");
+    // Simples com ISS pelo SN e sem retenção: a alíquota é proibida (E0625).
+    expect(built.xml).not.toContain("<pAliq>");
   });
 
   it("includes the tomador with a full national address", () => {
@@ -91,13 +93,20 @@ describe("buildDpsXml", () => {
     expect(built.xml).toContain("<xLgr>Av. Paulista</xLgr>");
   });
 
-  it("omits the tomador address block when incomplete", () => {
+  it("omits the address block for a CPF tomador without address", () => {
     const noAddr = buildDpsXml({
       ...base,
-      tomador: { doc: "98765432000110", nome: "Sem Endereço SA" },
+      tomador: { doc: "52998224725", nome: "Pessoa Sem Endereço" },
     });
     expect(noAddr.xml).not.toContain("<endNac>");
-    expect(noAddr.xml).toContain("<xNome>Sem Endereço SA</xNome>");
+    expect(noAddr.xml).toContain("<xNome>Pessoa Sem Endereço</xNome>");
+  });
+
+  // Rejeição real em produção: E0235.
+  it("refuses a CNPJ tomador without a full address (E0235)", () => {
+    expect(() =>
+      buildDpsXml({ ...base, tomador: { doc: "98765432000110", nome: "Sem Endereço SA" } }),
+    ).toThrow(/endereço completo do tomador/);
   });
 
   it("adds tribFed only when there is federal retention", () => {
@@ -138,7 +147,7 @@ describe("CNPJ alfanumérico (NT-009)", () => {
   it("aceita tomador com CNPJ alfanumérico", () => {
     const built = buildDpsXml({
       ...base,
-      tomador: { doc: "98XYZ432000A10", nome: "Tomador Alfa SA" },
+      tomador: { ...base.tomador, doc: "98XYZ432000A10", nome: "Tomador Alfa SA" },
     });
     expect(built.xml).toContain("<CNPJ>98XYZ432000A10</CNPJ>");
   });
@@ -193,6 +202,56 @@ describe("códigos pré-configurados pelo contador", () => {
   });
 });
 
+// As quatro rejeições seguidas da mesma nota em produção (out/2026): E0166,
+// E0625, E0712 e, na fila, E0235. As regras ficam em regras.ts; aqui confere-se
+// que o XML as obedece.
+describe("regras do regime do prestador no XML", () => {
+  const sn = (over: object = {}, prest: object = {}) =>
+    buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "simples_nacional", ...prest },
+      valores: { ...base.valores, ...over },
+    }).xml;
+
+  it("ME/EPP sempre leva regApTribSN — padrão 1 (E0166)", () => {
+    expect(sn()).toContain("<opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN>");
+  });
+
+  it("ME/EPP informa pTotTribSN e nunca indTotTrib (E0712)", () => {
+    const xml = sn({ pTotTribSN: 11.2 });
+    expect(xml).toContain("<totTrib><pTotTribSN>11.20</pTotTribSN></totTrib>");
+    expect(xml).not.toContain("<indTotTrib>");
+  });
+
+  it("ME/EPP sem o percentual de tributos não gera DPS", () => {
+    expect(() => sn({ pTotTribSN: null })).toThrow(/percentual aproximado de tributos/);
+    expect(() => sn({ pTotTribSN: 0 })).toThrow(/percentual aproximado de tributos/);
+  });
+
+  it("ME/EPP com ISS retido leva a alíquota (E0621) — e ela é obrigatória", () => {
+    expect(sn({ issRetido: true, aliquotaIss: 2.5 })).toContain("<tpRetISSQN>2</tpRetISSQN><pAliq>2.50</pAliq>");
+    expect(() => sn({ issRetido: true, aliquotaIss: 0 })).toThrow(/alíquota do ISS/);
+    expect(() => sn({ issRetido: true, aliquotaIss: 1.5 })).toThrow(/1,8%/);
+  });
+
+  it("ME/EPP com ISS por fora do SN: alíquota só se o município não for conveniado (E0635/E0640)", () => {
+    expect(sn({ municipioConveniado: true }, { regApTribSN: "2" })).not.toContain("<pAliq>");
+    expect(sn({ municipioConveniado: false }, { regApTribSN: "2" })).toContain("<pAliq>2.00</pAliq>");
+  });
+
+  it("MEI: indTotTrib, sem alíquota e sem tributos federais (E0710/E0600/E0676)", () => {
+    const xml = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "mei" },
+      valores: { ...base.valores, pTotTribSN: 6, retIrrf: 1.5, pisCofinsCST: "01", aliqPis: 0.65 },
+    }).xml;
+    expect(xml).toContain("<totTrib><indTotTrib>0</indTotTrib></totTrib>");
+    expect(xml).not.toContain("<pTotTribSN>");
+    expect(xml).not.toContain("<pAliq>");
+    expect(xml).not.toContain("<tribFed>");
+  });
+});
+
 // Rejeição real em produção (out/2026): E0121. Com tpEmit=1 o emitente é o
 // próprio prestador — o grupo <prest> leva só a identificação e o regime.
 describe("grupo prest quando o emitente é o prestador (tpEmit=1)", () => {
@@ -230,7 +289,7 @@ describe("saneamento de texto (ISO-8859-1)", () => {
   it("remove caractere fora do Latin-1 no nome do tomador", () => {
     const built = buildDpsXml({
       ...base,
-      tomador: { doc: "98765432000110", nome: "Empresa 😀 Ação Ltda" },
+      tomador: { ...base.tomador, doc: "98765432000110", nome: "Empresa 😀 Ação Ltda" },
     });
     expect(built.xml).toContain("<xNome>Empresa Ação Ltda</xNome>");
   });

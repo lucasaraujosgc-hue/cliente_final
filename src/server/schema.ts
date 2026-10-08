@@ -227,6 +227,9 @@ export const nfseAtividades = pgTable('nfse_atividades', {
   // Regime de apuração pelo Simples Nacional (regApTribSN) — só p/ opSimpNac=3.
   regApTribSn: text('reg_ap_trib_sn'), // 1 | 2 | 3
   codAtividadeSn: text('cod_atividade_sn'), // cAtvSN (NT-009) — capturado, ainda não enviado
+  // % aproximado dos tributos pela alíquota do Simples (totTrib/pTotTribSN) —
+  // obrigatório p/ ME/EPP: a Sefin recusa `indTotTrib` com E0712.
+  pTotTribSn: real('p_tot_trib_sn'),
   // Retenções federais (percentuais). 0 = não retém.
   retIrrf: real('ret_irrf').default(0).notNull(),
   retPis: real('ret_pis').default(0).notNull(),

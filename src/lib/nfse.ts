@@ -98,6 +98,7 @@ export interface NfseAtividade {
   municipioIncidencia: string | null;
   regApTribSn: string | null;
   codAtividadeSn: string | null;
+  pTotTribSn: number | null;
   retIrrf: number;
   retPis: number;
   retCofins: number;
@@ -201,6 +202,34 @@ export async function lookupCnpjTomador(cnpj: string): Promise<TomadorLookup> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Falha ao consultar o CNPJ.");
   return data.tomador;
+}
+
+export interface CepEndereco {
+  cep: string;
+  logradouro: string | null;
+  bairro: string | null;
+  municipio: string | null;
+  uf: string | null;
+  codigoMunicipio: string | null;
+}
+
+export async function lookupCepTomador(cep: string): Promise<CepEndereco> {
+  const res = await apiFetch("/api/nfse/lookup-cep", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cep }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Falha ao consultar o CEP.");
+  return data.endereco;
+}
+
+// A DPS só aceita o endereço do tomador completo — e ele é obrigatório quando o
+// tomador é identificado por CNPJ (rejeição E0235).
+export function enderecoCompleto(e?: NfseEndereco | null): boolean {
+  const d = (v?: string | null) => String(v ?? "").replace(/\D/g, "");
+  const t = (v?: string | null) => String(v ?? "").trim();
+  return !!e && d(e.cep).length === 8 && d(e.codigoMunicipio).length === 7 && !!t(e.logradouro) && !!t(e.numero) && !!t(e.bairro);
 }
 
 export interface EmitirNfseInput {

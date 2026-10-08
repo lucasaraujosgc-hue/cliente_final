@@ -45,6 +45,7 @@ export function nfseAtividadeAdminDTO(a: NfseAtividadeRow) {
     municipioIncidencia: a.municipioIncidencia ?? null,
     regApTribSn: a.regApTribSn ?? null,
     codAtividadeSn: a.codAtividadeSn ?? null,
+    pTotTribSn: a.pTotTribSn ?? null,
     retIrrf: a.retIrrf,
     retPis: a.retPis,
     retCofins: a.retCofins,

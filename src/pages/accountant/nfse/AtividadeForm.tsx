@@ -34,7 +34,7 @@ const TRIB_ISSQN: [string, string][] = [
 ];
 
 const REG_AP_SN: [string, string][] = [
-  ["", "— (não aplicável / usar padrão do SN)"],
+  ["", "Padrão: federais e ISSQN apurados pelo Simples"],
   ["1", "Federais e ISSQN apurados pelo Simples Nacional"],
   ["2", "Federais pelo SN, ISSQN por fora (legislação municipal)"],
   ["3", "Federais e ISSQN por fora do SN"],
@@ -107,6 +107,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
     municipioIncidencia: initial?.municipioIncidencia ?? "",
     regApTribSn: initial?.regApTribSn ?? "",
     codAtividadeSn: initial?.codAtividadeSn ?? "",
+    pTotTribSn: initial?.pTotTribSn ?? null,
     retIrrf: initial?.retIrrf ?? 0,
     retPis: initial?.retPis ?? 0,
     retCofins: initial?.retCofins ?? 0,
@@ -270,7 +271,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             <div>
               <label className={LABEL}>Alíquota ISS (%)</label>
               <DecimalInput className={FIELD + " mt-1"} value={form.aliquotaIss} onChange={(n) => set({ aliquotaIss: n })} />
-              <p className={HINT}>Município conveniado ao padrão nacional fornece a alíquota — este valor é usado só como fallback.</p>
+              <p className={HINT}>No Simples com ISS apurado pelo SN, só vai na nota quando o ISS é retido (de 1,8% a 5%); sem retenção a Sefin não aceita alíquota. Fora do Simples, é usada quando o município não é conveniado.</p>
             </div>
             <div>
               <label className={LABEL}>Exigibilidade do ISS</label>
@@ -289,9 +290,17 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
           </label>
 
           {/* ---- Simples Nacional ---- */}
-          <details className={SECTION}>
+          <details className={SECTION} open>
             <summary className={SUMMARY}>Simples Nacional</summary>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL}>Tributos aproximados — Simples (%)</label>
+                <DecimalInput className={FIELD + " mt-1"} value={form.pTotTribSn} onChange={(n) => set({ pTotTribSn: n })} />
+                <p className={HINT}>
+                  Percentual aproximado dos tributos pela alíquota do Simples (alíquota efetiva da empresa, ex.: 6 ou 11,2).{" "}
+                  <strong>Obrigatório para ME/EPP</strong>: a Sefin não aceita “não informar” (rejeição E0712).
+                </p>
+              </div>
               <div>
                 <label className={LABEL}>Regime de apuração pelo SN</label>
                 <select className={FIELD + " mt-1"} value={form.regApTribSn ?? ""} onChange={(e) => set({ regApTribSn: e.target.value })}>
@@ -299,7 +308,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
                     <option key={v} value={v}>{l}</option>
                   ))}
                 </select>
-                <p className={HINT}>regApTribSN — só para Simples Nacional ME/EPP que ultrapassou sublimite.</p>
+                <p className={HINT}>regApTribSN — obrigatório para ME/EPP (rejeição E0166). Mude só se a empresa ultrapassou o sublimite e recolhe o ISS por fora.</p>
               </div>
               {text("codAtividadeSn", "Código da atividade SN", "ex.: 7, 8, 9…", "cAtvSN (LC 123/2006, NT-009). Capturado; enviado quando o layout entrar em produção.")}
             </div>

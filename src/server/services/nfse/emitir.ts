@@ -4,7 +4,7 @@ import { clients, nfseAtividades, nfseConfig, nfseEmissoes } from "../../schema"
 import { normalizeInscricao, isChaveAcesso } from "./inscricao";
 import type { NfseEmissaoRow } from "../../types";
 import { loadClientCertContext } from "./cert";
-import { buildDpsXml, type DpsTomador } from "./dps";
+import { buildDpsXml, type BuildDpsInput, type DpsTomador } from "./dps";
 import { signDps } from "./sign";
 import { validateDps } from "./validate";
 import { emitirNfse as postNfse, type Ambiente } from "./client";
@@ -107,6 +107,22 @@ async function resolverAliquota(
   return fallbackPct;
 }
 
+// Convênio do município de incidência com o sistema nacional — entra na regra
+// do pAliq (regras.ts regraAliquota). `null` = não deu para consultar.
+async function convenioAtivo(
+  agent: import("https").Agent,
+  ambiente: Ambiente,
+  codigoMunicipio: string,
+): Promise<boolean | null> {
+  const cod = String(codigoMunicipio || "").replace(/\D/g, "");
+  if (cod.length !== 7) return null;
+  try {
+    return (await getConvenio(agent, ambiente, cod)).aderente;
+  } catch {
+    return null;
+  }
+}
+
 export async function emitirNfse(clientId: string, input: EmitirInput): Promise<NfseEmissaoRow> {
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) throw new NfseError("Cliente não encontrado.", { status: 404 });
@@ -154,14 +170,6 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
 
   const cert = await loadClientCertContext(clientId);
 
-  // Consome o próximo número de DPS de forma atômica.
-  const [bumped] = await db
-    .update(nfseConfig)
-    .set({ proxNumeroDps: sql`${nfseConfig.proxNumeroDps} + 1`, updatedAt: new Date() })
-    .where(eq(nfseConfig.clientId, clientId))
-    .returning({ prox: nfseConfig.proxNumeroDps });
-  if (!bumped) throw new NfseError("Falha ao reservar o número da DPS.", { status: 500 });
-  const numeroDps = bumped.prox - 1;
   const serie = config.serieDps || "00001";
 
   const codServico =
@@ -176,11 +184,16 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     atividade.aliquotaIss || 0,
   );
 
+  const municipioConveniado = await convenioAtivo(
+    cert.agent,
+    ambiente,
+    String(atividade.municipioIncidencia || config.codigoMunicipio || ""),
+  );
+
   const dhEmi = new Date();
-  const built = buildDpsXml({
+  const dpsInput = {
     ambiente,
     serie,
-    numero: numeroDps,
     competencia,
     dhEmi,
     cLocEmi: String(config.codigoMunicipio || ""),
@@ -211,7 +224,10 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     },
     valores: {
       valorServicosCentavos: input.valor,
-      aliquotaIss,
+      // Na DPS vale a alíquota cadastrada na atividade (no Simples com retenção é a
+      // parcela de ISS da faixa, não a alíquota cheia do município). A resolvida
+      // acima (`aliquotaIss`) segue só no registro, para exibição.
+      aliquotaIss: atividade.aliquotaIss || 0,
       issRetido: atividade.issRetido,
       tribISSQN: atividade.tribIssqn || "1",
       exigibilidadeIss: atividade.exigibilidadeIss || "1",
@@ -221,6 +237,8 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
       pisCofinsCST: atividade.pisCofinsCst,
       aliqPis: atividade.aliquotaPis,
       aliqCofins: atividade.aliquotaCofins,
+      pTotTribSN: atividade.pTotTribSn,
+      municipioConveniado,
     },
     ibsCbs:
       atividade.ibsCbsCst && atividade.ibsCbsClassTrib && atividade.ibsCbsCindOp
@@ -231,7 +249,23 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
             indDest: atividade.ibsCbsIndDest || "0",
           }
         : null,
-  });
+  } satisfies Omit<BuildDpsInput, "numero">;
+
+  // Ensaio com número fictício: erro de cadastro (falta o % de tributos do
+  // Simples, endereço do tomador, alíquota…) aparece AQUI, antes de consumir um
+  // número de DPS e sem deixar linha de emissão para trás.
+  buildDpsXml({ ...dpsInput, numero: 1 });
+
+  // Consome o próximo número de DPS de forma atômica.
+  const [bumped] = await db
+    .update(nfseConfig)
+    .set({ proxNumeroDps: sql`${nfseConfig.proxNumeroDps} + 1`, updatedAt: new Date() })
+    .where(eq(nfseConfig.clientId, clientId))
+    .returning({ prox: nfseConfig.proxNumeroDps });
+  if (!bumped) throw new NfseError("Falha ao reservar o número da DPS.", { status: 500 });
+  const numeroDps = bumped.prox - 1;
+
+  const built = buildDpsXml({ ...dpsInput, numero: numeroDps });
 
   const valorIss = Math.round((aliquotaIss / 100) * input.valor);
   const baseRow = {

@@ -13,9 +13,9 @@ const dpsInput: BuildDpsInput = {
   dhEmi: new Date("2026-08-31T12:00:00Z"),
   cLocEmi: "3550308",
   prestador: { cnpj: "12345678000199", nome: "Teste LTDA", regimeTributario: "simples_nacional" },
-  tomador: { doc: "98765432000110", nome: "Tomador SA" },
+  tomador: { doc: "98765432000110", nome: "Tomador SA", endereco: { logradouro: "Av. Paulista", numero: "1000", bairro: "Bela Vista", codigoMunicipio: "3550308", cep: "01310100" } },
   servico: { cTribNac: "040160", descricao: "Serviço de teste" },
-  valores: { valorServicosCentavos: 10000, aliquotaIss: 2, issRetido: false, exigibilidadeIss: "1" },
+  valores: { valorServicosCentavos: 10000, aliquotaIss: 2, issRetido: false, exigibilidadeIss: "1", pTotTribSN: 6 },
 };
 
 let keyPem = "";

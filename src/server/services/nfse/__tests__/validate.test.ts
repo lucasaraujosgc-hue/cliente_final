@@ -10,9 +10,9 @@ const base: BuildDpsInput = {
   dhEmi: new Date("2026-08-31T15:00:00.000Z"),
   cLocEmi: "3550308",
   prestador: { cnpj: "12345678000199", nome: "Clínica Exemplo LTDA", regimeTributario: "simples_nacional" },
-  tomador: { doc: "98765432000110", nome: "Empresa Tomadora SA" },
+  tomador: { doc: "98765432000110", nome: "Empresa Tomadora SA", endereco: { logradouro: "Av. Paulista", numero: "1000", bairro: "Bela Vista", codigoMunicipio: "3550308", cep: "01310100" } },
   servico: { cTribNac: "040160", descricao: "Sessão de psicoterapia", itemListaServico: "4.16" },
-  valores: { valorServicosCentavos: 25000, aliquotaIss: 2, issRetido: false, exigibilidadeIss: "1" },
+  valores: { valorServicosCentavos: 25000, aliquotaIss: 2, issRetido: false, exigibilidadeIss: "1", pTotTribSN: 6 },
 };
 
 describe("validateDps", () => {

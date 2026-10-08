@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import {
   lookupCnpjTomador,
+  lookupCepTomador,
+  enderecoCompleto,
   emitirNfse,
   sincronizarEmissao,
   viewDanfse,
@@ -48,7 +50,8 @@ interface Props {
 type Step = 1 | 2 | 3 | "sending" | "success" | "error" | "processando";
 
 export function EmitWizard({ atividades, prefill, onClose }: Props) {
-  const [step, setStep] = useState<Step>(prefill ? 3 : 1);
+  // Nota duplicada cujo tomador ficou sem endereço volta ao passo 1 para completar.
+  const [step, setStep] = useState<Step>(prefill && enderecoCompleto(prefill.tomador.endereco) ? 3 : 1);
   const [cnpj, setCnpj] = useState(prefill?.tomador.doc ? formatCnpj(prefill.tomador.doc) : "");
   const [looking, setLooking] = useState(false);
   const [lookupError, setLookupError] = useState("");
@@ -60,6 +63,42 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
     telefone: prefill?.tomador.telefone ?? "",
     endereco: (prefill?.tomador.endereco ?? null) as NfseEndereco | null,
   });
+
+  // Endereço do tomador — obrigatório na DPS quando o tomador tem CNPJ (a Sefin
+  // recusa com E0235). Vem da consulta do CNPJ; se ela falhar, o usuário
+  // preenche e o CEP traz o município.
+  const [cepLooking, setCepLooking] = useState(false);
+  const [cepError, setCepError] = useState("");
+  const setEnd = (patch: Partial<NfseEndereco>) =>
+    setTomador((t) => ({ ...t, endereco: { ...(t.endereco ?? {}), ...patch } }));
+  const onCep = async (raw: string) => {
+    const cep = raw.replace(/\D/g, "").slice(0, 8);
+    // O município tem de ser o do CEP (regra E0240): CEP novo zera o anterior.
+    setEnd({ cep, municipio: null, uf: null, codigoMunicipio: null });
+    setCepError("");
+    if (cep.length !== 8) return;
+    setCepLooking(true);
+    try {
+      const r = await lookupCepTomador(cep);
+      setTomador((t) => ({
+        ...t,
+        endereco: {
+          ...(t.endereco ?? {}),
+          cep,
+          logradouro: t.endereco?.logradouro || r.logradouro,
+          bairro: t.endereco?.bairro || r.bairro,
+          municipio: r.municipio,
+          uf: r.uf,
+          codigoMunicipio: r.codigoMunicipio,
+        },
+      }));
+    } catch (e: any) {
+      setCepError(e.message || "Não foi possível consultar o CEP.");
+    } finally {
+      setCepLooking(false);
+    }
+  };
+  const enderecoOk = enderecoCompleto(tomador.endereco);
 
   const [atividadeId, setAtividadeId] = useState(prefill?.atividadeId ?? "");
   const [descricao, setDescricao] = useState(prefill?.descricao ?? "");
@@ -342,24 +381,76 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
                   <input className={FIELD} value={tomador.telefone} onChange={(e) => setTomador({ ...tomador, telefone: e.target.value })} />
                 </div>
               </div>
-              {tomador.endereco?.municipio && (
-                <p className="text-xs text-muted">
-                  {[tomador.endereco.logradouro, tomador.endereco.numero, tomador.endereco.bairro]
-                    .filter(Boolean)
-                    .join(", ")}{" "}
-                  — {tomador.endereco.municipio}/{tomador.endereco.uf}
-                </p>
-              )}
+              <div className="border-t border-line pt-3">
+                <p className={LABEL}>Endereço do tomador</p>
+                <p className="mb-3 text-xs text-muted">Obrigatório na nota quando o tomador tem CNPJ.</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className={LABEL}>CEP</label>
+                    <div className="relative">
+                      <input
+                        className={FIELD}
+                        inputMode="numeric"
+                        placeholder="00000-000"
+                        value={tomador.endereco?.cep ?? ""}
+                        onChange={(e) => onCep(e.target.value)}
+                      />
+                      {cepLooking && <Loader2 className="absolute right-3 top-3 size-4 animate-spin text-muted" />}
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={LABEL}>Logradouro</label>
+                    <input className={FIELD} value={tomador.endereco?.logradouro ?? ""} onChange={(e) => setEnd({ logradouro: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Número</label>
+                    <input className={FIELD} placeholder="ou S/N" value={tomador.endereco?.numero ?? ""} onChange={(e) => setEnd({ numero: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Complemento</label>
+                    <input className={FIELD} value={tomador.endereco?.complemento ?? ""} onChange={(e) => setEnd({ complemento: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Bairro</label>
+                    <input className={FIELD} value={tomador.endereco?.bairro ?? ""} onChange={(e) => setEnd({ bairro: e.target.value })} />
+                  </div>
+                </div>
+                {tomador.endereco?.municipio && (
+                  <p className="mt-2 text-xs text-muted">
+                    Município: <span className="font-semibold text-ink">{tomador.endereco.municipio}/{tomador.endereco.uf}</span>
+                  </p>
+                )}
+                {cepError && (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-danger">{cepError}</p>
+                    <div>
+                      <label className={LABEL}>Código IBGE do município (7 dígitos)</label>
+                      <input
+                        className={FIELD}
+                        inputMode="numeric"
+                        placeholder="peça ao escritório se não souber"
+                        value={tomador.endereco?.codigoMunicipio ?? ""}
+                        onChange={(e) => setEnd({ codigoMunicipio: e.target.value.replace(/\D/g, "").slice(0, 7) })}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           <button
             onClick={() => setStep(2)}
-            disabled={!tomador.nome || normalizeCnpj(tomador.doc || cnpj).length !== 14}
+            disabled={!tomador.nome || normalizeCnpj(tomador.doc || cnpj).length !== 14 || !enderecoOk}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-40"
           >
             Avançar <ArrowRight className="size-4" />
           </button>
+          {!!tomador.nome && !enderecoOk && (
+            <p className="text-center text-xs text-muted">
+              Para avançar, preencha CEP, logradouro, número e bairro do tomador.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -430,6 +521,12 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
         <div className="rounded-xl border border-line bg-sunken p-4 text-sm">
           <p className="font-semibold text-ink">{tomador.nome}</p>
           <p className="text-xs text-muted">{formatCnpj(tomador.doc)}</p>
+          {tomador.endereco?.municipio && (
+            <p className="text-xs text-muted">
+              {[tomador.endereco.logradouro, tomador.endereco.numero, tomador.endereco.bairro].filter(Boolean).join(", ")} —{" "}
+              {tomador.endereco.municipio}/{tomador.endereco.uf}
+            </p>
+          )}
           <p className="mt-2 text-xs text-muted">{atividade?.nome} — {descricao}</p>
         </div>
 

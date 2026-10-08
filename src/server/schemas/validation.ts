@@ -227,6 +227,7 @@ export const nfseAtividadeSchema = z.object({
   municipioIncidencia: optCode(10),
   regApTribSn: z.enum(["1", "2", "3"]).nullish().or(z.literal("")),
   codAtividadeSn: optCode(3),
+  pTotTribSn: z.number().min(0).max(99.99).nullish(),
   retIrrf: pct,
   retPis: pct,
   retCofins: pct,
@@ -246,6 +247,10 @@ export const nfseAtividadeSchema = z.object({
 // Client: CNPJ lookup for the tomador.
 export const nfseCnpjLookupSchema = z.object({
   cnpj: z.string().min(11, "CNPJ inválido.").max(18),
+});
+
+export const nfseCepLookupSchema = z.object({
+  cep: z.string().min(8, "CEP inválido.").max(10),
 });
 
 // Campo de texto opcional que TOLERA null (a consulta de CNPJ devolve muitos

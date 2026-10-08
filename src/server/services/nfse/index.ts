@@ -52,7 +52,7 @@ export {
   excluirEmissoesDescartaveis,
 } from "./emissoes";
 
-export { lookupCnpj, type TomadorLookup, type TomadorEndereco } from "./cnpjLookup";
+export { lookupCnpj, lookupCep, type TomadorLookup, type TomadorEndereco, type CepLookup } from "./cnpjLookup";
 
 export {
   loadClientCertContext,
