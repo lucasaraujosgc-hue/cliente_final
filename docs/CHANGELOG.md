@@ -24,6 +24,17 @@
 - Testes (`nfse/__tests__/cert.test.ts`): servidor TLS local que exige
   certificado de cliente e confia só na raiz — conecta com `.pfx` legado e
   moderno, e é recusado sem a intermediária (prova que a cadeia vai junto).
+- **E0121 na emissão** (1ª DPS que passou do certificado): "O nome ou razão
+  social do prestador não deve ser informado quando o emitente da DPS for o
+  próprio prestador". O `dps.ts` sempre gera `tpEmit=1` e escrevia `<xNome>` no
+  grupo `<prest>`. Removido — o grupo leva só CNPJ (+IM) e `regTrib`; o nome da
+  NFS-e vem do cadastro (bloco `<emit>`). Regra conferida no Anexo I
+  (`02-leiautes/anexo_i…xlsx`, folha de regras da DPS); das 38 regras "não
+  deve/pode ser informado", as aplicáveis a `tpEmit=1` (E0112, E0114, E0120,
+  E0128, E0424) já eram respeitadas. Não apareceu em set/2026 porque aquelas
+  tentativas paravam antes (E0037, E0314). Pode ainda vir **E0116** (IM
+  obrigatória conforme o CNC do município): hoje o sistema nunca envia a IM do
+  prestador — se aparecer, falta um campo de configuração.
 - **Alíquota ISS (%)** e demais percentuais do `AtividadeForm` (PIS, COFINS,
   retenções) não aceitavam vírgula nem ponto: o campo era controlado pelo
   número, então "2," virava 2 e o separador sumia. Agora o campo guarda o

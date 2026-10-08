@@ -232,8 +232,11 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   if (input.prestador.inscricaoMunicipal) {
     prest.ele("IM").txt(String(input.prestador.inscricaoMunicipal).replace(/\D/g, "").slice(0, 15));
   }
-  const xNomePrest = sanitizeText(input.prestador.nome).slice(0, 150);
-  if (xNomePrest) prest.ele("xNome").txt(xNomePrest);
+  // Sem xNome (nem endereço): com tpEmit=1 o emitente É o prestador, e a Sefin
+  // rejeita o nome com E0121 ("não deve ser informado quando o emitente da DPS
+  // for o próprio prestador") e o endereço com E0128 — Anexo I, grupo prest. O
+  // nome da NFS-e vem do cadastro do CNPJ (bloco <emit>). Só seria obrigatório
+  // (E0122) se o emitente fosse o tomador/intermediário, o que não fazemos.
   const regTrib = prest.ele("regTrib");
   const op = opSimpNac(input.prestador.regimeTributario);
   regTrib.ele("opSimpNac").txt(op);

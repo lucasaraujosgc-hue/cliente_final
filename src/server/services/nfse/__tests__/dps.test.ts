@@ -193,6 +193,29 @@ describe("códigos pré-configurados pelo contador", () => {
   });
 });
 
+// Rejeição real em produção (out/2026): E0121. Com tpEmit=1 o emitente é o
+// próprio prestador — o grupo <prest> leva só a identificação e o regime.
+describe("grupo prest quando o emitente é o prestador (tpEmit=1)", () => {
+  const prest = (xml: string) => xml.match(/<prest>(.*?)<\/prest>/s)?.[1] ?? "";
+
+  it("não informa o nome do prestador (E0121)", () => {
+    const built = buildDpsXml(base);
+    expect(built.xml).toContain("<tpEmit>1</tpEmit>");
+    expect(prest(built.xml)).not.toContain("<xNome>");
+    expect(built.xml).not.toContain("Clínica Exemplo LTDA");
+  });
+
+  it("não informa o endereço do prestador (E0128)", () => {
+    expect(prest(buildDpsXml(base).xml)).not.toMatch(/<end>|<endNac>/);
+  });
+
+  it("mantém CNPJ e regime tributário", () => {
+    const p = prest(buildDpsXml(base).xml);
+    expect(p).toContain("<CNPJ>12345678000199</CNPJ>");
+    expect(p).toContain("<regTrib>");
+  });
+});
+
 describe("saneamento de texto (ISO-8859-1)", () => {
   it("transliteria travessão, aspas curvas e reticências na descrição", () => {
     const built = buildDpsXml({
