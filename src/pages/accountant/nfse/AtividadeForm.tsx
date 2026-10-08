@@ -6,6 +6,7 @@ import {
   type NfseAtividade,
   type AtividadeInput,
 } from "../../../lib/nfse";
+import { sanitizeDecimalText, decimalTextToNumber, numberToDecimalText } from "../../../lib/decimalInput";
 
 const FIELD =
   "w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 dark:text-white";
@@ -51,6 +52,39 @@ interface Props {
 }
 
 type FormState = Partial<AtividadeInput>;
+
+// Campo de percentual que aceita vírgula. Guarda o TEXTO digitado: controlado
+// direto pelo número, "2," virava 2 e a vírgula sumia na hora (ver
+// lib/decimalInput.ts). Ao sair do campo, normaliza ("2," → "2", "" → "0").
+function DecimalInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number | null | undefined;
+  onChange: (n: number) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => numberToDecimalText(value));
+  // Valor trocado por fora → ressincroniza; enquanto o texto digitado já
+  // representa esse número ("2," = 2), fica como o usuário digitou.
+  useEffect(() => {
+    if (decimalTextToNumber(text) !== (value ?? 0)) setText(numberToDecimalText(value));
+  }, [value]);
+  return (
+    <input
+      className={className}
+      inputMode="decimal"
+      value={text}
+      onChange={(e) => {
+        const t = sanitizeDecimalText(e.target.value);
+        setText(t);
+        onChange(decimalTextToNumber(t));
+      }}
+      onBlur={() => setText(numberToDecimalText(decimalTextToNumber(text)))}
+    />
+  );
+}
 
 export function AtividadeForm({ initial, onCancel, onSave }: Props) {
   const [servicos, setServicos] = useState<ServicoLC116[]>([]);
@@ -108,11 +142,6 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
   }, [servicos, servicoQuery]);
 
   const set = (patch: FormState) => setForm((f) => ({ ...f, ...patch }));
-  const num = (v: string) => {
-    const n = Number(String(v).replace(",", "."));
-    return Number.isFinite(n) ? n : 0;
-  };
-
   const pickServico = (s: ServicoLC116) => {
     set({
       itemListaServico: s.codigo,
@@ -154,11 +183,10 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
   const pct = (k: keyof FormState, label: string) => (
     <div>
       <label className="text-[11px] font-bold uppercase text-slate-500">{label}</label>
-      <input
+      <DecimalInput
         className={FIELD + " mt-1"}
-        inputMode="decimal"
-        value={String((form as any)[k] ?? 0)}
-        onChange={(e) => set({ [k]: num(e.target.value) } as FormState)}
+        value={(form as any)[k]}
+        onChange={(n) => set({ [k]: n } as FormState)}
       />
     </div>
   );
@@ -241,7 +269,7 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             </div>
             <div>
               <label className={LABEL}>Alíquota ISS (%)</label>
-              <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaIss ?? 0)} onChange={(e) => set({ aliquotaIss: num(e.target.value) })} />
+              <DecimalInput className={FIELD + " mt-1"} value={form.aliquotaIss} onChange={(n) => set({ aliquotaIss: n })} />
               <p className={HINT}>Município conveniado ao padrão nacional fornece a alíquota — este valor é usado só como fallback.</p>
             </div>
             <div>
@@ -297,11 +325,11 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
               {text("pisCofinsCst", "CST PIS/COFINS", "2 dígitos (ex.: 01, 07…)", "Deixe em branco para não emitir o bloco piscofins (padrão p/ Simples).")}
               <div>
                 <label className="text-[11px] font-bold uppercase text-slate-500">Alíquota PIS (%)</label>
-                <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaPis ?? 0)} onChange={(e) => set({ aliquotaPis: num(e.target.value) })} />
+                <DecimalInput className={FIELD + " mt-1"} value={form.aliquotaPis} onChange={(n) => set({ aliquotaPis: n })} />
               </div>
               <div>
                 <label className="text-[11px] font-bold uppercase text-slate-500">Alíquota COFINS (%)</label>
-                <input className={FIELD + " mt-1"} inputMode="decimal" value={String(form.aliquotaCofins ?? 0)} onChange={(e) => set({ aliquotaCofins: num(e.target.value) })} />
+                <DecimalInput className={FIELD + " mt-1"} value={form.aliquotaCofins} onChange={(n) => set({ aliquotaCofins: n })} />
               </div>
             </div>
           </details>
