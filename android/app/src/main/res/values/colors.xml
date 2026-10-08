@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fundo da splash = fundo do app (token color-ground de src/index.css) -->
+    <color name="splash_background">#F8FAFC</color>
+    <!-- Cor da vírgula do ícone; tinge o ícone de notificação do FCM -->
+    <color name="notification_accent">#E78A45</color>
+</resources>

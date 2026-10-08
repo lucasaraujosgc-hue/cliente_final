@@ -1,0 +1,327 @@
+import { describe, it, expect } from "vitest";
+import { buildDpsXml, buildDpsId, type BuildDpsInput } from "../dps";
+import { parseChaveAcesso } from "../chave";
+
+const base: BuildDpsInput = {
+  ambiente: "homologacao",
+  serie: "00001",
+  numero: 7,
+  competencia: "08/2026",
+  dhEmi: new Date("2026-08-31T15:00:00.000Z"),
+  cLocEmi: "3550308",
+  prestador: {
+    cnpj: "12345678000199",
+    nome: "Clínica Exemplo LTDA",
+    regimeTributario: "simples_nacional",
+  },
+  tomador: {
+    doc: "98765432000110",
+    nome: "Empresa Tomadora SA",
+    email: "financeiro@tomadora.com",
+    telefone: "1133224455",
+    endereco: {
+      logradouro: "Av. Paulista",
+      numero: "1000",
+      bairro: "Bela Vista",
+      codigoMunicipio: "3550308",
+      cep: "01310100",
+    },
+  },
+  servico: { cTribNac: "040160", descricao: "Sessão de psicoterapia", itemListaServico: "4.16" },
+  valores: {
+    valorServicosCentavos: 25000,
+    aliquotaIss: 2,
+    issRetido: false,
+    exigibilidadeIss: "1",
+    pTotTribSN: 6,
+  },
+};
+
+describe("buildDpsId", () => {
+  it("produces DPS + 42 digits", () => {
+    const id = buildDpsId("3550308", "12345678000199", "00001", 7);
+    expect(id).toMatch(/^DPS\d{42}$/);
+    // 7 (mun) + 1 (tpInsc=2) + 14 (CNPJ) + 5 (serie) + 15 (num)
+    expect(id.slice(3, 10)).toBe("3550308");
+    expect(id.slice(10, 11)).toBe("2");
+    expect(id.slice(11, 25)).toBe("12345678000199");
+    expect(id.slice(25, 30)).toBe("00001");
+    expect(id.slice(30)).toBe("000000000000007");
+  });
+});
+
+describe("buildDpsXml", () => {
+  const built = buildDpsXml(base);
+
+  it("has the DPS root with the national namespace and versao", () => {
+    expect(built.xml).toContain('xmlns="http://www.sped.fazenda.gov.br/nfse"');
+    expect(built.xml).toContain('versao="1.01"');
+    expect(built.xml).toContain(`<infDPS Id="${built.idDps}">`);
+  });
+
+  it("emits infDPS children in schema order", () => {
+    const order = ["tpAmb", "dhEmi", "verAplic", "serie", "nDPS", "dCompet", "tpEmit", "cLocEmi", "prest", "toma", "serv", "valores"];
+    const positions = order.map((t) => built.xml.indexOf(`<${t}>`));
+    const sorted = [...positions].sort((a, b) => a - b);
+    expect(positions).toEqual(sorted);
+    expect(positions.every((p) => p >= 0)).toBe(true);
+  });
+
+  it("uses homologação ambiente and unpadded nDPS", () => {
+    expect(built.xml).toContain("<tpAmb>2</tpAmb>");
+    expect(built.xml).toContain("<nDPS>7</nDPS>");
+    expect(built.xml).toContain("<serie>00001</serie>");
+    expect(built.xml).toContain("<dCompet>2026-08-01</dCompet>");
+  });
+
+  it("formats money with two decimals from centavos", () => {
+    expect(built.xml).toContain("<vServ>250.00</vServ>");
+  });
+
+  it("maps Simples Nacional to opSimpNac 3 and ISS não retido", () => {
+    expect(built.xml).toContain("<opSimpNac>3</opSimpNac>");
+    expect(built.xml).toContain("<tpRetISSQN>1</tpRetISSQN>");
+    // Simples com ISS pelo SN e sem retenção: a alíquota é proibida (E0625).
+    expect(built.xml).not.toContain("<pAliq>");
+  });
+
+  it("includes the tomador with a full national address", () => {
+    expect(built.xml).toContain("<CNPJ>98765432000110</CNPJ>");
+    expect(built.xml).toContain("<xNome>Empresa Tomadora SA</xNome>");
+    expect(built.xml).toContain("<cMun>3550308</cMun>");
+    expect(built.xml).toContain("<CEP>01310100</CEP>");
+    expect(built.xml).toContain("<xLgr>Av. Paulista</xLgr>");
+  });
+
+  it("omits the address block for a CPF tomador without address", () => {
+    const noAddr = buildDpsXml({
+      ...base,
+      tomador: { doc: "52998224725", nome: "Pessoa Sem Endereço" },
+    });
+    expect(noAddr.xml).not.toContain("<endNac>");
+    expect(noAddr.xml).toContain("<xNome>Pessoa Sem Endereço</xNome>");
+  });
+
+  // Rejeição real em produção: E0235.
+  it("refuses a CNPJ tomador without a full address (E0235)", () => {
+    expect(() =>
+      buildDpsXml({ ...base, tomador: { doc: "98765432000110", nome: "Sem Endereço SA" } }),
+    ).toThrow(/endereço completo do tomador/);
+  });
+
+  it("adds tribFed only when there is federal retention", () => {
+    expect(built.xml).not.toContain("<tribFed>");
+    const withRet = buildDpsXml({
+      ...base,
+      valores: { ...base.valores, retIrrf: 1.5, retInss: 11 },
+    });
+    expect(withRet.xml).toContain("<tribFed>");
+    expect(withRet.xml).toContain("<vRetIRRF>3.75</vRetIRRF>"); // 250 * 1.5%
+    expect(withRet.xml).toContain("<vRetCP>27.50</vRetCP>"); // 250 * 11%
+  });
+
+  it("derives cTribNac from the LC116 item when not provided", () => {
+    const derived = buildDpsXml({
+      ...base,
+      servico: { descricao: "x", itemListaServico: "4.16" },
+    });
+    expect(derived.xml).toContain("<cTribNac>041600</cTribNac>");
+  });
+
+  it("rejects a missing município IBGE", () => {
+    expect(() => buildDpsXml({ ...base, cLocEmi: "" })).toThrow(/IBGE/i);
+  });
+});
+
+describe("CNPJ alfanumérico (NT-009)", () => {
+  it("preserva letras no Id e no elemento CNPJ do prestador", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, cnpj: "12ABC678000D99" },
+    });
+    expect(built.idDps.slice(10, 11)).toBe("2");
+    expect(built.idDps.slice(11, 25)).toBe("12ABC678000D99");
+    expect(built.xml).toContain("<CNPJ>12ABC678000D99</CNPJ>");
+  });
+
+  it("aceita tomador com CNPJ alfanumérico", () => {
+    const built = buildDpsXml({
+      ...base,
+      tomador: { ...base.tomador, doc: "98XYZ432000A10", nome: "Tomador Alfa SA" },
+    });
+    expect(built.xml).toContain("<CNPJ>98XYZ432000A10</CNPJ>");
+  });
+});
+
+describe("códigos pré-configurados pelo contador", () => {
+  it("emite cNBS, tribISSQN configurável e regApTribSN (SN ME/EPP)", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "simples_nacional", regApTribSN: "2" },
+      servico: { ...base.servico, cNBS: "123456789" },
+      valores: { ...base.valores, tribISSQN: "1" },
+    });
+    expect(built.xml).toContain("<cNBS>123456789</cNBS>");
+    expect(built.xml).toContain("<opSimpNac>3</opSimpNac><regApTribSN>2</regApTribSN><regEspTrib>");
+  });
+
+  it("não emite regApTribSN fora do Simples ME/EPP", () => {
+    const built = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "mei", regApTribSN: "2" },
+    });
+    expect(built.xml).not.toContain("<regApTribSN>");
+  });
+
+  it("tribISSQN 3 (exportação) omite pAliq", () => {
+    const built = buildDpsXml({ ...base, valores: { ...base.valores, tribISSQN: "3", aliquotaIss: 5 } });
+    expect(built.xml).toContain("<tribISSQN>3</tribISSQN>");
+    expect(built.xml).not.toContain("<pAliq>");
+  });
+
+  it("emite o bloco piscofins quando há CST", () => {
+    const built = buildDpsXml({
+      ...base,
+      valores: { ...base.valores, pisCofinsCST: "01", aliqPis: 1.65, aliqCofins: 7.6 },
+    });
+    expect(built.xml).toContain("<piscofins><CST>01</CST>");
+    expect(built.xml).toContain("<pAliqPis>1.65</pAliqPis>");
+    expect(built.xml).toContain("<vCofins>19.00</vCofins>"); // 250 * 7.6%
+  });
+
+  it("não emite piscofins sem CST", () => {
+    expect(buildDpsXml(base).xml).not.toContain("<piscofins>");
+  });
+
+  it("IBSCBS não é emitido por padrão (NFSE_IBSCBS_ENVIAR off)", () => {
+    const built = buildDpsXml({
+      ...base,
+      ibsCbs: { cst: "000", cClassTrib: "000001", cIndOp: "100000", indDest: "0" },
+    });
+    expect(built.xml).not.toContain("<IBSCBS>");
+  });
+});
+
+// As quatro rejeições seguidas da mesma nota em produção (out/2026): E0166,
+// E0625, E0712 e, na fila, E0235. As regras ficam em regras.ts; aqui confere-se
+// que o XML as obedece.
+describe("regras do regime do prestador no XML", () => {
+  const sn = (over: object = {}, prest: object = {}) =>
+    buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "simples_nacional", ...prest },
+      valores: { ...base.valores, ...over },
+    }).xml;
+
+  it("ME/EPP sempre leva regApTribSN — padrão 1 (E0166)", () => {
+    expect(sn()).toContain("<opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN>");
+  });
+
+  it("ME/EPP informa pTotTribSN e nunca indTotTrib (E0712)", () => {
+    const xml = sn({ pTotTribSN: 11.2 });
+    expect(xml).toContain("<totTrib><pTotTribSN>11.20</pTotTribSN></totTrib>");
+    expect(xml).not.toContain("<indTotTrib>");
+  });
+
+  it("ME/EPP sem o percentual de tributos não gera DPS", () => {
+    expect(() => sn({ pTotTribSN: null })).toThrow(/percentual aproximado de tributos/);
+    expect(() => sn({ pTotTribSN: 0 })).toThrow(/percentual aproximado de tributos/);
+  });
+
+  it("ME/EPP com ISS retido leva a alíquota (E0621) — e ela é obrigatória", () => {
+    expect(sn({ issRetido: true, aliquotaIss: 2.5 })).toContain("<tpRetISSQN>2</tpRetISSQN><pAliq>2.50</pAliq>");
+    expect(() => sn({ issRetido: true, aliquotaIss: 0 })).toThrow(/alíquota do ISS/);
+    expect(() => sn({ issRetido: true, aliquotaIss: 1.5 })).toThrow(/1,8%/);
+  });
+
+  it("ME/EPP com ISS por fora do SN: alíquota só se o município não for conveniado (E0635/E0640)", () => {
+    expect(sn({ municipioConveniado: true }, { regApTribSN: "2" })).not.toContain("<pAliq>");
+    expect(sn({ municipioConveniado: false }, { regApTribSN: "2" })).toContain("<pAliq>2.00</pAliq>");
+  });
+
+  it("MEI: indTotTrib, sem alíquota e sem tributos federais (E0710/E0600/E0676)", () => {
+    const xml = buildDpsXml({
+      ...base,
+      prestador: { ...base.prestador, regimeTributario: "mei" },
+      valores: { ...base.valores, pTotTribSN: 6, retIrrf: 1.5, pisCofinsCST: "01", aliqPis: 0.65 },
+    }).xml;
+    expect(xml).toContain("<totTrib><indTotTrib>0</indTotTrib></totTrib>");
+    expect(xml).not.toContain("<pTotTribSN>");
+    expect(xml).not.toContain("<pAliq>");
+    expect(xml).not.toContain("<tribFed>");
+  });
+});
+
+// Rejeição real em produção (out/2026): E0121. Com tpEmit=1 o emitente é o
+// próprio prestador — o grupo <prest> leva só a identificação e o regime.
+describe("grupo prest quando o emitente é o prestador (tpEmit=1)", () => {
+  const prest = (xml: string) => xml.match(/<prest>(.*?)<\/prest>/s)?.[1] ?? "";
+
+  it("não informa o nome do prestador (E0121)", () => {
+    const built = buildDpsXml(base);
+    expect(built.xml).toContain("<tpEmit>1</tpEmit>");
+    expect(prest(built.xml)).not.toContain("<xNome>");
+    expect(built.xml).not.toContain("Clínica Exemplo LTDA");
+  });
+
+  it("não informa o endereço do prestador (E0128)", () => {
+    expect(prest(buildDpsXml(base).xml)).not.toMatch(/<end>|<endNac>/);
+  });
+
+  it("mantém CNPJ e regime tributário", () => {
+    const p = prest(buildDpsXml(base).xml);
+    expect(p).toContain("<CNPJ>12345678000199</CNPJ>");
+    expect(p).toContain("<regTrib>");
+  });
+});
+
+describe("saneamento de texto (ISO-8859-1)", () => {
+  it("transliteria travessão, aspas curvas e reticências na descrição", () => {
+    const built = buildDpsXml({
+      ...base,
+      servico: { ...base.servico, descricao: "Consultoria — “premium” … 1º nível" },
+    });
+    const d = built.xml.match(/<xDescServ>(.*?)<\/xDescServ>/)?.[1] ?? "";
+    expect(d).toBe('Consultoria - "premium" ... 1º nível');
+    expect(d).not.toMatch(/[—“…]/);
+  });
+
+  it("remove caractere fora do Latin-1 no nome do tomador", () => {
+    const built = buildDpsXml({
+      ...base,
+      tomador: { ...base.tomador, doc: "98765432000110", nome: "Empresa 😀 Ação Ltda" },
+    });
+    expect(built.xml).toContain("<xNome>Empresa Ação Ltda</xNome>");
+  });
+});
+
+describe("regras de tamanho", () => {
+  it("trunca xDescServ em 1000 caracteres (Anexo I)", () => {
+    const built = buildDpsXml({ ...base, servico: { ...base.servico, descricao: "x".repeat(1500) } });
+    const m = built.xml.match(/<xDescServ>(x+)<\/xDescServ>/);
+    expect(m?.[1].length).toBe(1000);
+  });
+
+  it("rejeita número de DPS < 1", () => {
+    expect(() => buildDpsXml({ ...base, numero: 0 })).toThrow(/Número da DPS/i);
+  });
+});
+
+describe("parseChaveAcesso", () => {
+  it("returns null for non-50-digit input", () => {
+    expect(parseChaveAcesso("123")).toBeNull();
+    expect(parseChaveAcesso("")).toBeNull();
+  });
+
+  it("pulls the município, número and competência from a 50-digit key", () => {
+    // mun(7) amb(1) tpInsc(1) inscFed(14) nNFSe(13) AAMM(4) cNum(9) dv(1)
+    const chave =
+      "3550308" + "2" + "2" + "12345678000199" + "0000000000042" + "2608" + "123456789" + "5";
+    expect(chave).toHaveLength(50);
+    const info = parseChaveAcesso(chave)!;
+    expect(info.codigoMunicipio).toBe("3550308");
+    expect(info.numero).toBe("42");
+    expect(info.competencia).toBe("08/2026");
+    expect(info.dv).toBe("5");
+  });
+});

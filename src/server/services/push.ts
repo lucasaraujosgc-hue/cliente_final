@@ -3,7 +3,7 @@ import webpush from "web-push";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import { db } from "../db";
-import { subscriptions } from "../schema";
+import { subscriptions, notificationLog, clients } from "../schema";
 
 // Initialize Firebase Admin if credentials are provided
 if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
@@ -46,8 +46,30 @@ webpush.setVapidDetails(
 
 export { vapidKeys, webpush };
 
+
+// Registra o aviso no histórico do cliente. Os dois funis de envio abaixo
+// chamam isto ANTES de tentar entregar: o histórico é o que o escritório
+// avisou, não prova de entrega — o cliente sem dispositivo cadastrado também
+// precisa ver o aviso quando abrir o portal. Nunca derruba o envio.
+async function recordNotification(clientId: string | null, title: string, body: string) {
+  try {
+    if (clientId) {
+      await db.insert(notificationLog).values({ clientId, title, body });
+      return;
+    }
+    // broadcast: uma linha por cliente, senão ninguém vê no histórico
+    const all = await db.select({ id: clients.id }).from(clients);
+    if (all.length) {
+      await db.insert(notificationLog).values(all.map((c) => ({ clientId: c.id, title, body })));
+    }
+  } catch (err) {
+    console.error("notificationLog: falha ao registrar aviso", err);
+  }
+}
+
 // Sends a push (web-push + FCM) notification to every subscription of a given client.
 export async function sendClientNotification(clientId: string, title: string, body: string) {
+  await recordNotification(clientId, title, body);
   const subs = await db.select().from(subscriptions).where(eq(subscriptions.clientId, clientId));
   const payload = JSON.stringify({ title, body });
 
@@ -78,6 +100,7 @@ export async function sendClientNotification(clientId: string, title: string, bo
 // Sends a push notification to all subscriptions of a client, or to everyone if clientId is null.
 // Used by the background notification sweeper.
 export async function sendPushToClients(clientId: string | null, title: string, body: string) {
+  await recordNotification(clientId, title, body);
   try {
     let subs = [];
     if (clientId) {

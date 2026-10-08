@@ -507,3 +507,48 @@ export async function extractValueFromPdfBuffer(buffer: Buffer, category: string
     }
   }
 }
+
+// ==================== EXTRAÇÃO DO NÚMERO DO DOCUMENTO ====================
+
+// "Número do Documento" impresso na DARF / DAS — o identificador usado na
+// consulta PAGTOWEB do Integra Contador (numeroDocumentoLista). São 10 a 17
+// dígitos e NÃO é o código de barras / linha digitável. Best-effort: se o
+// layout do PDF não bater, devolve null e a consulta cai no fallback por
+// data + valor.
+export async function extractDocNumberFromPdf(buffer: Buffer): Promise<string | null> {
+  let tempDir: string | null = null;
+  try {
+    const hasPoppler = await checkPopplerInstalled();
+    if (!hasPoppler) return null;
+
+    tempDir = await createTempDir();
+    const pdfPath = path.join(tempDir, 'input.pdf');
+    await fs.writeFile(pdfPath, buffer);
+
+    const fullText = await extractTextFromPdf(pdfPath);
+    if (!fullText) return null;
+
+    const patterns = [
+      /N[úu]mero\s+do\s+Documento[\s:]*([\d][\d.\-/\s]{8,25}\d)/i,
+      /N[ºo°]\.?\s*do\s+Documento[\s:]*([\d][\d.\-/\s]{8,25}\d)/i,
+      /Documento\s+de\s+Arrecada[çc][ãa]o[\s\S]{0,40}?([\d][\d.\-/\s]{8,25}\d)/i,
+    ];
+
+    for (const re of patterns) {
+      const match = fullText.match(re);
+      if (match && match[1]) {
+        const digits = match[1].replace(/\D/g, '');
+        if (digits.length >= 10 && digits.length <= 17) return digits;
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Erro ao extrair número do documento do PDF:', err);
+    return null;
+  } finally {
+    if (tempDir) {
+      await cleanupTempDir(tempDir);
+    }
+  }
+}
