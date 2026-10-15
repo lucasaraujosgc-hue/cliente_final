@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import { db } from "../../db";
 import { nfseEmissoes } from "../../schema";
 import type { NfseEmissaoRow } from "../../types";
@@ -124,4 +124,31 @@ export async function pendingEmissoes(
         gt(nfseEmissoes.createdAt, new Date(Date.now() - sinceMs)),
       ),
     );
+}
+
+// Rotina: uma emissão em 'processando' (timeout / resposta ambígua da Sefin) só
+// era resolvida se alguém clicasse para sincronizar aquela nota — sem isso,
+// ficava presa para sempre. A cada hora reconcilia as que têm mais de 10 min.
+// São consultas à Sefin/ADN (sem custo); depois de 24 h sem a nota aparecer,
+// reconcileEmissao a marca como 'rejeitada' (GIVE_UP_MS).
+export async function reconciliarPendentes(limite = 20): Promise<number> {
+  const rows = await db
+    .select({ id: nfseEmissoes.id, clientId: nfseEmissoes.clientId })
+    .from(nfseEmissoes)
+    .where(and(eq(nfseEmissoes.status, "processando"), lt(nfseEmissoes.createdAt, new Date(Date.now() - 10 * 60 * 1000))))
+    .limit(limite);
+  for (const r of rows) {
+    try {
+      await reconcileEmissao(r.clientId, r.id);
+    } catch (e) {
+      nfseLog("warn", "reconcile.rotina_falhou", { emissaoId: r.id, msg: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return rows.length;
+}
+
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  setInterval(() => {
+    reconciliarPendentes().catch(() => {});
+  }, 60 * 60 * 1000).unref?.();
 }
