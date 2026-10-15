@@ -377,3 +377,98 @@ export const scheduledNotificationsRelations = relations(scheduledNotifications,
 		references: [clients.id],
 	}),
 }));
+
+// ---- Painel de pendências fiscais (contador) --------------------------------
+// Ver services/fiscal/. Princípio: o mínimo de chamadas ao Integra Contador —
+// o que dá para saber pelos documentos do portal não vai ao SERPRO, e o
+// monitoramento usa "Eventos de Atualização" (1 chamada para até 1000 CNPJs).
+
+// Regime e processos de cada cliente. `processos` null = inferido dos
+// documentos publicados (Simples Nacional → PGDAS-D, INSS → DCTFWeb, …).
+export const fiscalPerfil = pgTable('fiscal_perfil', {
+  clientId: uuid('client_id').primaryKey().references(() => clients.id, { onDelete: 'cascade' }),
+  regime: text('regime'), // simples | mei | presumido | real
+  processos: jsonb('processos'), // string[] | null
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Situação atual de cada processo por cliente (uma linha por cliente+processo).
+export const fiscalStatus = pgTable('fiscal_status', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  processo: text('processo').notNull(), // PGDASD | DCTFWEB | FGTS | PARCELAMENTOS | CAIXAPOSTAL | PROCURACAO
+  competencia: text('competencia'), // MM/YYYY avaliada
+  status: text('status').notNull(), // em_dia | pendente | atencao | processando
+  resumo: text('resumo').notNull(),
+  detalhes: jsonb('detalhes'),
+  fonte: text('fonte').notNull(), // portal | serpro | manual
+  verificadoEm: timestamp('verificado_em', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  clienteProcessoUq: uniqueIndex('fiscal_status_cliente_processo_uq').on(t.clientId, t.processo),
+}));
+
+// Última data de cada evento de atualização (E0301 DCTFWeb, E0601 Caixa Postal,
+// E0701 Pagamentos) por cliente: "" = sem atualização, "x" = sem procuração.
+export const fiscalEventos = pgTable('fiscal_eventos', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  evento: text('evento').notNull(),
+  ultimaData: text('ultima_data').notNull(),
+  verificadoEm: timestamp('verificado_em', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  clienteEventoUq: uniqueIndex('fiscal_eventos_cliente_evento_uq').on(t.clientId, t.evento),
+}));
+
+export const fiscalNotificacoes = pgTable('fiscal_notificacoes', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  processo: text('processo').notNull(),
+  titulo: text('titulo').notNull(),
+  descricao: text('descricao').notNull(),
+  lida: boolean('lida').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  createdIdx: index('fiscal_notificacoes_created_idx').on(t.createdAt),
+}));
+
+// Parcelamentos: os do Simples vêm do Integra Contador (PARCSN, PARCSN-ESP,
+// PERTSN, RELPSN); INSS (SIPADE) e União/PGFN não têm serviço no Integra
+// Contador — são cadastrados à mão e acompanhados pelas guias publicadas.
+export const parcelamentos = pgTable('parcelamentos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  modalidade: text('modalidade').notNull(), // PARCSN | PARCSN-ESP | PERTSN | RELPSN | INSS | UNIAO | PGFN | OUTRO
+  numero: text('numero').notNull(),
+  situacao: text('situacao'),
+  origem: text('origem').notNull(), // serpro | manual
+  valorParcela: real('valor_parcela'),
+  parcelasTotal: integer('parcelas_total'),
+  diaVencimento: integer('dia_vencimento'),
+  ultimoPagamento: text('ultimo_pagamento'), // MM/YYYY da última parcela paga
+  detalhes: jsonb('detalhes'),
+  ativo: boolean('ativo').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  clienteNumeroUq: uniqueIndex('parcelamentos_cliente_modalidade_numero_uq').on(t.clientId, t.modalidade, t.numero),
+}));
+
+// Cada chamada ao Integra Contador feita pelo painel — base do limite mensal.
+export const serproUso = pgTable('serpro_uso', {
+  id: serial('id').primaryKey(),
+  idSistema: text('id_sistema').notNull(),
+  idServico: text('id_servico').notNull(),
+  clientId: uuid('client_id'),
+  ok: boolean('ok').notNull(),
+  origem: text('origem').notNull(), // automatico | manual
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  createdIdx: index('serpro_uso_created_idx').on(t.createdAt),
+}));
+
+// Marca de execução das rotinas (evento diário, varredura mensal).
+export const fiscalExecucoes = pgTable('fiscal_execucoes', {
+  chave: text('chave').primaryKey(),
+  executadoEm: timestamp('executado_em', { withTimezone: true }).defaultNow().notNull(),
+  resultado: jsonb('resultado'),
+});

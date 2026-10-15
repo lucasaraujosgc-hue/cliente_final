@@ -1,5 +1,59 @@
 # CHANGELOG.md
 
+## Painel de pendências fiscais do contador (out/2026)
+
+Nova tela `/admin/fiscal` (menu "Pendências fiscais"), no modelo de painéis
+como o Hubstrom: visão geral em rosca (em dia / pendente / atenção /
+processando), barras por processo que filtram a lista, notificações, ausência
+de declarações e a lista de clientes com a situação de cada processo.
+
+Processos: PGDAS-D, DCTFWeb, FGTS Digital, Parcelamentos, Caixa Postal e
+Procuração (certidões e PGMEI ficaram de fora, a pedido).
+
+**Custo no Integra Contador é o mínimo possível** (`services/fiscal/`):
+- 1º as guias já publicadas no portal (Simples Nacional → PGDAS-D, INSS →
+  DCTFWeb, FGTS, Parcelamento) — custo zero; também inferem quais processos
+  valem para cada cliente (ajustável no perfil do cliente).
+- **Eventos de Atualização** (`EVENTOSATUALIZACAO`): 1 consulta cobre até
+  1000 CNPJs, mas é assíncrona (solicitar + obter = 2 chamadas por evento).
+  Agenda enxuta: Caixa Postal (E0601) seg e qui, DCTFWeb (E0301) dia 16 —
+  ~20 chamadas/mês para todos os clientes (era 6/dia ≈ 180/mês na 1ª versão).
+  Pagamentos (E0701) saiu: só gerava aviso. "x" = sem procuração do serviço.
+  Dias ajustáveis: `FISCAL_CAIXAPOSTAL_DIAS`, `FISCAL_DCTFWEB_DIAS`.
+- Consulta pontual só quando precisa: Caixa Postal quando o evento muda;
+  PGDAS-D (`CONSDECLARACAO13`) / DCTFWeb (`CONSRECIBO32`) só com prazo vencido,
+  sem guia e sem evento que responda (1 por competência a cada 5 dias);
+  parcelamentos do Simples 1×/mês por parcelamento ativo.
+- Teto mensal `FISCAL_SERPRO_LIMITE_MES` (padrão 500) e contador de uso na
+  tela (`serpro_uso`). `FISCAL_MONITOR=0` desliga a rotina automática.
+
+**Parcelamentos:** Simples (PARCSN, especial, PERT, RELP) vêm do SERPRO
+(botão "Buscar do Simples"). INSS administrativo (SIPADE) e União/PGFN **não
+têm serviço no Integra Contador** (SIPADE está "em prospecção"): cadastro
+manual, situação pelas guias "Parcelamento" publicadas no portal.
+
+Migração `0014_fiscal_painel` (só tabelas novas). Regras puras e testadas em
+`services/fiscal/regras.ts`.
+
+- **Página inicial do admin** passa a ser este painel (`/admin`); o Inbox foi
+  para `/admin/inbox` (`/admin/fiscal` redireciona).
+- Revisão antes do deploy: DCTFWeb não gasta consulta quando o evento E0301 já
+  responde; consulta pontual com erro fica registrada (não repete todo dia);
+  procuração avaliada por serviço (um "x" não bloqueia as demais consultas);
+  Caixa Postal confere as não lidas já na 1ª leitura (senão todos ficariam
+  "processando" até chegar mensagem); rotina compara o dia no fuso de Brasília
+  (pela data UTC rodaria 2× depois das 21h); regime informado tira/põe o
+  PGDAS-D; valor "1.234,56" no cadastro de parcelamento.
+
+## NFS-e: emissões em "processando" eram esquecidas (out/2026)
+
+Não havia rotina que reconciliasse emissões em `processando` (timeout ou
+resposta ambígua): só um clique em "sincronizar" naquela nota as resolvia.
+`reconciliarPendentes()` (nfse/reconcile.ts) roda a cada hora para as que têm
+mais de 10 min — consultas à Sefin/ADN, sem custo; após 24 h sem a nota
+aparecer, viram `rejeitada`. Resolve também a DPS nº 1 de 08/10 (que nunca saiu
+do servidor por causa do certificado).
+
 ## Certificado A1 em formato legado + vírgula na alíquota (out/2026)
 
 - **`Unsupported PKCS12 PFX data`** — uma empresa nova (certificado emitido em

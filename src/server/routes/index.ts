@@ -7,6 +7,7 @@ import { registerAccountantRoutes } from "./accountant.routes";
 import { registerNotificationRoutes } from "./notifications.routes";
 import { registerFileRoutes } from "./files.routes";
 import { registerNfseRoutes } from "./nfse.routes";
+import { registerFiscalRoutes } from "./fiscal.routes";
 // Side-effect import: starts the payment-status background job (setInterval),
 // same activation pattern as services/notificationSweeper.ts.
 import "../services/paymentQuery";
@@ -26,4 +27,5 @@ export function setupRoutes(app: Express) {
   registerNotificationRoutes(app);
   registerFileRoutes(app);
   registerNfseRoutes(app);
+  registerFiscalRoutes(app);
 }

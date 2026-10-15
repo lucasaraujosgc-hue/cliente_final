@@ -51,8 +51,8 @@ export function AccountantDashboard() {
   const kpis = [
     { label: "Clientes", value: overview?.clients, icon: Users, to: "/admin/clients", tone: "text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800" },
     { label: "Irregulares", value: overview?.clientsIrregular, icon: AlertTriangle, to: "/admin/clients", tone: "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40" },
-    { label: "Na inbox", value: overview?.inbox, icon: Inbox, to: "/admin", tone: "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40" },
-    { label: "Recálculo pedido", value: overview?.waitingRecalc, icon: Clock, to: "/admin", tone: "text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40" },
+    { label: "Na inbox", value: overview?.inbox, icon: Inbox, to: "/admin/inbox", tone: "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40" },
+    { label: "Recálculo pedido", value: overview?.waitingRecalc, icon: Clock, to: "/admin/inbox", tone: "text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40" },
     { label: "Guias vencidas", value: overview?.overdue, icon: AlertTriangle, to: "/admin/clients", tone: "text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/40" },
     { label: "Vencem em 7d", value: overview?.dueSoon, icon: Clock, to: "/admin/clients", tone: "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40" },
   ];

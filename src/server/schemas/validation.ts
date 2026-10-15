@@ -386,3 +386,30 @@ export const webhookReceitasSchema = z.object({
   arquivo_base64: z.string().optional().nullable(),
   dados_extraidos: z.any().optional().nullable(),
 });
+
+// ---- Painel de pendências fiscais -------------------------------------------
+const processoFiscal = z.enum(["PGDASD", "DCTFWEB", "FGTS", "PARCELAMENTOS", "CAIXAPOSTAL", "PROCURACAO"]);
+
+export const fiscalPerfilSchema = z.object({
+  regime: z.enum(["simples", "mei", "presumido", "real"]).nullish(),
+  processos: z.array(processoFiscal).max(6).nullish(), // null = inferir dos documentos
+});
+
+export const fiscalAtualizarSchema = z.object({
+  consultarSerpro: z.boolean().optional(),
+});
+
+export const parcelamentoSchema = z.object({
+  modalidade: z.enum(["PARCSN", "PARCSN-ESP", "PERTSN", "RELPSN", "INSS", "UNIAO", "PGFN", "OUTRO"]),
+  numero: z.string().trim().min(1, "Informe o número do parcelamento.").max(40),
+  situacao: z.string().max(80).nullish(),
+  valorParcela: z.number().min(0).max(100_000_000).nullish(),
+  parcelasTotal: z.number().int().min(1).max(600).nullish(),
+  diaVencimento: z.number().int().min(1).max(31).nullish(),
+  ultimoPagamento: z.string().regex(/^\d{2}\/\d{4}$/, "Use MM/AAAA.").nullish().or(z.literal("")),
+  ativo: z.boolean().optional(),
+});
+
+export const fiscalNotificacoesLidasSchema = z.object({
+  ids: z.array(z.number().int()).max(500).optional(),
+});

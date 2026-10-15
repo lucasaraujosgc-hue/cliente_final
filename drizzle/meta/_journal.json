@@ -99,6 +99,13 @@
       "when": 1791486688798,
       "tag": "0013_nfse_ptottrib_sn",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792071550049,
+      "tag": "0014_fiscal_painel",
+      "breakpoints": true
     }
   ]
 }

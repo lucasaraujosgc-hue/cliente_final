@@ -44,6 +44,7 @@ const FileGallery = named(() => import("./pages/accountant/FileGallery"), "FileG
 const Settings = named(() => import("./pages/accountant/Settings"), "Settings");
 const Devices = named(() => import("./pages/accountant/Devices"), "Devices");
 const Audit = named(() => import("./pages/accountant/Audit"), "Audit");
+const AccountantFiscal = named(() => import("./pages/accountant/Fiscal"), "AccountantFiscal");
 
 export default function App() {
   return (
@@ -79,13 +80,16 @@ export default function App() {
               path="/admin"
               element={NATIVE ? <Navigate to="/dashboard" replace /> : <AccountantLayout />}
             >
-              <Route index element={<AccountantDashboard />} />
+              {/* Home do admin = painel de pendências fiscais; o Inbox virou /admin/inbox */}
+              <Route index element={<AccountantFiscal />} />
+              <Route path="inbox" element={<AccountantDashboard />} />
               <Route path="nfse" element={<AccountantNfse />} />
               <Route path="mensagens" element={<AccountantMessages />} />
               <Route path="clients" element={<ClientsList />} />
               <Route path="client/:id" element={<ClientDetail />} />
               <Route path="notifications" element={<AccountantNotifications />} />
               <Route path="payments" element={<AccountantPayments />} />
+              <Route path="fiscal" element={<Navigate to="/admin" replace />} />
               <Route path="devices" element={<Devices />} />
               <Route path="audit" element={<Audit />} />
               <Route path="gallery" element={<FileGallery />} />
