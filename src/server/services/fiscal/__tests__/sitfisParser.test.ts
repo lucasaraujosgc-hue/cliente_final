@@ -114,6 +114,56 @@ describe("lerSitfis", () => {
   });
 });
 
+// Layout do Integra Contador em que a própria tabela de débitos da Receita tem
+// a coluna "Situação" no fim — e a Procuradoria diz que não há pendências.
+const RELATORIO_SITUACAO_NA_LINHA = `MINISTÉRIO DA ECONOMIA  |  Por meio do Integra Contador
+SECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL  |  Autor pedido: 11.222.333/0001-81
+PROCURADORIA-GERAL DA FAZENDA NACIONAL  |  20/10/2026 08:03:37
+Página: 1 / 2
+CNPJ: 44.555.666 - ENGENHARIA EXEMPLO
+Situação: ATIVA
+_____________________ Diagnóstico Fiscal na Receita Federal  |  _____________________
+Pendência  |  - Omissão de DCTFWeb* ___________________________________________
+(Período de Apuração)  |  2022 - MAI
+*Ausência de entrega de DCTFWeb original ou de retificadora em andamento
+Pendência  |  - Débito (SIEF) _________________________________________________
+CNPJ: 44.555.666/0001-10
+Receita  |  PA/Exerc. Dt. Vcto  |  Vl. Original  |  Sdo. Devedor  |  Multa  |  Juros Sdo. Dev. Cons. Situação
+4406-01 - MAED - PGDAS-D 03/11/2025 09/02/2026  |  50,00  |  50,00  |  0,00  |  4,44  |  54,44 DEVEDOR
+Notificação de lançamento: 44555666202509001
+4406-01 - MAED - PGDAS-D 02/01/2026 09/02/2026  |  50,00  |  50,00  |  0,00  |  4,44  |  54,44 DEVEDOR
+MINISTÉRIO DA ECONOMIA  |  Por meio do Integra Contador
+Página: 2 / 2
+CNPJ: 44.555.666 - ENGENHARIA EXEMPLO
+Notificação de lançamento: 44555666202511001
+4406-01 - MAED - PGDAS-D 23/03/2026 30/04/2026  |  50,00  |  50,00  |  0,00  |  3,29  |  53,29 DEVEDOR
+Notificação de lançamento: 44555666202602001
+__________________ Diagnóstico Fiscal na Procuradoria-Geral da  |  Fazenda  |  Nacional  |  __________________
+Não foram detectadas pendências/exigibilidades suspensas para esse contribuinte nos controles da Procuradoria-Geral da Fazenda Nacional.
+________________________________________________________________________________
+Final do Relatório`.split("\n");
+
+describe("lerSitfis — tabela de débitos com a coluna Situação", () => {
+  const r = lerSitfis(RELATORIO_SITUACAO_NA_LINHA);
+
+  it("os débitos ficam na Receita, com situação e notificação", () => {
+    const d = r.secoes.find((s) => s.tipo === "debito")!;
+    expect(d.itens).toHaveLength(3);
+    expect(d.itens.map((i) => i.referencia)).toEqual(["44555666202509001", "44555666202511001", "44555666202602001"]);
+    expect(d.itens[0]).toMatchObject({ codigoReceita: "4406-01", pa: "03/11/2025", vencimento: "09/02/2026", saldoConsolidado: 54.44, situacao: "DEVEDOR" });
+    expect(d.total).toBe(162.17);
+  });
+
+  it("a frase de 'sem pendências' da Procuradoria não vale para o relatório todo", () => {
+    expect(r.semPendencias).toBe(false);
+    expect(r.secoes.map((s) => s.tipo)).toEqual(["omissao", "debito"]);
+  });
+
+  it("título da omissão sem o asterisco da nota", () => {
+    expect(r.secoes[0]).toMatchObject({ titulo: "Omissão de DCTFWeb", periodos: ["MAI/2022"] });
+  });
+});
+
 describe("montarLinhas", () => {
   it("monta as linhas de uma página girada 90° (paisagem)", () => {
     // matriz [0, s, -s, 0, e, f]: a linha é o eixo e; a posição na linha é f

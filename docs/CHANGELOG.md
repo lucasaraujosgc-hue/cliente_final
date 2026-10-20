@@ -54,9 +54,16 @@ segunda-feira às 7h** (`FISCAL_SITFIS_DIAS`, padrão `1`):
 - A gaveta do painel abre num portal no `<body>` (antes ficava por baixo do
   cabeçalho do layout do contador).
 
-**Não validado contra o SERPRO real** (sem chamada de teste): o leitor foi
-testado com um relatório real em PDF; o fluxo SOLICITAR/EMITIR segue o
-catálogo do Integra-SITFIS.
+Emissão pelo Integra Contador confirmada em produção (20/10/2026).
+
+**Correção do leitor (versão 2):** em relatórios em que a própria tabela de
+débitos da Receita traz a coluna "Situação" no fim da linha, os débitos (ex.:
+MAED - PGDAS-D) eram tomados pela sub-tabela da Procuradoria e sumiam; e a
+frase "não foram detectadas pendências" da Procuradoria marcava o relatório
+todo como sem pendências. Relatórios já guardados são relidos do PDF
+automaticamente (`VERSAO_LEITOR`; na 1ª abertura do painel e na rotina das
+7h). Na gaveta: total do Sdo. Dev. Cons. por seção e as guias do cliente por
+competência, com setas (e atalho para as competências com guia em atraso).
 
 ## Painel de pendências fiscais do contador (out/2026)
 

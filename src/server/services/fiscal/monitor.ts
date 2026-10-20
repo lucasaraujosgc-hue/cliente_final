@@ -11,7 +11,7 @@ import {
   parcelamentos,
 } from "../../schema";
 import { chamarIntegra, LimiteSerproError } from "./integra";
-import { emitirSitfis, ultimoSitfisOk } from "./sitfis";
+import { emitirSitfis, relerDesatualizados, ultimoSitfisOk } from "./sitfis";
 import type { SitfisResultado } from "./sitfisParser";
 import {
   AGENDA_PADRAO,
@@ -454,6 +454,10 @@ async function marcarExecucao(chave: string, resultado: unknown) {
 export async function rodarRotinaDiaria(origem: "automatico" | "manual" = "automatico") {
   const resultado: Record<string, unknown> = { inicio: new Date().toISOString() };
   try {
+    // Relatórios lidos por uma versão anterior do leitor: relê do PDF guardado
+    // (a reavaliação de todos, no fim, aplica o resultado).
+    await relerDesatualizados();
+
     // "Verificar agora" lê a Caixa Postal na hora; a rotina segue a agenda.
     const jaLidos = new Set((await db.selectDistinct({ e: fiscalEventos.evento }).from(fiscalEventos)).map((r) => r.e));
     const quais = origem === "manual" ? EVENTOS : eventosDoDia(new Date(), jaLidos, AGENDA);

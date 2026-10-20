@@ -11,6 +11,9 @@
 
 export type TipoSecao = "omissao" | "debito" | "parcelamento" | "divida_ativa" | "processo" | "outra";
 
+// Sobe quando a leitura muda: relatórios já guardados são relidos do PDF.
+export const VERSAO_LEITOR = 2;
+
 export interface SitfisItem {
   texto: string; // linha original, para exibir
   receita?: string | null; // "4406-01 - MAED - PGDAS-D"
@@ -37,12 +40,13 @@ export interface SitfisSecao {
 }
 
 export interface SitfisResultado {
+  versao?: number; // VERSAO_LEITOR que leu o PDF
   emitidoEm: string | null; // "19/10/2026 16:06:58"
   cnpj: string | null;
   razaoSocial: string | null;
   situacaoCadastral: string | null;
   secoes: SitfisSecao[];
-  semPendencias: boolean; // o relatório diz explicitamente que não há pendências
+  semPendencias: boolean; // nenhuma pendência lida e o relatório diz que não há
   inconclusivo: boolean; // nem pendências nem a frase de "sem pendências"
 }
 
@@ -105,7 +109,7 @@ const limpar = (s: string) => s.replace(/_{3,}/g, " ").replace(/\s*\|\s*/g, " ")
 
 // Linhas do cabeçalho de página, que se repetem e não são conteúdo.
 const CABECALHO = [
-  /^MINIST[ÉE]RIO DA FAZENDA/i,
+  /^MINIST[ÉE]RIO DA (FAZENDA|ECONOMIA)/i,
   /^SECRETARIA ESPECIAL DA RECEITA/i,
   /^PROCURADORIA-GERAL DA FAZENDA NACIONAL(?!.*Diagn)/i,
   /^INFORMA[ÇC][ÕO]ES DE APOIO/i,
@@ -153,12 +157,13 @@ export function lerSitfis(linhasBrutas: string[]): SitfisResultado {
   const texto = linhas.join("\n");
 
   const res: SitfisResultado = {
+    versao: VERSAO_LEITOR,
     emitidoEm: texto.match(/\b(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})\b/)?.[1] ?? null,
     cnpj: texto.match(/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/)?.[1] ?? null,
     razaoSocial: texto.match(/CNPJ:\s*\d{2}\.\d{3}\.\d{3}\s*-\s*([^\n|]+)/)?.[1]?.trim() ?? null,
     situacaoCadastral: texto.match(/^Situa[çc][ãa]o:\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+)$/m)?.[1]?.trim() ?? null,
     secoes: [],
-    semPendencias: /n[ãa]o foram detectadas pend[êe]ncias/i.test(texto),
+    semPendencias: false,
     inconclusivo: false,
   };
 
@@ -166,18 +171,22 @@ export function lerSitfis(linhasBrutas: string[]): SitfisResultado {
   let atual: SitfisSecao | null = null;
   let iniciou = false; // só depois de "Diagnóstico Fiscal" começam as pendências
   // Detalhe de inscrição da PGFN: o gerador do PDF desenha essa sub-tabela
-  // (colunas "... Sdo. Dev. Cons. Situação") fora do lugar — guarda e anexa à
-  // próxima inscrição.
+  // (colunas "... Sdo. Dev. Cons. Situação") fora do lugar, dentro dos débitos
+  // da Receita — guarda e anexa à próxima inscrição. Só é ela quando a seção
+  // já tinha a tabela própria SEM a coluna Situação: há relatórios em que a
+  // própria tabela de débitos da Receita traz "Situação" no fim da linha.
   let tabelaComSituacao = false;
-  const detalhesPgfn: SitfisItem[] = [];
+  let cabecalhoSemSituacao = false;
+  const detalhesPgfn: { item: SitfisItem; secao: SitfisSecao }[] = [];
   // Nome da receita da inscrição quebra em linhas ("4834-- MULTA" / "ISOLADA").
   let continuacaoReceita: { item: SitfisItem; inicio: string } | null = null;
 
   const novaSecao = (titulo: string) => {
-    const t = limpar(titulo).replace(/^Pend[êe]ncia\s*-\s*/i, "");
+    const t = limpar(titulo).replace(/^Pend[êe]ncia\s*-\s*/i, "").replace(/\*+$/, "").trim();
     atual = { orgao, tipo: classificarSecao(t, orgao), titulo: t, periodos: [], itens: [], total: 0 };
     res.secoes.push(atual);
     tabelaComSituacao = false;
+    cabecalhoSemSituacao = false;
   };
 
   for (let i = 0; i < linhas.length; i++) {
@@ -204,17 +213,22 @@ export function lerSitfis(linhasBrutas: string[]): SitfisResultado {
       novaSecao(l);
       continue;
     }
-    if (/^Receita\b.*Sdo\.?\s*Dev\.?\s*Cons\.?\s*\|?\s*Situa/i.test(l)) {
-      tabelaComSituacao = true;
+    const sec = atual as SitfisSecao | null;
+    if (/^Receita\b.*Sdo\.?\s*Dev\.?\s*Cons/i.test(l)) {
+      if (/Sdo\.?\s*Dev\.?\s*Cons\.?\s*\|?\s*Situa/i.test(l)) {
+        tabelaComSituacao = orgao === "RFB" && cabecalhoSemSituacao;
+      } else {
+        cabecalhoSemSituacao = true;
+        tabelaComSituacao = false;
+      }
       continue;
     }
-    const sec = atual as SitfisSecao | null;
 
     // Linha de valores
     const item = lerLinhaValores(l);
     if (item) {
-      if (tabelaComSituacao && orgao === "RFB") {
-        detalhesPgfn.push(item);
+      if (tabelaComSituacao && sec) {
+        detalhesPgfn.push({ item, secao: sec });
         continue;
       }
       if (sec) sec.itens.push(item);
@@ -232,7 +246,7 @@ export function lerSitfis(linhasBrutas: string[]): SitfisResultado {
       if (semRef) semRef.referencia = m[1];
     } else if ((m = l.match(/\b(\d{2}\.\d\.\d{2}\.\d{6}-\d{2})\b/))) {
       // Inscrição em dívida ativa (PGFN)
-      const det = detalhesPgfn.shift();
+      const det = detalhesPgfn.shift()?.item;
       const partes = l.split("|").map((x) => x.trim());
       const inscricao: SitfisItem = {
         ...(det ?? {}),
@@ -267,12 +281,19 @@ export function lerSitfis(linhasBrutas: string[]): SitfisResultado {
     }
   }
 
+  // Sub-tabela que não encontrou inscrição: era da própria seção — não se perde.
+  for (const { item, secao } of detalhesPgfn) secao.itens.push(item);
+
   for (const s of res.secoes) {
     s.periodos = [...new Set(s.periodos)];
     s.total = Math.round(s.itens.reduce((acc, it) => acc + (it.saldoConsolidado ?? 0), 0) * 100) / 100;
   }
   // "Omissão de PGDAS-D" sem período identificado ainda é uma omissão.
   res.secoes = res.secoes.filter((s) => s.itens.length || s.periodos.length || s.tipo === "omissao" || s.tipo === "parcelamento");
-  res.inconclusivo = !res.semPendencias && res.secoes.length === 0;
+  // A frase "não foram detectadas pendências" vem por órgão (Receita e/ou
+  // Procuradoria): só vale para o relatório todo quando nada foi lido.
+  const fraseSemPendencias = /n[ãa]o foram detectadas pend[êe]ncias/i.test(texto);
+  res.semPendencias = fraseSemPendencias && res.secoes.length === 0;
+  res.inconclusivo = !fraseSemPendencias && res.secoes.length === 0;
   return res;
 }

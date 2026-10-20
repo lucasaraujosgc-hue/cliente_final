@@ -7,6 +7,8 @@ import {
   RefreshCw,
   CloudDownload,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Undo2,
   Plus,
   Trash2,
@@ -73,6 +75,12 @@ const VAZIO: Partial<Parcelamento> = { modalidade: "INSS", numero: "", valorParc
 
 const TIPO_GUIA: Record<TipoGuia, string> = { DAS_SIMPLES: "DAS — Simples Nacional", DCTFWEB_INSS: "INSS — DCTFWeb" };
 const COMPETENCIA_OK = /^(0[1-9]|1[0-2])\/\d{4}$/;
+
+// Competência de uma guia para a navegação por setas ("—" = sem competência).
+const SEM_COMPETENCIA = "—";
+const competenciaDe = (g: GuiaCliente) => (COMPETENCIA_OK.test(g.competence ?? "") ? g.competence! : SEM_COMPETENCIA);
+const ordemCompetencia = (c: string) => (c === SEM_COMPETENCIA ? -1 : Number(c.slice(3) + c.slice(0, 2)));
+const rotuloCompetencia = (c: string) => (c === SEM_COMPETENCIA ? "Sem competência" : `Competência ${c}`);
 
 const fmtData = (v?: string | null) => {
   const d = dataDe(v);
@@ -143,6 +151,7 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
   const [gerar, setGerar] = useState<{ tipoGuia: TipoGuia; competencia: string } | null>(null);
   const [publicada, setPublicada] = useState<GuiaPublicada | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [competenciaSel, setCompetenciaSel] = useState<string | null>(null);
   const guiasRef = useRef<HTMLElement>(null);
 
   const load = () =>
@@ -156,6 +165,7 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
       .catch((e) => setErro(e.message));
 
   useEffect(() => {
+    setCompetenciaSel(null);
     load();
   }, [clientId]);
 
@@ -190,6 +200,7 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
       const r = await gerarEPublicarGuia(clientId, tipoGuia, competencia, documentId);
       setPublicada(r);
       setGerar(null);
+      if (COMPETENCIA_OK.test(r.competencia)) setCompetenciaSel(r.competencia);
       setMsg(`${r.substituiu ? "Guia atualizada" : "Guia publicada"} no app do cliente. O aviso segue a regra de “arquivo disponível” em Notificações.`);
     });
 
@@ -233,6 +244,14 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
   const guiasOrdenadas = [...guias].sort((a, b) => ordem[situacaoGuia(a).tipo] - ordem[situacaoGuia(b).tipo] || (dataDe(a.dueDate)?.getTime() ?? 0) - (dataDe(b.dueDate)?.getTime() ?? 0));
   const atrasadas = guias.filter((g) => situacaoGuia(g).tipo === "atrasada");
   const totalAtrasado = atrasadas.reduce((acc, g) => acc + (g.valor ?? 0), 0);
+  // Uma competência por vez (mais recente primeiro), navegando pelas setas.
+  const competencias = Array.from(new Set<string>(guias.map(competenciaDe))).sort((a, b) => ordemCompetencia(b) - ordemCompetencia(a));
+  const competenciaAtual = competenciaSel && competencias.includes(competenciaSel) ? competenciaSel : (competencias[0] ?? null);
+  const idxCompetencia = competenciaAtual ? competencias.indexOf(competenciaAtual) : -1;
+  const guiasDaCompetencia = guiasOrdenadas.filter((g) => competenciaDe(g) === competenciaAtual);
+  const atrasoEmOutras = Array.from(new Set<string>(atrasadas.map(competenciaDe)))
+    .filter((c) => c !== competenciaAtual)
+    .sort((a, b) => ordemCompetencia(b) - ordemCompetencia(a));
 
   // Portal no <body>: dentro do layout do contador a gaveta ficaria presa no
   // contexto de empilhamento do conteúdo, por baixo do cabeçalho.
@@ -350,6 +369,12 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
                               ))}
                             </ul>
                           )}
+                          {sec.itens.length > 0 && sec.total > 0 && (
+                            <p className="mt-1.5 flex justify-between rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs dark:border-slate-700">
+                              <span className="font-semibold text-slate-500">Total Sdo. Dev. Cons. ({sec.itens.length})</span>
+                              <span className="font-bold tabular-nums text-slate-800 dark:text-slate-100">{brl(sec.total)}</span>
+                            </p>
+                          )}
                         </div>
                       ))}
 
@@ -444,9 +469,46 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
                 </div>
               )}
 
+              {competenciaAtual && (
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 p-1.5 dark:border-slate-700">
+                  <button
+                    onClick={() => setCompetenciaSel(competencias[idxCompetencia + 1])}
+                    disabled={idxCompetencia >= competencias.length - 1}
+                    className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-800"
+                    aria-label="Competência anterior"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{rotuloCompetencia(competenciaAtual)}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {guiasDaCompetencia.length} guia(s) · {idxCompetencia + 1} de {competencias.length}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCompetenciaSel(competencias[idxCompetencia - 1])}
+                    disabled={idxCompetencia <= 0}
+                    className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-800"
+                    aria-label="Próxima competência"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
+              {atrasoEmOutras.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span className="text-slate-500">Em atraso também em:</span>
+                  {atrasoEmOutras.map((c) => (
+                    <button key={c} onClick={() => setCompetenciaSel(c)} className="rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-700 hover:bg-red-100 dark:bg-red-950/50 dark:text-red-300">
+                      {c === SEM_COMPETENCIA ? "sem competência" : c}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <ul className="mt-3 space-y-2">
-                {guiasOrdenadas.length === 0 && <li className="text-sm text-slate-400">Nenhuma guia com vencimento no app deste cliente.</li>}
-                {guiasOrdenadas.map((g) => {
+                {guias.length === 0 && <li className="text-sm text-slate-400">Nenhuma guia com vencimento no app deste cliente.</li>}
+                {guiasDaCompetencia.map((g) => {
                   const s = situacaoGuia(g);
                   const podeRecalcular = (s.tipo === "atrasada" || s.tipo === "aguardando") && g.tipoGuia && COMPETENCIA_OK.test(g.competence ?? "");
                   return (

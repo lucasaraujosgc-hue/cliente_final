@@ -26,13 +26,26 @@ import {
 } from "../services/fiscal/monitor";
 import { LimiteSerproError } from "../services/fiscal/integra";
 import { PROCESSOS } from "../services/fiscal/regras";
-import { resolverPdfSitfis, ultimoSitfis, ultimoSitfisOk } from "../services/fiscal/sitfis";
+import { relerDesatualizados, resolverPdfSitfis, ultimoSitfis, ultimoSitfisOk } from "../services/fiscal/sitfis";
 import { guiasDoCliente, publicarGuia } from "../services/fiscal/guias";
 
 // Painel de pendências fiscais (só o contador). As ações que podem gastar
 // consultas no Integra Contador ficam registradas na auditoria.
 
 let rotinaEmAndamento = false;
+
+// Leitor do relatório mudou desde o último boot? Relê os PDFs guardados e
+// reavalia esses clientes (sem SERPRO) — uma vez por processo, na 1ª abertura.
+let releitura: Promise<void> | null = null;
+const relerUmaVez = () =>
+  (releitura ??= relerDesatualizados()
+    .then(async (ids) => {
+      for (const id of ids) await avaliarCliente(id);
+    })
+    .catch((e) => {
+      releitura = null; // tenta de novo na próxima abertura
+      console.error("[fiscal] releitura dos relatórios falhou:", e instanceof Error ? e.message : e);
+    }));
 
 function erro(res: any, e: unknown) {
   const status = e instanceof LimiteSerproError ? 429 : Number((e as any)?.status) || 500;
@@ -52,6 +65,7 @@ async function clienteOu404(id: string, res: any) {
 export function registerFiscalRoutes(app: Express) {
   app.get("/api/accountant/fiscal/painel", verifyAccountantAuth, async (_req, res) => {
     try {
+      await relerUmaVez();
       // Cliente ainda sem avaliação (ou com os códigos da versão anterior do
       // painel): avalia com o que já está no banco — sem SERPRO.
       const linhas = await db.select({ id: fiscalStatus.clientId, processo: fiscalStatus.processo }).from(fiscalStatus);

@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lt } from "drizzle-orm";
 import { db } from "../../db";
 import { clients, fiscalSitfis } from "../../schema";
 import { chamarIntegra, LimiteSerproError } from "./integra";
-import { extrairLinhasPdf, lerSitfis, type SitfisResultado } from "./sitfisParser";
+import { extrairLinhasPdf, lerSitfis, VERSAO_LEITOR, type SitfisResultado } from "./sitfisParser";
 
 // Relatório de Situação Fiscal pelo Integra Contador (Integra-SITFIS):
 //   1. SOLICITARPROTOCOLO91 (rota Apoiar, versão 2.0) → protocoloRelatorio +
@@ -160,6 +160,32 @@ export async function ultimoSitfisOk(clientId: string) {
     .orderBy(desc(fiscalSitfis.createdAt))
     .limit(1);
   return r ?? null;
+}
+
+/**
+ * Relê com o leitor atual os relatórios lidos por uma versão anterior (o PDF
+ * fica em disco) — sem SERPRO. Devolve os clientes cujo relatório mudou.
+ */
+export async function relerDesatualizados(): Promise<string[]> {
+  const rows = await db
+    .select({ id: fiscalSitfis.id, clientId: fiscalSitfis.clientId, pdfPath: fiscalSitfis.pdfPath, resultado: fiscalSitfis.resultado })
+    .from(fiscalSitfis)
+    .where(and(eq(fiscalSitfis.ok, true), isNotNull(fiscalSitfis.pdfPath)));
+  const afetados = new Set<string>();
+  for (const r of rows) {
+    if (Number((r.resultado as { versao?: number } | null)?.versao) >= VERSAO_LEITOR) continue;
+    const abs = resolverPdfSitfis(r.pdfPath);
+    if (!abs) continue;
+    try {
+      const resultado = lerSitfis(await extrairLinhasPdf(await fs.promises.readFile(abs)));
+      await db.update(fiscalSitfis).set({ resultado: resultado as any, erro: null }).where(eq(fiscalSitfis.id, r.id));
+      afetados.add(r.clientId);
+    } catch (e) {
+      log("sitfis.reler_erro", { id: r.id, msg: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (afetados.size) log("sitfis.relidos", { clientes: afetados.size, versao: VERSAO_LEITOR });
+  return [...afetados];
 }
 
 // PDFs com mais de 120 dias saem do disco (o registro fica, sem o arquivo).
