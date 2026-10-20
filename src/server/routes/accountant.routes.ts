@@ -26,6 +26,7 @@ import { resolveUploadPath } from "../services/files";
 import { encryptSecret, encryptBytes } from "../services/secretbox";
 import { hashPassword } from "../services/password";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
+import { aoMudarPagamento } from "../services/fiscal/monitor";
 import { upsertBilling } from "../services/billing";
 import { logAudit } from "../services/audit";
 import { buildConversations } from "../services/messages";
@@ -726,6 +727,7 @@ export function registerAccountantRoutes(app: Express) {
         // por uma guia já paga e a tela de Pagamentos ficava desatualizada.
         if (status === "paid") {
           const r = await markDocumentPaid(req.params.id, "accountant");
+          aoMudarPagamento(before); // FGTS no painel fiscal
           if (!r.alreadyPaid) {
             await logAudit(req, "payment.manual_mark", {
               targetType: "document",
@@ -741,6 +743,7 @@ export function registerAccountantRoutes(app: Express) {
           .update(documents)
           .set({ status })
           .where(eq(documents.id, req.params.id));
+        aoMudarPagamento(before); // FGTS no painel fiscal ("ok" também conta como pago)
 
         // Desfazendo a baixa: reabre a consulta, senão a guia sai do radar
         // do sweeper para sempre.

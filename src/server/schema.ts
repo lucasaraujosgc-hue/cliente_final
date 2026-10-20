@@ -472,3 +472,18 @@ export const fiscalExecucoes = pgTable('fiscal_execucoes', {
   executadoEm: timestamp('executado_em', { withTimezone: true }).defaultNow().notNull(),
   resultado: jsonb('resultado'),
 });
+
+// Relatórios de Situação Fiscal (SITFIS) emitidos pelo painel — um por cliente
+// por semana (segunda-feira). `resultado` = leitura do PDF (sitfisParser.ts).
+export const fiscalSitfis = pgTable('fiscal_sitfis', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  ok: boolean('ok').notNull(),
+  pdfPath: text('pdf_path'),
+  resultado: jsonb('resultado'),
+  erro: text('erro'),
+  origem: text('origem').notNull(), // automatico | manual
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  clienteCreatedIdx: index('fiscal_sitfis_cliente_created_idx').on(t.clientId, t.createdAt),
+}));

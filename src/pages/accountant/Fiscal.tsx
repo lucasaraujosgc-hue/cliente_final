@@ -13,11 +13,15 @@ import {
   Loader2,
   Gauge,
   CheckCheck,
+  FileSearch,
+  AlertTriangle,
 } from "lucide-react";
 import {
   getPainelFiscal,
   rodarVerificacao,
+  emitirSitfisTodos,
   marcarNotificacoesLidas,
+  brl,
   PROCESSOS,
   ROTULO,
   SITUACAO_ROTULO,
@@ -29,7 +33,8 @@ import { formatCnpj } from "../../lib/cnpj";
 import { ClienteFiscalDrawer } from "./fiscal/ClienteFiscalDrawer";
 
 // Painel de pendências fiscais. Os dados vêm do banco (montados pelo monitor
-// em services/fiscal); abrir esta tela não gasta consulta no Integra Contador.
+// em services/fiscal a partir do relatório de situação fiscal semanal); abrir
+// esta tela não gasta consulta no Integra Contador.
 
 export const COR: Record<Situacao, { hex: string; dot: string; chip: string }> = {
   em_dia: { hex: "#10b981", dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
@@ -55,6 +60,7 @@ export function AccountantFiscal() {
   const [filtro, setFiltro] = useState<{ processo?: Processo; situacao?: Situacao } | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [rodando, setRodando] = useState(false);
+  const [emitindo, setEmitindo] = useState(false);
 
   const load = () =>
     getPainelFiscal()
@@ -62,6 +68,7 @@ export function AccountantFiscal() {
         setData(d);
         setErro("");
         setRodando(d.rotinaEmAndamento);
+        setEmitindo(d.sitfisEmAndamento);
       })
       .catch((e) => setErro(e.message));
 
@@ -69,18 +76,29 @@ export function AccountantFiscal() {
     load();
   }, []);
 
-  // Enquanto a verificação roda no servidor, atualiza a cada 5 s.
+  // Enquanto a verificação ou os relatórios rodam no servidor, atualiza a cada 5 s.
   useEffect(() => {
-    if (!rodando) return;
+    if (!rodando && !emitindo) return;
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [rodando]);
+  }, [rodando, emitindo]);
 
   const verificarAgora = async () => {
-    if (!window.confirm("Verificar todos os clientes agora?\n\nUsa 4 consultas do Integra Contador para todos os clientes (Caixa Postal e DCTFWeb), mais consultas pontuais só de quem tiver prazo vencido sem guia.")) return;
+    if (!window.confirm("Verificar todos os clientes agora?\n\nLê a Caixa Postal de todos (2 consultas do Integra Contador no total) e reavalia as pendências com o último relatório de situação fiscal e as guias do portal.")) return;
     try {
       await rodarVerificacao();
       setRodando(true);
+    } catch (e: any) {
+      setErro(e.message);
+    }
+  };
+
+  const emitirTodos = async () => {
+    const n = data?.clientes.length ?? 0;
+    if (!window.confirm(`Emitir agora o relatório de situação fiscal de todos os clientes?\n\nUsa 2 consultas por cliente (~${n * 2} no total) e leva alguns minutos. Ele já é emitido automaticamente toda segunda-feira.`)) return;
+    try {
+      await emitirSitfisTodos();
+      setEmitindo(true);
     } catch (e: any) {
       setErro(e.message);
     }
@@ -141,6 +159,14 @@ export function AccountantFiscal() {
             </span>
           </div>
           <button
+            onClick={emitirTodos}
+            disabled={emitindo}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {emitindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
+            {emitindo ? "Emitindo relatórios…" : "Emitir relatórios"}
+          </button>
+          <button
             onClick={verificarAgora}
             disabled={rodando}
             className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60 dark:bg-indigo-600 dark:hover:bg-indigo-500"
@@ -151,12 +177,22 @@ export function AccountantFiscal() {
         </div>
       </header>
 
-      {data.ultimaRotina && (
-        <p className="-mt-3 text-xs text-slate-500 dark:text-slate-400">
-          Última verificação: {format(parseISO(data.ultimaRotina.executadoEm), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-          {data.ultimaRotina.resultado?.erro ? ` — erro: ${data.ultimaRotina.resultado.erro}` : ""} · avaliação diária às 7h; Caixa Postal 2×/semana e DCTFWeb 1×/mês no Integra Contador.
-        </p>
-      )}
+      <p className="-mt-3 text-xs text-slate-500 dark:text-slate-400">
+        Relatório de situação fiscal de todos toda segunda às 7h (2 consultas por cliente); Caixa Postal 2×/semana.
+        {data.ultimoSitfisTodos && (
+          <>
+            {" "}Últimos relatórios: {format(parseISO(data.ultimoSitfisTodos.executadoEm), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+            {data.ultimoSitfisTodos.resultado?.total != null ? ` — ${data.ultimoSitfisTodos.resultado.ok ?? 0} ok, ${data.ultimoSitfisTodos.resultado.falhas ?? 0} com falha` : ""}
+            {data.ultimoSitfisTodos.resultado?.erro ? ` — interrompido: ${data.ultimoSitfisTodos.resultado.erro}` : ""}.
+          </>
+        )}
+        {data.ultimaRotina && (
+          <>
+            {" "}Última verificação: {format(parseISO(data.ultimaRotina.executadoEm), "dd/MM HH:mm", { locale: ptBR })}
+            {data.ultimaRotina.resultado?.erro ? ` — erro: ${data.ultimaRotina.resultado.erro}` : ""}.
+          </>
+        )}
+      </p>
       {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{erro}</div>}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
@@ -283,28 +319,48 @@ export function AccountantFiscal() {
         </section>
       </div>
 
-      {/* ---- ausência de declarações ---- */}
-      <section className={CARD}>
-        <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-          <FileWarning className="h-4 w-4" /> Ausência de declarações
-        </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">Competência anterior, prazo vencido e nada transmitido.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {(["PGDASD", "DCTFWEB"] as const).map((p) => (
+      {/* ---- omissões e débitos (do relatório de situação fiscal) ---- */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <section className={CARD}>
+          <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+            <FileWarning className="h-4 w-4" /> Omissões de declaração
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Declarações em falta segundo o último relatório de cada cliente.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {data.omissoes.porDeclaracao.map((o) => (
+              <button
+                key={o.declaracao}
+                onClick={() => setFiltro({ processo: "OMISSOES", situacao: "atencao" })}
+                className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+              >
+                {o.declaracao} <span className="tabular-nums">{o.clientes}</span>
+              </button>
+            ))}
             <button
-              key={p}
-              onClick={() => setFiltro({ processo: p, situacao: "atencao" })}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 text-left hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
+              onClick={() => setFiltro({ processo: "OMISSOES", situacao: "em_dia" })}
+              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
             >
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{ROTULO[p]}</span>
-              <span className="flex gap-4 text-sm font-bold tabular-nums">
-                <span className="text-red-600 dark:text-red-400" title="Sem declaração">{data.ausencias[p].ausentes} ausentes</span>
-                <span className="text-emerald-600 dark:text-emerald-400">{data.ausencias[p].entregues} ok</span>
-              </span>
+              Sem omissão <span className="tabular-nums">{data.omissoes.semOmissao}</span>
             </button>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
+        <section className={CARD}>
+          <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+            <AlertTriangle className="h-4 w-4" /> Débitos em aberto
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Saldo consolidado (com multa e juros) dos relatórios.</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <button onClick={() => setFiltro({ processo: "DEBITOS", situacao: "atencao" })} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <span className="block text-xs font-semibold text-slate-500">Receita Federal</span>
+              <span className="block text-lg font-bold tabular-nums text-slate-900 dark:text-white">{brl(data.totais.debitos)}</span>
+            </button>
+            <button onClick={() => setFiltro({ processo: "DIVIDA_ATIVA", situacao: "atencao" })} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <span className="block text-xs font-semibold text-slate-500">Dívida ativa (PGFN)</span>
+              <span className="block text-lg font-bold tabular-nums text-slate-900 dark:text-white">{brl(data.totais.dividaAtiva)}</span>
+            </button>
+          </div>
+        </section>
+      </div>
 
       {/* ---- clientes ---- */}
       <section className={CARD}>
@@ -328,8 +384,37 @@ export function AccountantFiscal() {
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+        {/* celular: cartões */}
+        <ul className="mt-4 space-y-2 md:hidden">
+          {clientes.map((c) => (
+            <li key={c.id}>
+              <button onClick={() => setAberto(c.id)} className="w-full rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-800 dark:text-slate-100">{c.nome}</p>
+                    <p className="text-xs text-slate-500">{formatCnpj(c.cnpj)}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${COR[c.geral].chip}`}>{SITUACAO_ROTULO[c.geral]}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {PROCESSOS.filter((p) => c.processos[p]).map((p) => (
+                    <span key={p} className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300">
+                      <span className={`h-2 w-2 rounded-full ${COR[c.processos[p]!.status].dot}`} /> {ROTULO[p]}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[10px] text-slate-400">
+                  {c.sitfis.emitidoEm ? `Relatório de ${format(parseISO(c.sitfis.emitidoEm), "dd/MM")}` : "Sem relatório ainda"}
+                  {c.sitfis.erro ? " · última emissão falhou" : ""}
+                </p>
+              </button>
+            </li>
+          ))}
+          {clientes.length === 0 && <li className="py-8 text-center text-sm text-slate-400">{data.resumo.total === 0 ? "Nenhum cliente avaliado ainda." : "Nenhum cliente neste filtro."}</li>}
+        </ul>
+
+        <div className="mt-4 hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-500 dark:border-slate-800">
                 <th className="py-2 pr-3 font-semibold">Cliente</th>
@@ -337,6 +422,7 @@ export function AccountantFiscal() {
                 {PROCESSOS.map((p) => (
                   <th key={p} className="px-2 text-center font-semibold">{ROTULO[p]}</th>
                 ))}
+                <th className="px-2 text-right font-semibold">Relatório</th>
               </tr>
             </thead>
             <tbody>
@@ -361,11 +447,20 @@ export function AccountantFiscal() {
                       </td>
                     );
                   })}
+                  <td className="px-2 text-right text-xs tabular-nums text-slate-500">
+                    {c.sitfis.erro ? (
+                      <span title={c.sitfis.erro} className="text-red-600 dark:text-red-400">falhou</span>
+                    ) : c.sitfis.emitidoEm ? (
+                      format(parseISO(c.sitfis.emitidoEm), "dd/MM")
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
               {clientes.length === 0 && (
                 <tr>
-                  <td colSpan={2 + PROCESSOS.length} className="py-10 text-center text-sm text-slate-400">
+                  <td colSpan={3 + PROCESSOS.length} className="py-10 text-center text-sm text-slate-400">
                     {data.resumo.total === 0 ? "Nenhum cliente avaliado ainda. Clique em “Verificar agora”." : "Nenhum cliente neste filtro."}
                   </td>
                 </tr>

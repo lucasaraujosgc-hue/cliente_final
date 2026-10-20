@@ -102,7 +102,7 @@ function httpsPost(
   headers: Record<string, string>,
   body: string,
   agent?: any,
-): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any> }> {
+): Promise<{ ok: boolean; status: number; headers: Record<string, string | string[] | undefined>; text: () => Promise<string>; json: () => Promise<any> }> {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const bodyBuf = Buffer.from(body, "utf8");
@@ -124,6 +124,7 @@ function httpsPost(
         resolve({
           ok: res.statusCode! >= 200 && res.statusCode! < 300,
           status: res.statusCode!,
+          headers: res.headers,
           text: async () => text,
           json: async () => JSON.parse(text),
         });

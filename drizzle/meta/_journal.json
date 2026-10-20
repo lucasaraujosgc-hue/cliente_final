@@ -106,6 +106,13 @@
       "when": 1792071550049,
       "tag": "0014_fiscal_painel",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792437928507,
+      "tag": "0015_fiscal_sitfis",
+      "breakpoints": true
     }
   ]
 }

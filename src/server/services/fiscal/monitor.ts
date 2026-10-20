@@ -11,69 +11,55 @@ import {
   parcelamentos,
 } from "../../schema";
 import { chamarIntegra, LimiteSerproError } from "./integra";
+import { emitirSitfis, ultimoSitfisOk } from "./sitfis";
+import type { SitfisResultado } from "./sitfisParser";
 import {
-  aaaammDe,
-  avaliarParcelamento,
-  avaliarPorGuias,
-  competenciaAnterior,
+  AGENDA_PADRAO,
+  avaliarFgts,
+  avaliarSitfis,
   competenciaDeAAAAMM,
   compararCompetencia,
-  dataDoEvento,
-  dctfwebTransmitidaPeloEvento,
-  DIA_PRAZO,
+  diaDeSitfis,
+  ehFgts,
   EVENTOS,
-  AGENDA_PADRAO,
   eventosDoDia,
-  lerListaNumeros,
   inferirProcessos,
   lerElementos,
-  piorSituacao,
-  prazoDa,
+  lerListaNumeros,
+  normalizarProcessos,
+  piorou,
+  PROCESSO_ROTULO,
   type Avaliacao,
   type CodigoEvento,
   type Processo,
+  type Situacao,
 } from "./regras";
 
 // Monitor do painel de pendências fiscais. Custo no Integra Contador:
-//   - eventos (cada um = 2 chamadas p/ TODOS os clientes: solicitar+obter):
-//     Caixa Postal 2×/semana e DCTFWeb 1×/mês (agenda em regras.ts) — ~20/mês;
-//   - a avaliação diária pelas guias do portal não gasta nada;
-//   - pontual: Caixa Postal só quando o evento E0601 muda; PGDAS-D/DCTFWeb só
-//     quando venceu o prazo e não há guia no portal nem evento que responda
-//     (no máximo uma consulta por competência a cada 5 dias);
-//   - parcelamentos do Simples: 1 consulta por parcelamento ativo por mês.
+//   - Relatório de Situação Fiscal (SITFIS): 2 chamadas por cliente, 1×/semana
+//     (segunda) — é a fonte das omissões, débitos, parcelamentos e dívida ativa;
+//   - Caixa Postal: evento de atualização (2 chamadas para TODOS os clientes),
+//     2×/semana, + 1 consulta de mensagens por cliente com mensagem nova ou que
+//     ainda tinha mensagem não lida (para saber se já foi lida);
+//   - FGTS e a avaliação diária usam só as guias do portal (sem custo).
 // Tudo passa por integra.ts (limite mensal + registro em serpro_uso).
 
-const RECONSULTA_DIAS = 5;
-
-// Dias da agenda de eventos — ajustáveis sem mudar código.
 const AGENDA = {
+  sitfisDiasSemana: lerListaNumeros(process.env.FISCAL_SITFIS_DIAS, 0, 6) ?? AGENDA_PADRAO.sitfisDiasSemana,
   caixaPostalDiasSemana: lerListaNumeros(process.env.FISCAL_CAIXAPOSTAL_DIAS, 0, 6) ?? AGENDA_PADRAO.caixaPostalDiasSemana,
-  dctfwebDiasMes: lerListaNumeros(process.env.FISCAL_DCTFWEB_DIAS, 1, 31) ?? AGENDA_PADRAO.dctfwebDiasMes,
 };
-const PARCELAMENTO_RECONSULTA_DIAS = 25;
 
 function log(evento: string, campos: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), scope: "fiscal", evento, ...campos }));
 }
 
 const somenteDigitos = (v: string) => String(v || "").replace(/\D/g, "");
-const diasDesde = (d: unknown) => (d ? (Date.now() - new Date(d as any).getTime()) / 86_400_000 : Infinity);
-const fmtEvento = (v: string) => {
-  const d = dataDoEvento(v);
-  return d ? d.toLocaleDateString("pt-BR") : v;
-};
 
-async function notificar(clientId: string, processo: Processo | "PAGAMENTOS", titulo: string, descricao: string) {
+async function notificar(clientId: string, processo: Processo, titulo: string, descricao: string) {
   await db.insert(fiscalNotificacoes).values({ clientId, processo, titulo, descricao });
 }
 
-async function salvarStatus(
-  clientId: string,
-  processo: Processo,
-  a: Avaliacao,
-  fonte: "portal" | "serpro" | "manual",
-) {
+async function salvarStatus(clientId: string, processo: Processo, a: Avaliacao, fonte: "portal" | "serpro" | "manual") {
   const values = {
     clientId,
     processo,
@@ -92,72 +78,15 @@ async function salvarStatus(
 
 export async function processosDoCliente(clientId: string, hoje = new Date()): Promise<Processo[]> {
   const [perfil] = await db.select().from(fiscalPerfil).where(eq(fiscalPerfil.clientId, clientId));
-  if (Array.isArray(perfil?.processos)) return perfil!.processos as Processo[];
-  const ajustarAoRegime = (lista: Processo[]): Processo[] => {
-    // PGDAS-D é só do Simples (ME/EPP): MEI, Presumido e Real não declaram —
-    // consultar seria erro garantido e consulta paga à toa.
-    if (perfil?.regime && perfil.regime !== "simples") return lista.filter((p) => p !== "PGDASD");
-    if (perfil?.regime === "simples" && !lista.includes("PGDASD")) return ["PGDASD", ...lista];
-    return lista;
-  };
+  if (Array.isArray(perfil?.processos)) return normalizarProcessos(perfil!.processos as unknown[]);
   const docs = await db
     .select({ category: documents.category, createdAt: documents.createdAt, status: documents.status })
     .from(documents)
     .where(and(eq(documents.clientId, clientId), eq(documents.uploadedBy, "accountant")));
-  const [parc] = await db.select({ id: parcelamentos.id }).from(parcelamentos).where(eq(parcelamentos.clientId, clientId)).limit(1);
-  return ajustarAoRegime(inferirProcessos(docs, hoje, !!parc));
+  return inferirProcessos(docs, hoje);
 }
 
-// --- consultas pontuais ---------------------------------------------------------
-
-async function consultarPgdas(clientId: string, cnpj: string, competencia: string, origem: "automatico" | "manual"): Promise<Avaliacao | null> {
-  const r = await chamarIntegra({
-    rota: "Consultar",
-    idSistema: "PGDASD",
-    idServico: "CONSDECLARACAO13",
-    contribuinte: { numero: cnpj, tipo: 2 },
-    dados: { periodoApuracao: aaaammDe(competencia) },
-    clientId,
-    origem,
-  });
-  const base = { competencia, detalhes: { serpro: { competencia, verificadoEm: new Date().toISOString() } } };
-  if (r.semProcuracao) return { ...base, status: "atencao", resumo: "Sem procuração para consultar o PGDAS-D" };
-  if (!r.ok) {
-    log("pgdas.erro", { clientId, httpStatus: r.httpStatus, corpo: r.texto.slice(0, 500) });
-    return null;
-  }
-  const ops: any[] = r.dados?.periodo?.operacoes ?? r.dados?.periodos?.[0]?.operacoes ?? [];
-  const declarou = ops.some((o) => /declara/i.test(String(o?.tipoOperacao)));
-  const pago = ops.some((o) => o?.indiceDas?.dasPago === true);
-  const malha = ops.map((o) => o?.indiceDeclaracao?.malha).find(Boolean);
-  if (!declarou) return { ...base, status: "atencao", resumo: `PGDAS-D de ${competencia} não transmitido` };
-  if (malha) return { ...base, status: "atencao", resumo: `PGDAS-D de ${competencia}: ${malha}` };
-  if (pago) return { ...base, status: "em_dia", resumo: `PGDAS-D de ${competencia} declarado e DAS pago` };
-  return { ...base, status: "atencao", resumo: `PGDAS-D de ${competencia} declarado, DAS não pago` };
-}
-
-async function consultarDctfweb(clientId: string, cnpj: string, competencia: string, origem: "automatico" | "manual"): Promise<Avaliacao | null> {
-  const [mm, yyyy] = competencia.split("/");
-  const r = await chamarIntegra({
-    rota: "Consultar",
-    idSistema: "DCTFWEB",
-    idServico: "CONSRECIBO32",
-    contribuinte: { numero: cnpj, tipo: 2 },
-    dados: { categoria: 40, anoPA: yyyy, mesPA: mm },
-    clientId,
-    origem,
-  });
-  const base = { competencia, detalhes: { serpro: { competencia, verificadoEm: new Date().toISOString() } } };
-  if (r.semProcuracao) return { ...base, status: "atencao", resumo: "Sem procuração para consultar a DCTFWeb" };
-  if (r.ok && (r.dados?.PDFByteArrayBase64 || /sucesso/i.test(JSON.stringify(r.mensagens)))) {
-    return { ...base, status: "pendente", resumo: `DCTFWeb de ${competencia} transmitida — guia não publicada no portal` };
-  }
-  if (r.httpStatus >= 400 && r.httpStatus < 500) {
-    return { ...base, status: "atencao", resumo: `DCTFWeb de ${competencia} não transmitida` };
-  }
-  log("dctfweb.erro", { clientId, httpStatus: r.httpStatus, corpo: r.texto.slice(0, 500) });
-  return null;
-}
+// --- parcelamentos do Simples (consulta manual) ---------------------------------
 
 const MODALIDADES_SN: { modalidade: string; pedidos: string; obter: string }[] = [
   { modalidade: "PARCSN", pedidos: "PEDIDOSPARC163", obter: "OBTERPARC164" },
@@ -248,144 +177,73 @@ export async function buscarParcelamentosSerpro(clientId: string, origem: "autom
     .from(parcelamentos)
     .where(and(eq(parcelamentos.clientId, clientId), eq(parcelamentos.origem, "serpro"), eq(parcelamentos.ativo, true)));
   for (const row of ativos) await atualizarParcelamentoSn(row, cnpj, origem);
-  await avaliarCliente(clientId, { consultarSerpro: false, origem });
   return { encontrados, semProcuracao };
 }
 
-// --- avaliação por cliente ------------------------------------------------------
+// --- avaliação por cliente (sem custo: lê o que já está no banco) ---------------
 
-export interface OpcoesAvaliacao {
-  consultarSerpro: boolean;
-  origem: "automatico" | "manual";
-  forcar?: boolean; // ignora o intervalo mínimo entre consultas
-}
-
-export async function avaliarCliente(clientId: string, opts: OpcoesAvaliacao, hoje = new Date()) {
+export async function avaliarCliente(clientId: string, hoje = new Date()) {
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) return;
-  const cnpj = somenteDigitos(client.cnpj);
   const processos = await processosDoCliente(clientId, hoje);
-  const competencia = competenciaAnterior(hoje);
-
-  const desde = new Date(hoje.getFullYear(), hoje.getMonth() - 14, 1);
-  const docs = await db
-    .select()
-    .from(documents)
-    .where(and(eq(documents.clientId, clientId), eq(documents.uploadedBy, "accountant"), gte(documents.createdAt, desde)));
   const atuais = await db.select().from(fiscalStatus).where(eq(fiscalStatus.clientId, clientId));
-  const atual = (p: Processo) => atuais.find((s) => s.processo === p);
-  const eventos = await db.select().from(fiscalEventos).where(eq(fiscalEventos.clientId, clientId));
-  const evento = (e: CodigoEvento) => eventos.find((x) => x.evento === e)?.ultimaData;
-  // A procuração do e-CAC é por serviço: "x" num evento só diz que falta
-  // aquele acesso. Por isso só pula a consulta do serviço correspondente.
-  const semAcesso = (e: CodigoEvento) => evento(e) === "x";
-  const eventosSemAcesso = eventos.filter((e) => e.ultimaData === "x").map((e) => e.evento as CodigoEvento);
+  const antes = (p: Processo) => atuais.find((s) => s.processo === p)?.status as Situacao | undefined;
+  const novos: [Processo, Avaliacao, "portal" | "serpro" | "manual"][] = [];
 
-  for (const processo of ["PGDASD", "DCTFWEB", "FGTS"] as Processo[]) {
-    if (!processos.includes(processo)) continue;
-    let a: Avaliacao = avaliarPorGuias(processo, docs, competencia, hoje);
-    let fonte: "portal" | "serpro" = "portal";
-    const semGuia = (a as any).semGuia;
-    delete (a as any).semGuia;
-    let respondidoPeloEvento = false;
-
-    if (semGuia && processo === "DCTFWEB") {
-      const peloEvento = dctfwebTransmitidaPeloEvento(evento("E0301"), competencia);
-      if (peloEvento === true) {
-        a = { status: "pendente", competencia, resumo: `DCTFWeb transmitida em ${fmtEvento(evento("E0301")!)} — guia não publicada no portal` };
-        respondidoPeloEvento = true;
-      } else if (
-        peloEvento === false &&
-        a.status === "atencao" &&
-        new Date(eventos.find((x) => x.evento === "E0301")!.verificadoEm) > prazoDa(competencia, DIA_PRAZO.DCTFWEB ?? 15)
-      ) {
-        // O evento, lido DEPOIS do prazo, já responde (última transmissão é
-        // anterior ao fim da competência): não gasta a consulta pontual. Leitura
-        // feita antes do prazo não vale como "não transmitida".
-        a = { status: "atencao", competencia, resumo: `DCTFWeb de ${competencia} não transmitida (última transmissão em ${fmtEvento(evento("E0301")!)})` };
-        respondidoPeloEvento = true;
-      }
-    }
-
-    const prazoVencido = hoje > prazoDa(competencia, DIA_PRAZO[processo] ?? 20);
-    const anterior = atual(processo);
-    const serproAnterior = (anterior?.detalhes as any)?.serpro;
-    const jaConsultado = serproAnterior?.competencia === competencia && diasDesde(serproAnterior?.verificadoEm) < RECONSULTA_DIAS;
-    const bloqueado = processo === "DCTFWEB" && semAcesso("E0301");
-
-    if (semGuia && a.status === "atencao" && processo !== "FGTS" && !respondidoPeloEvento) {
-      if (jaConsultado && !opts.forcar && anterior) {
-        a = { status: anterior.status as any, resumo: anterior.resumo, competencia, detalhes: anterior.detalhes as any };
-        fonte = anterior.fonte as any;
-      } else if (opts.consultarSerpro && prazoVencido && !bloqueado) {
-        // Registra a tentativa mesmo se a consulta falhar: sem isso, um erro
-        // persistente viraria uma consulta por dia por cliente.
-        const tentativa = { serpro: { competencia, verificadoEm: new Date().toISOString(), semResposta: true } };
-        try {
-          const r = processo === "PGDASD"
-            ? await consultarPgdas(clientId, cnpj, competencia, opts.origem)
-            : await consultarDctfweb(clientId, cnpj, competencia, opts.origem);
-          if (r) {
-            a = r;
-            fonte = "serpro";
-          } else {
-            a = { ...a, detalhes: tentativa };
-          }
-        } catch (e) {
-          if (e instanceof LimiteSerproError) throw e;
-          a = { ...a, detalhes: tentativa };
-          log("consulta.falhou", { clientId, processo, msg: e instanceof Error ? e.message : String(e) });
-        }
-      }
-    }
-    await salvarStatus(clientId, processo, a, fonte);
+  // Relatório de situação fiscal (último emitido com sucesso).
+  const sitfis = await ultimoSitfisOk(clientId);
+  const emitidoEm = sitfis?.createdAt ? new Date(sitfis.createdAt).toLocaleDateString("pt-BR") : null;
+  const porSitfis = avaliarSitfis((sitfis?.resultado as SitfisResultado | null) ?? null, emitidoEm);
+  for (const p of ["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA"] as const) {
+    if (processos.includes(p)) novos.push([p, porSitfis[p], "serpro"]);
   }
 
-  if (processos.includes("PARCELAMENTOS")) {
-    const lista = await db.select().from(parcelamentos).where(and(eq(parcelamentos.clientId, clientId), eq(parcelamentos.ativo, true)));
-    if (opts.consultarSerpro) {
-      for (const row of lista.filter((r) => r.origem === "serpro")) {
-        const verificado = (row.detalhes as any)?.verificadoEm;
-        const emDia = row.ultimoPagamento && compararCompetencia(row.ultimoPagamento, competencia) >= 0;
-        if (opts.forcar || (!emDia && diasDesde(verificado) > PARCELAMENTO_RECONSULTA_DIAS)) {
-          try {
-            await atualizarParcelamentoSn(row, cnpj, opts.origem);
-          } catch (e) {
-            if (e instanceof LimiteSerproError) throw e;
-          }
-        }
-      }
-    }
-    const atualizados = await db.select().from(parcelamentos).where(and(eq(parcelamentos.clientId, clientId), eq(parcelamentos.ativo, true)));
-    const docsParc = docs.filter((d) => /parcelamento/i.test(d.category));
-    const avals = atualizados.map((p) => avaliarParcelamento(p, docsParc, hoje));
-    const a: Avaliacao = avals.length
-      ? { status: piorSituacao(avals.map((x) => x.status)), resumo: avals.map((x) => x.resumo).join(" · "), detalhes: { itens: avals } }
-      : { status: "pendente", resumo: "Guias de parcelamento publicadas, mas nenhum parcelamento cadastrado" };
-    await salvarStatus(clientId, "PARCELAMENTOS", a, atualizados.some((p) => p.origem === "serpro") ? "serpro" : "manual");
+  // FGTS: guias do portal (último ano) conforme o cliente ou o contador marcam
+  // como pagas.
+  if (processos.includes("FGTS")) {
+    const desde = new Date(hoje.getFullYear() - 1, hoje.getMonth(), 1);
+    const docs = await db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.clientId, clientId), gte(documents.createdAt, desde)));
+    novos.push(["FGTS", avaliarFgts(docs, hoje), "portal"]);
   }
 
-  if (processos.includes("PROCURACAO")) {
-    const NOME_EVENTO: Record<CodigoEvento, string> = { E0301: "DCTFWeb", E0601: "Caixa Postal", E0701: "Pagamentos" };
-    const a: Avaliacao = eventosSemAcesso.length && eventosSemAcesso.length === eventos.length
-      ? { status: "atencao", resumo: "O escritório não tem procuração no e-CAC para este cliente" }
-      : eventosSemAcesso.length
-        ? { status: "atencao", resumo: `Procuração sem acesso a: ${eventosSemAcesso.map((e) => NOME_EVENTO[e]).join(", ")}` }
-        : eventos.length
-        ? { status: "em_dia", resumo: "Procuração ativa" }
-        : { status: "processando", resumo: "Aguardando o primeiro monitoramento" };
-    await salvarStatus(clientId, "PROCURACAO", a, "serpro");
+  // Caixa Postal só fica no painel para quem tem mensagem não lida (quem a
+  // mantém é o evento E0601; aqui só limpa o que sobrou de versões anteriores:
+  // "em dia", "processando", "sem procuração").
+  const cp = atuais.find((s) => s.processo === "CAIXAPOSTAL");
+  if (cp && !((cp.detalhes as { mensagens?: unknown[] } | null)?.mensagens?.length)) {
+    await db.delete(fiscalStatus).where(eq(fiscalStatus.id, cp.id));
   }
 
-  if (processos.includes("CAIXAPOSTAL") && !atual("CAIXAPOSTAL")) {
-    await salvarStatus(clientId, "CAIXAPOSTAL", { status: "processando", resumo: "Aguardando o primeiro monitoramento" }, "serpro");
+  for (const [p, a, fonte] of novos) {
+    await salvarStatus(clientId, p, a, fonte);
+    // Avisa só quando aparece pendência onde estava em dia.
+    if (piorou(antes(p), a.status)) await notificar(clientId, p, `Nova pendência — ${PROCESSO_ROTULO[p]}`, a.resumo);
   }
 
   // Processo que deixou de se aplicar sai do painel.
   await db.delete(fiscalStatus).where(and(eq(fiscalStatus.clientId, clientId), notInArray(fiscalStatus.processo, processos)));
 }
 
-// --- eventos de atualização -----------------------------------------------------
+/**
+ * Guia marcada (ou desmarcada) como paga pelo cliente ou pelo contador: se for
+ * de FGTS, atualiza o painel na hora (sem SERPRO).
+ */
+export function aoMudarPagamento(doc: { clientId: string; category?: string | null } | null | undefined) {
+  if (!doc || !ehFgts(doc)) return;
+  void avaliarCliente(doc.clientId).catch((e) => log("fgts.reavaliar_erro", { msg: e instanceof Error ? e.message : String(e) }));
+}
+
+/** Emite o relatório de situação fiscal do cliente (2 consultas) e reavalia. */
+export async function atualizarSitfisCliente(clientId: string, origem: "automatico" | "manual") {
+  const r = await emitirSitfis(clientId, origem);
+  await avaliarCliente(clientId);
+  return r;
+}
+
+// --- Caixa Postal (evento de atualização) ----------------------------------------
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -422,7 +280,11 @@ async function obterEventos(cnpjs: string[], ev: CodigoEvento, origem: "automati
   return null;
 }
 
-async function atualizarCaixaPostal(clientId: string, cnpj: string, dataEvento: string, origem: "automatico" | "manual") {
+const removerCaixaPostal = (clientId: string) =>
+  db.delete(fiscalStatus).where(and(eq(fiscalStatus.clientId, clientId), eq(fiscalStatus.processo, "CAIXAPOSTAL")));
+
+/** Mensagens não lidas (1 consulta). Sem nenhuma, o cliente sai da Caixa Postal do painel. */
+async function atualizarCaixaPostal(clientId: string, cnpj: string, origem: "automatico" | "manual") {
   const r = await chamarIntegra({
     rota: "Consultar",
     idSistema: "CAIXAPOSTAL",
@@ -437,29 +299,45 @@ async function atualizarCaixaPostal(clientId: string, cnpj: string, dataEvento: 
     return;
   }
   const lista: any[] = r.dados?.listaMensagens ?? [];
+  if (!lista.length) {
+    await removerCaixaPostal(clientId);
+    return;
+  }
+  const [antes] = await db
+    .select()
+    .from(fiscalStatus)
+    .where(and(eq(fiscalStatus.clientId, clientId), eq(fiscalStatus.processo, "CAIXAPOSTAL")));
+  const totalAntes = Number((antes?.detalhes as { total?: number } | null)?.total) || 0;
   const assunto = (m: any) =>
     String(m?.assuntoModelo || "Mensagem").replace("++VARIAVEL++", String(m?.valorParametroAssunto || "")).trim();
   const relevantes = lista.filter((m) => Number(m?.relevancia) === 2);
-  const a: Avaliacao = lista.length
-    ? {
-        status: relevantes.length ? "atencao" : "pendente",
-        resumo: `${lista.length} mensagem(ns) não lida(s)${relevantes.length ? `, ${relevantes.length} relevante(s)` : ""}`,
-        detalhes: { mensagens: lista.slice(0, 10).map((m) => ({ assunto: assunto(m), data: m?.dataEnvio, relevante: Number(m?.relevancia) === 2, origem: m?.descricaoOrigem ?? null })) },
-      }
-    : { status: "em_dia", resumo: `Sem mensagens não lidas (última em ${fmtEvento(dataEvento)})` };
-  await salvarStatus(clientId, "CAIXAPOSTAL", a, "serpro");
-  if (lista.length) {
+  await salvarStatus(
+    clientId,
+    "CAIXAPOSTAL",
+    {
+      status: relevantes.length ? "atencao" : "pendente",
+      resumo: `${lista.length} mensagem(ns) não lida(s)${relevantes.length ? `, ${relevantes.length} relevante(s)` : ""}`,
+      detalhes: {
+        total: lista.length,
+        mensagens: lista.slice(0, 10).map((m) => ({ assunto: assunto(m), data: m?.dataEnvio, relevante: Number(m?.relevancia) === 2, origem: m?.descricaoOrigem ?? null })),
+      },
+    },
+    "serpro",
+  );
+  // Avisa só quando chegou mensagem nova (não a cada nova conferência).
+  if (lista.length > totalAntes) {
     await notificar(clientId, "CAIXAPOSTAL", "Caixa Postal — mensagem não lida", lista.slice(0, 3).map(assunto).join(" · "));
   }
 }
 
-/** 3 eventos × (solicitar + obter) para todos os clientes de uma vez. */
+/** Evento da Caixa Postal (solicitar + obter) para todos os clientes de uma vez. */
 export async function rodarEventos(origem: "automatico" | "manual" = "automatico", quais: CodigoEvento[] = EVENTOS) {
   const todos = await db.select({ id: clients.id, cnpj: clients.cnpj }).from(clients);
   const porCnpj = new Map(todos.map((c) => [somenteDigitos(c.cnpj), c.id]).filter(([cnpj]) => cnpj.length === 14) as [string, string][]);
   const cnpjs = [...porCnpj.keys()].slice(0, 1000);
   if (!cnpjs.length) return { clientes: 0, mudancas: 0 };
 
+  const cnpjDe = new Map([...porCnpj].map(([cnpj, id]) => [id, cnpj]));
   const afetados = new Set<string>();
   let mudancas = 0;
   for (const ev of quais) {
@@ -484,39 +362,73 @@ export async function rodarEventos(origem: "automatico" | "manual" = "automatico
         .values({ clientId, evento: ev, ultimaData: valor })
         .onConflictDoUpdate({ target: [fiscalEventos.clientId, fiscalEventos.evento], set: { ultimaData: valor, verificadoEm: new Date() } });
 
-      if (valor === "x") {
-        const servico = ev === "E0301" ? "a DCTFWeb" : "a Caixa Postal";
-        await notificar(clientId, "PROCURACAO", "Sem procuração", `O escritório não tem procuração no e-CAC para ${servico} deste cliente.`);
-        if (ev === "E0601") {
-          await salvarStatus(clientId, "CAIXAPOSTAL", { status: "atencao", resumo: "Sem procuração para acessar a Caixa Postal" }, "serpro");
-        }
+      if (ev !== "E0601") continue;
+      // "x" = sem procuração para a Caixa Postal; "" = nenhuma mensagem.
+      // Nos dois casos o cliente não aparece na Caixa Postal do painel.
+      if (valor === "x" || !valor) {
+        if (valor === "x") log("caixapostal.sem_procuracao", { clientId });
+        await removerCaixaPostal(clientId);
         continue;
       }
-      if (ev === "E0601") {
-        // Caixa Postal: na 1ª leitura também confere as não lidas (1 consulta
-        // por cliente, uma vez) — senão o cliente ficaria "processando" até a
-        // próxima mensagem chegar. Sem mensagem nenhuma, não consulta.
-        if (!valor) {
-          await salvarStatus(clientId, "CAIXAPOSTAL", { status: "em_dia", resumo: "Nenhuma mensagem na Caixa Postal" }, "serpro");
-          continue;
-        }
+      // Mensagem nova (ou 1ª leitura): confere as não lidas (1 consulta).
+      try {
+        await atualizarCaixaPostal(clientId, cnpj, origem);
+      } catch (e) {
+        if (e instanceof LimiteSerproError) throw e;
+      }
+    }
+
+    // Quem ainda tinha mensagem não lida: confere de novo se já foi lida
+    // (ler no e-CAC não muda o evento) — 1 consulta por cliente nessa situação.
+    if (ev === "E0601") {
+      const comMensagem = await db
+        .select({ clientId: fiscalStatus.clientId })
+        .from(fiscalStatus)
+        .where(eq(fiscalStatus.processo, "CAIXAPOSTAL"));
+      for (const { clientId } of comMensagem) {
+        const cnpj = cnpjDe.get(clientId);
+        if (!cnpj || afetados.has(clientId)) continue;
+        afetados.add(clientId);
         try {
-          await atualizarCaixaPostal(clientId, cnpj, valor, origem);
+          await atualizarCaixaPostal(clientId, cnpj, origem);
         } catch (e) {
           if (e instanceof LimiteSerproError) throw e;
         }
-        continue;
-      }
-      if (prev === undefined || !valor) continue; // 1ª leitura = linha de base, sem custo extra
-      if (ev === "E0301") {
-        await notificar(clientId, "DCTFWEB", "DCTFWeb transmitida", `Nova transmissão registrada em ${fmtEvento(valor)}.`);
-      } else if (ev === "E0701") {
-        await notificar(clientId, "PAGAMENTOS", "Pagamento identificado", `Novo pagamento registrado na Receita em ${fmtEvento(valor)}.`);
       }
     }
   }
-  for (const clientId of afetados) await avaliarCliente(clientId, { consultarSerpro: false, origem });
+  for (const clientId of afetados) await avaliarCliente(clientId);
   return { clientes: cnpjs.length, mudancas };
+}
+
+// --- relatório de todos os clientes -----------------------------------------------
+
+let sitfisEmAndamento = false;
+export const sitfisRodando = () => sitfisEmAndamento;
+
+/** Emite o relatório de todos os clientes, um por vez (2 consultas cada). */
+export async function rodarSitfisTodos(origem: "automatico" | "manual") {
+  if (sitfisEmAndamento) return { emAndamento: true };
+  sitfisEmAndamento = true;
+  const resultado = { inicio: new Date().toISOString(), ok: 0, falhas: 0, total: 0 };
+  try {
+    const todos = await db.select({ id: clients.id }).from(clients);
+    for (const c of todos) {
+      const processos = await processosDoCliente(c.id);
+      if (!processos.some((p) => ["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA"].includes(p))) continue;
+      resultado.total++;
+      const r = await atualizarSitfisCliente(c.id, origem);
+      if (r.ok) resultado.ok++;
+      else resultado.falhas++;
+    }
+  } catch (e) {
+    (resultado as any).erro = e instanceof Error ? e.message : String(e);
+    log("sitfis.todos_erro", { msg: (resultado as any).erro });
+  } finally {
+    sitfisEmAndamento = false;
+  }
+  await marcarExecucao("sitfis_semanal", resultado);
+  return resultado;
 }
 
 // --- rotina diária --------------------------------------------------------------
@@ -542,13 +454,18 @@ async function marcarExecucao(chave: string, resultado: unknown) {
 export async function rodarRotinaDiaria(origem: "automatico" | "manual" = "automatico") {
   const resultado: Record<string, unknown> = { inicio: new Date().toISOString() };
   try {
-    // Manual ("Verificar agora") lê os dois eventos; a rotina segue a agenda.
+    // "Verificar agora" lê a Caixa Postal na hora; a rotina segue a agenda.
     const jaLidos = new Set((await db.selectDistinct({ e: fiscalEventos.evento }).from(fiscalEventos)).map((r) => r.e));
     const quais = origem === "manual" ? EVENTOS : eventosDoDia(new Date(), jaLidos, AGENDA);
-    resultado.eventosConsultados = quais;
     resultado.eventos = quais.length ? await rodarEventos(origem, quais) : { clientes: 0, mudancas: 0 };
+
+    // Segunda-feira: relatório de situação fiscal de todos.
+    if (origem === "automatico" && diaDeSitfis(new Date(), AGENDA) && !(await executadoHoje("sitfis_semanal"))) {
+      resultado.sitfis = await rodarSitfisTodos("automatico");
+    }
+
     const todos = await db.select({ id: clients.id }).from(clients);
-    for (const c of todos) await avaliarCliente(c.id, { consultarSerpro: true, origem });
+    for (const c of todos) await avaliarCliente(c.id);
     resultado.clientes = todos.length;
   } catch (e) {
     resultado.erro = e instanceof Error ? e.message : String(e);
@@ -558,8 +475,8 @@ export async function rodarRotinaDiaria(origem: "automatico" | "manual" = "autom
   return resultado;
 }
 
-export async function ultimaRotina() {
-  const [r] = await db.select().from(fiscalExecucoes).where(eq(fiscalExecucoes.chave, "rotina_diaria"));
+export async function ultimaExecucao(chave: "rotina_diaria" | "sitfis_semanal") {
+  const [r] = await db.select().from(fiscalExecucoes).where(eq(fiscalExecucoes.chave, chave));
   return r ?? null;
 }
 
@@ -579,4 +496,3 @@ if (MONITOR_LIGADO) {
     }
   }, 60 * 60 * 1000).unref?.();
 }
-

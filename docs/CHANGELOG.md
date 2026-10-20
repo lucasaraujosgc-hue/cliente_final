@@ -1,5 +1,63 @@
 # CHANGELOG.md
 
+## Pendências fiscais pelo Relatório de Situação Fiscal (out/2026)
+
+O painel do contador (`/admin`) passa a se basear no **Relatório de Situação
+Fiscal (SITFIS)** de cada cliente, emitido pelo Integra Contador **toda
+segunda-feira às 7h** (`FISCAL_SITFIS_DIAS`, padrão `1`):
+
+- `services/fiscal/sitfis.ts`: `SOLICITARPROTOCOLO91` (rota Apoiar, versão
+  2.0; 304 = protocolo do dia no ETag) + `RELATORIOSITFIS92` (Emitir; 202 =
+  ainda gerando, tenta de novo). **2 chamadas por cliente** (~340/mês para 40
+  clientes). O PDF fica em `DATA_PATH/sitfis_pdfs` (120 dias) e o resultado
+  lido em `fiscal_sitfis` (migração `0015_fiscal_sitfis`).
+- `services/fiscal/sitfisParser.ts`: o SERPRO só devolve o PDF — o texto é
+  extraído com pdf.js (páginas em paisagem) e lido por seção: omissão de
+  declaração (com os períodos), débitos SIEF (receita, PA, vencimento, saldo
+  consolidado, situação, notificação), parcelamentos (parcelas em atraso),
+  processos e inscrições em dívida ativa (PGFN; a sub-tabela de cada inscrição
+  vem desenhada fora do lugar no PDF e é religada à inscrição). Relatório que
+  não dá para ler fica "processando — abra o PDF", nunca "em dia".
+- Processos do painel: **Omissões, Débitos RFB, Parcelamentos, Dívida ativa**
+  (do relatório), **FGTS Digital** e **Caixa Postal**. Saíram a aba
+  Procuração (falta de procuração para o relatório aparece no próprio
+  relatório do cliente), as consultas de PGDAS-D/DCTFWeb e o evento E0301.
+  Perfis salvos com PGDASD/DCTFWEB viram Omissões + Débitos. Aviso só quando
+  um processo sai de "em dia" para pendência.
+- **FGTS** segue as marcações de pago: guia do FGTS vencida sem "pago" (do
+  cliente ou baixa do contador, inclusive de meses anteriores) = atenção; em
+  aberto no prazo = pendente; todas pagas = em dia. Sem guia publicada fica
+  pendente, nunca atenção. Marcar/desmarcar como pago reavalia na hora.
+- **Caixa Postal** só lista quem tem mensagem não lida (evento E0601 seg e
+  qui). Quem ainda tinha mensagem é conferido de novo nesses dias (1 consulta
+  cada) para sair do painel quando a mensagem for lida; aviso só quando chega
+  mensagem nova.
+- Tela: omissões por declaração (PGDAS-D, DCTFWeb…), total de débitos na
+  Receita e em dívida ativa, coluna com a data do relatório, botão "Emitir
+  relatórios" (todos, com a estimativa de consultas) e lista em cartões no
+  celular.
+- Gaveta do cliente: relatório (data, **Ver PDF**, **Emitir agora** — 2
+  consultas), cada débito com seus valores e **Gerar guia** pré-preenchido
+  (DAS do Simples / INSS da DCTFWeb pelo PA do débito), e **Guias do cliente**
+  como ele vê no app (atrasada N dias / vence / pago / pediu recálculo, valor,
+  PIX, PDF) com **Recalcular** nas atrasadas e **Marcar como pago / Desfazer
+  baixa** (mesma baixa da ficha do cliente).
+- Gerar/recalcular reaproveita `POST /api/pendencies/guia/:clienteId` (1
+  consulta) e o novo `POST /api/accountant/fiscal/clientes/:id/guias/publicar`
+  põe a guia no app: substitui a guia em aberto da mesma competência e tipo
+  (ou a indicada) ou cria uma nova (categoria "Simples Nacional"/"INSS"); o
+  aviso ao cliente segue as regras de "arquivo disponível".
+- Teto padrão `FISCAL_SERPRO_LIMITE_MES` sobe para 800.
+- **Segurança:** `POST /api/pendencies/guia/:clienteId` atualizava o
+  `documentId` recebido sem conferir o dono — um cliente podia sobrescrever a
+  guia de outro. Agora só atualiza documento do mesmo cliente.
+- A gaveta do painel abre num portal no `<body>` (antes ficava por baixo do
+  cabeçalho do layout do contador).
+
+**Não validado contra o SERPRO real** (sem chamada de teste): o leitor foi
+testado com um relatório real em PDF; o fluxo SOLICITAR/EMITIR segue o
+catálogo do Integra-SITFIS.
+
 ## Painel de pendências fiscais do contador (out/2026)
 
 Nova tela `/admin/fiscal` (menu "Pendências fiscais"), no modelo de painéis

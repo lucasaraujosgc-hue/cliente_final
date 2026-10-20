@@ -191,7 +191,10 @@ deste repo, ou PWA instalada). Ver `docs/MOBILE_APP.md`.
   Gerada via SERPRO; o PDF carrega um PIX copia-e-cola.
 - **competência** – mês de referência da obrigação (`MM/YYYY`).
 - **regularidade** – status de conformidade do cliente: `green` / `warning` / `red`.
-- **SITFIS** – relatório de situação fiscal da Receita, chega por webhook.
+- **SITFIS** – relatório de situação fiscal da Receita/PGFN. Emitido pelo
+  Integra Contador toda segunda (painel fiscal, `services/fiscal/sitfis.ts`) e
+  lido do PDF (`sitfisParser.ts`). O webhook legado `/api/webhook/receitas`
+  (categoria `SITFIS_RECEITA`) ainda aceita, mas não tem uso.
 - **pendência / solicitação** – cliente pedindo ao contador para (re)calcular.
 - **NFS-e** – nota fiscal de serviço eletrônica. Emitida direto pelo Sistema
   Nacional NFS-e (Sefin Nacional / gov.br); ver `src/server/services/nfse/`.

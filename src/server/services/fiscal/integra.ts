@@ -7,7 +7,7 @@ import { buildSerproContext, getSerproToken, serproPost } from "../serpro";
 // para: (1) respeitar o limite mensal (FISCAL_SERPRO_LIMITE_MES), (2) ficar
 // registrada em serpro_uso — é o que o painel mostra como consumo do mês.
 
-export const LIMITE_MES = Number(process.env.FISCAL_SERPRO_LIMITE_MES) || 500;
+export const LIMITE_MES = Number(process.env.FISCAL_SERPRO_LIMITE_MES) || 800;
 
 export type Rota = "Consultar" | "Monitorar" | "Emitir" | "Apoiar";
 
@@ -17,6 +17,7 @@ export interface ChamadaIntegra {
   idServico: string;
   contribuinte: { numero: string; tipo: number }; // tipo 2 = CNPJ, 4 = lista de CNPJs
   dados: Record<string, unknown> | "";
+  versaoSistema?: string; // padrão "1.0" (o SITFIS é "2.0")
   clientId?: string | null;
   origem: "automatico" | "manual";
 }
@@ -26,6 +27,7 @@ export interface RespostaIntegra {
   httpStatus: number;
   mensagens: { codigo?: string; texto?: string }[];
   dados: any; // JSON já interpretado (o SERPRO manda string escapada)
+  headers: Record<string, string | string[] | undefined>;
   semProcuracao: boolean;
   texto: string; // corpo cru, para log
 }
@@ -71,7 +73,7 @@ export async function chamarIntegra(c: ChamadaIntegra): Promise<RespostaIntegra>
     pedidoDados: {
       idSistema: c.idSistema,
       idServico: c.idServico,
-      versaoSistema: "1.0",
+      versaoSistema: c.versaoSistema ?? "1.0",
       dados: c.dados === "" ? "" : JSON.stringify(c.dados),
     },
   };
@@ -95,6 +97,7 @@ export async function chamarIntegra(c: ChamadaIntegra): Promise<RespostaIntegra>
       httpStatus: resp.status,
       mensagens,
       dados: lerDados(corpo?.dados),
+      headers: resp.headers ?? {},
       // Sem procuração o SERPRO responde 403 / mensagem de acesso negado.
       semProcuracao: resp.status === 403 || /procura[çc][ãa]o|acesso negado|AcessoNegado/i.test(msgs),
       texto: texto.slice(0, 4000),

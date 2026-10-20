@@ -388,11 +388,17 @@ export const webhookReceitasSchema = z.object({
 });
 
 // ---- Painel de pendências fiscais -------------------------------------------
-const processoFiscal = z.enum(["PGDASD", "DCTFWEB", "FGTS", "PARCELAMENTOS", "CAIXAPOSTAL", "PROCURACAO"]);
+const processoFiscal = z.enum(["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA", "FGTS", "CAIXAPOSTAL"]);
 
 export const fiscalPerfilSchema = z.object({
   regime: z.enum(["simples", "mei", "presumido", "real"]).nullish(),
   processos: z.array(processoFiscal).max(6).nullish(), // null = inferir dos documentos
+});
+
+// Coloca no app do cliente a guia gerada em /api/pendencies/guia/:clienteId.
+export const fiscalPublicarGuiaSchema = z.object({
+  guiaId: z.number().int().positive(),
+  documentId: z.string().uuid().nullish(),
 });
 
 export const fiscalAtualizarSchema = z.object({

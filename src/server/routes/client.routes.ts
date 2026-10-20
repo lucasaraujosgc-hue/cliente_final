@@ -2,6 +2,7 @@ import { Express } from "express";
 import fs from "fs";
 import path from "path";
 import { eq, and, desc, asc } from "drizzle-orm";
+import { aoMudarPagamento } from "../services/fiscal/monitor";
 import { db } from "../db";
 import {
   clients,
@@ -465,7 +466,9 @@ export function registerClientRoutes(app: Express) {
             const [orig] = await tx
               .select()
               .from(documents)
-              .where(eq(documents.id, documentId));
+              // O documento tem de ser do mesmo cliente da guia (senão um
+              // cliente reescreveria a guia de outro).
+              .where(and(eq(documents.id, documentId), eq(documents.clientId, clientId)));
 
             // Preserva o resto do extractedData, só troca o valor pelo recalculado.
             let extractedData: any = orig?.extractedData ?? {};
@@ -488,7 +491,7 @@ export function registerClientRoutes(app: Express) {
                 status: "GUIA_ATUALIZADA",
                 extractedData,
               })
-              .where(eq(documents.id, documentId));
+              .where(and(eq(documents.id, documentId), eq(documents.clientId, clientId)));
           }
         });
 
@@ -631,6 +634,7 @@ export function registerClientRoutes(app: Express) {
       } else {
         await db.update(documents).set({ status }).where(eq(documents.id, docId));
       }
+      aoMudarPagamento(docs[0]); // FGTS no painel fiscal do contador
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Doc not found" });
