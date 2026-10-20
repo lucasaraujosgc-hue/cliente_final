@@ -26,16 +26,18 @@ RUN apk add --no-cache poppler-utils font-noto
 
 # Copy necessary files from builder
 COPY --from=builder /app/dist ./dist
+# The SQL migration files are read at runtime by dist/migrate.cjs.
+COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json* ./
 
 # Install only production dependencies
 RUN npm install --omit=dev
 
-# Expose port (Cloud Run defaults to 8080, but our app binds to 3000. Let's expose 3000)
-# Note: Express should listen on the port specified by the PORT environment variable if present.
-# Our applet uses hardcoded 3000 locally, but we should make sure it doesn't break.
+# The app honours process.env.PORT (Cloud Run injects it); 3000 is the default.
 ENV PORT=3000
 EXPOSE 3000
 
+# `npm run start` fires the "prestart" hook first: node dist/migrate.cjs,
+# which applies pending DB migrations before the server accepts traffic.
 CMD ["npm", "run", "start"]

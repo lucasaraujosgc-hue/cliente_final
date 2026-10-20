@@ -4,6 +4,8 @@ import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
+import { documentFileUrl, documentAuthHeadersFresh } from "../lib/apiClient";
+import { registerGuiaInteraction } from "../lib/guiaInteraction";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const pdfLoadOptions = {
@@ -11,11 +13,13 @@ const pdfLoadOptions = {
 };
 
 interface PixScannerButtonProps {
-  docId: number;
-  fileUrl: string;
+  docId: string;
 }
 
-export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
+export function PixScannerButton({ docId }: PixScannerButtonProps) {
+  // pdf.js fetches this URL itself, so it gets the JWT via httpHeaders (below),
+  // never in the query string.
+  const fileUrl = documentFileUrl(docId);
   const [pixCode, setPixCode] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
@@ -27,7 +31,10 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
     const preScan = async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, ...pdfLoadOptions });
+        // pdf.js does its own fetch and can't retry a 401, so make sure the
+        // access token is fresh before handing it over.
+        const httpHeaders = await documentAuthHeadersFresh("client");
+        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, httpHeaders, ...pdfLoadOptions });
         const pdf = await loadingTask.promise;
 
         let foundCode: string | null = null;
@@ -316,6 +323,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
   const handleCopyClick = () => {
     if (pixCode) {
+      registerGuiaInteraction(docId, "copy_pix");
       copyToClipboard(pixCode);
     }
   };
@@ -328,18 +336,13 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   return (
     <button
       onClick={handleCopyClick}
-      className={`h-10 px-3 w-full sm:w-auto border text-xs font-bold rounded-xl transition-all flex items-center justify-center relative ${
-        copied
-          ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400"
-          : "bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300"
-      }`}
+      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand-wash px-3 text-xs font-semibold text-brand-fg transition-colors hover:bg-brand-wash"
     >
-      <span className={`flex items-center gap-1 font-bold transition-opacity ${copied ? "opacity-0" : "opacity-100"}`}>
-        <Copy className="w-3 h-3 text-indigo-400" /> Copiar QrCode Pix
-      </span>
-      <span className={`absolute inset-0 flex items-center justify-center gap-1 font-bold transition-opacity ${copied ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        <Check className="w-3.5 h-3.5" /> Pix Copiado!
-      </span>
+      {copied ? (
+        <><Check className="size-3.5" strokeWidth={2.2} /> PIX copiado</>
+      ) : (
+        <><Copy className="size-3.5" strokeWidth={1.9} /> Copiar PIX</>
+      )}
     </button>
   );
 }
