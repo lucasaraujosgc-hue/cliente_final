@@ -314,10 +314,17 @@ export function ClienteFiscalDrawer({ clientId, onClose, onChange }: Props) {
                 </div>
               </div>
               {d.sitfis?.aviso && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{d.sitfis.aviso}</p>}
-              {erroRecente && (
-                <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                  Tentativa de {format(parseISO(erroRecente.em), "dd/MM HH:mm")} falhou: {erroRecente.erro}
+              {erroRecente && /^Sem procura/i.test(erroRecente.erro || "") ? (
+                <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  <strong>Sem procuração no e-CAC</strong> para o escritório consultar este CNPJ — o relatório não pode ser emitido. Depois de cadastrar a
+                  procuração, clique em <strong>Emitir agora</strong>; a partir daí ele volta para a emissão automática de segunda-feira.
                 </p>
+              ) : (
+                erroRecente && (
+                  <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    Tentativa de {format(parseISO(erroRecente.em), "dd/MM HH:mm")} falhou: {erroRecente.erro}
+                  </p>
+                )
               )}
             </section>
 

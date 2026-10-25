@@ -25,6 +25,7 @@ import {
   PROCESSOS,
   ROTULO,
   SITUACAO_ROTULO,
+  type ClienteFiscal,
   type PainelFiscal,
   type Processo,
   type Situacao,
@@ -52,12 +53,30 @@ const LEGENDA: Record<Situacao, string> = {
 
 const CARD = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
+// Filtro da lista: processo (opcional) + situação — a geral do cliente ou a do
+// processo escolhido — ou "sem procuração" (relatório recusado por falta dela).
+type FiltroSituacao = Situacao | "sem_procuracao";
+interface Filtro {
+  processo?: Processo;
+  situacao?: FiltroSituacao;
+}
+const visivel = (c: ClienteFiscal) => c.monitorado || c.sitfis.semProcuracao;
+function passaFiltro(c: ClienteFiscal, f: Filtro | null): boolean {
+  if (!f) return true;
+  if (f.situacao === "sem_procuracao") return c.sitfis.semProcuracao;
+  if (f.processo) {
+    const st = c.processos[f.processo];
+    return !!st && (!f.situacao || st.status === f.situacao);
+  }
+  return !f.situacao || (c.monitorado && c.geral === f.situacao);
+}
+
 export function AccountantFiscal() {
   const [data, setData] = useState<PainelFiscal | null>(null);
   const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaNotif, setBuscaNotif] = useState("");
-  const [filtro, setFiltro] = useState<{ processo?: Processo; situacao?: Situacao } | null>(null);
+  const [filtro, setFiltro] = useState<Filtro | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [rodando, setRodando] = useState(false);
   const [emitindo, setEmitindo] = useState(false);
@@ -109,15 +128,21 @@ export function AccountantFiscal() {
     const q = busca.trim().toLowerCase();
     const qd = q.replace(/\D/g, "");
     return data.clientes.filter((c) => {
-      if (!c.monitorado) return false;
+      if (!visivel(c)) return false;
       if (q && !c.nome.toLowerCase().includes(q) && !(qd && c.cnpj.replace(/\D/g, "").includes(qd))) return false;
-      if (filtro?.processo) {
-        const s = c.processos[filtro.processo];
-        if (!s || (filtro.situacao && s.status !== filtro.situacao)) return false;
-      } else if (filtro?.situacao && c.geral !== filtro.situacao) return false;
-      return true;
+      return passaFiltro(c, filtro);
     });
   }, [data, busca, filtro]);
+
+  // Quantos clientes em cada situação (respeitando o processo escolhido).
+  const contagem = useMemo(() => {
+    const out: Record<string, number> = {};
+    const base = (data?.clientes ?? []).filter(visivel);
+    for (const sit of [undefined, ...ORDEM, "sem_procuracao"] as (FiltroSituacao | undefined)[]) {
+      out[sit ?? "todas"] = base.filter((c) => passaFiltro(c, { processo: filtro?.processo, situacao: sit })).length;
+    }
+    return out;
+  }, [data, filtro?.processo]);
 
   const notifs = useMemo(() => {
     const q = buscaNotif.trim().toLowerCase();
@@ -243,7 +268,7 @@ export function AccountantFiscal() {
                 {ORDEM.map((s) => (
                   <span key={s} className="flex items-center gap-1">
                     <span className={`h-2 w-2 rounded-sm ${COR[s].dot}`} />
-                    {SITUACAO_ROTULO[s]} ({data.porProcesso.reduce((acc, p) => acc + p[s], 0)})
+                    {SITUACAO_ROTULO[s]}
                   </span>
                 ))}
               </div>
@@ -367,14 +392,15 @@ export function AccountantFiscal() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-bold text-slate-900 dark:text-white">Clientes</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{clientes.length} de {data.resumo.total} monitorados</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {clientes.length} de {contagem.todas ?? 0}
+              {data.semProcuracao > 0 ? ` · ${data.semProcuracao} sem procuração no e-CAC` : ""}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {filtro && (
               <button onClick={() => setFiltro(null)} className="flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
-                {filtro.processo ? ROTULO[filtro.processo] : "Geral"}
-                {filtro.situacao ? ` · ${SITUACAO_ROTULO[filtro.situacao]}` : ""}
-                <X className="h-3.5 w-3.5" />
+                Limpar filtros <X className="h-3.5 w-3.5" />
               </button>
             )}
             <div className="relative">
@@ -382,6 +408,36 @@ export function AccountantFiscal() {
               <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou CNPJ" className="w-56 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             </div>
           </div>
+        </div>
+
+        {/* filtros: processo + situação */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <select
+            value={filtro?.processo ?? ""}
+            onChange={(e) => setFiltro({ ...(filtro ?? {}), processo: (e.target.value || undefined) as Processo | undefined })}
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            aria-label="Filtrar por processo"
+          >
+            <option value="">Todos os processos</option>
+            {PROCESSOS.map((p) => (
+              <option key={p} value={p}>{ROTULO[p]}</option>
+            ))}
+          </select>
+          {([undefined, ...ORDEM, "sem_procuracao"] as (FiltroSituacao | undefined)[]).map((sit) => {
+            const ativo = (filtro?.situacao ?? undefined) === sit;
+            const rotulo = sit === undefined ? "Todas" : sit === "sem_procuracao" ? "Sem procuração" : SITUACAO_ROTULO[sit];
+            return (
+              <button
+                key={sit ?? "todas"}
+                onClick={() => setFiltro({ ...(filtro ?? {}), situacao: sit })}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${ativo ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+              >
+                {sit && <span className={`h-2 w-2 rounded-full ${sit === "sem_procuracao" ? "bg-slate-400" : COR[sit].dot}`} />}
+                {rotulo}
+                <span className="tabular-nums text-slate-400">{contagem[sit ?? "todas"] ?? 0}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* celular: cartões */}
@@ -394,7 +450,7 @@ export function AccountantFiscal() {
                     <p className="truncate font-semibold text-slate-800 dark:text-slate-100">{c.nome}</p>
                     <p className="text-xs text-slate-500">{formatCnpj(c.cnpj)}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${COR[c.geral].chip}`}>{SITUACAO_ROTULO[c.geral]}</span>
+                  <ChipGeral c={c} className="shrink-0" />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                   {PROCESSOS.filter((p) => c.processos[p]).map((p) => (
@@ -405,7 +461,7 @@ export function AccountantFiscal() {
                 </div>
                 <p className="mt-1.5 text-[10px] text-slate-400">
                   {c.sitfis.emitidoEm ? `Relatório de ${format(parseISO(c.sitfis.emitidoEm), "dd/MM")}` : "Sem relatório ainda"}
-                  {c.sitfis.erro ? " · última emissão falhou" : ""}
+                  {c.sitfis.semProcuracao ? " · sem procuração no e-CAC" : c.sitfis.erro ? " · última emissão falhou" : ""}
                 </p>
               </button>
             </li>
@@ -433,7 +489,7 @@ export function AccountantFiscal() {
                     <p className="text-xs text-slate-500">{formatCnpj(c.cnpj)}</p>
                   </td>
                   <td className="px-2">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${COR[c.geral].chip}`}>{SITUACAO_ROTULO[c.geral]}</span>
+                    <ChipGeral c={c} />
                   </td>
                   {PROCESSOS.map((p) => {
                     const s = c.processos[p];
@@ -448,7 +504,9 @@ export function AccountantFiscal() {
                     );
                   })}
                   <td className="px-2 text-right text-xs tabular-nums text-slate-500">
-                    {c.sitfis.erro ? (
+                    {c.sitfis.semProcuracao ? (
+                      <span title="Cadastre a procuração no e-CAC e clique em “Emitir agora” no cliente" className="text-amber-600 dark:text-amber-400">sem procuração</span>
+                    ) : c.sitfis.erro ? (
                       <span title={c.sitfis.erro} className="text-red-600 dark:text-red-400">falhou</span>
                     ) : c.sitfis.emitidoEm ? (
                       format(parseISO(c.sitfis.emitidoEm), "dd/MM")
@@ -473,4 +531,12 @@ export function AccountantFiscal() {
       {aberto && <ClienteFiscalDrawer clientId={aberto} onClose={() => setAberto(null)} onChange={load} />}
     </div>
   );
+}
+
+/** Situação geral do cliente; sem nenhum processo avaliado e sem procuração, diz isso. */
+function ChipGeral({ c, className = "" }: { c: ClienteFiscal; className?: string }) {
+  if (!c.monitorado && c.sitfis.semProcuracao) {
+    return <span className={`rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300 ${className}`}>Sem procuração</span>;
+  }
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${COR[c.geral].chip} ${className}`}>{SITUACAO_ROTULO[c.geral]}</span>;
 }

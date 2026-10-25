@@ -11,14 +11,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import {
-  lookupCnpjTomador,
-  lookupCepTomador,
   enderecoCompleto,
-  emitirNfse,
-  sincronizarEmissao,
-  viewDanfse,
-  shareDanfse,
+  nfseApiCliente,
   centavosToBRL,
+  type NfseEmitApi,
   type NfseAtividadeCliente,
   type NfseEndereco,
 } from "../../../lib/nfse";
@@ -45,11 +41,13 @@ interface Props {
   atividades: NfseAtividadeCliente[];
   prefill?: WizardPrefill | null;
   onClose: () => void;
+  // Quem emite: o próprio cliente (padrão) ou o contador por ele.
+  api?: NfseEmitApi;
 }
 
 type Step = 1 | 2 | 3 | "sending" | "success" | "error" | "processando";
 
-export function EmitWizard({ atividades, prefill, onClose }: Props) {
+export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente }: Props) {
   // Nota duplicada cujo tomador ficou sem endereço volta ao passo 1 para completar.
   const [step, setStep] = useState<Step>(prefill && enderecoCompleto(prefill.tomador.endereco) ? 3 : 1);
   const [cnpj, setCnpj] = useState(prefill?.tomador.doc ? formatCnpj(prefill.tomador.doc) : "");
@@ -79,7 +77,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
     if (cep.length !== 8) return;
     setCepLooking(true);
     try {
-      const r = await lookupCepTomador(cep);
+      const r = await api.lookupCep(cep);
       setTomador((t) => ({
         ...t,
         endereco: {
@@ -131,7 +129,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
     setLookupError("");
     setLooking(true);
     try {
-      const t = await lookupCnpjTomador(cnpj);
+      const t = await api.lookupCnpj(cnpj);
       setTomador({
         doc: t.cnpj,
         nome: t.razaoSocial,
@@ -151,7 +149,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
 
   const submit = async () => {
     setStep("sending");
-    const r = await emitirNfse({
+    const r = await api.emitir({
       atividadeId,
       tomador: {
         doc: tomador.doc,
@@ -178,7 +176,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
   const verificarProcessamento = async () => {
     if (!result?.id) return;
     setSyncing(true);
-    const s = await sincronizarEmissao(result.id).catch(() => null);
+    const s = await api.sincronizar(result.id).catch(() => null);
     setSyncing(false);
     if (!s) return;
     if (s.status === "emitida") {
@@ -244,7 +242,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
         {shareMsg && <p className="text-xs text-muted">{shareMsg}</p>}
         <div className="mx-auto flex max-w-sm flex-col gap-2">
           <button
-            onClick={() => result?.id && viewDanfse(result.id, result.numeroNota)}
+            onClick={() => result?.id && api.verDanfse(result.id, result.numeroNota)}
             className="flex items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong"
           >
             <FileText className="size-4" /> Visualizar a nota
@@ -252,7 +250,7 @@ export function EmitWizard({ atividades, prefill, onClose }: Props) {
           <button
             onClick={async () => {
               if (!result?.id) return;
-              const r = await shareDanfse(result.id, result.numeroNota).catch(() => null);
+              const r = await api.compartilharDanfse(result.id, result.numeroNota).catch(() => null);
               setShareMsg(r === "downloaded" ? "PDF baixado." : r === "shared" ? "" : "Falha ao compartilhar.");
             }}
             className="flex items-center justify-center gap-2 rounded-lg border border-line bg-surface py-3 text-sm font-semibold text-ink hover:bg-sunken"

@@ -1,5 +1,36 @@
 # CHANGELOG.md
 
+## Painel fiscal: filtros, sem procuração, Caixa Postal; NFS-e pelo contador (out/2026)
+
+- **Filtro por situação** na lista de clientes (Todas / Em dia / Pendente /
+  Atenção / Processando / Sem procuração), combinável com o processo, com a
+  contagem de cada uma. A legenda "Por processo" somava processos, não
+  clientes (20 clientes sem relatório × 4 processos = "80 processando").
+- **Sem procuração** deixa de ser erro: texto curto, aviso neutro na gaveta
+  ("cadastre a procuração e clique em Emitir agora"), coluna "sem
+  procuração", e o cliente não fica "processando". A emissão automática de
+  segunda não insiste nele (é recusa certa); volta depois de um "Emitir agora"
+  que dê certo. "Emitir relatórios" (todos, manual) ainda inclui.
+- SITFIS: HTTP 204 e ER03 ("tente novamente") na emissão = relatório ainda
+  não pronto — espera mais e tenta de novo com o mesmo protocolo (1ª espera
+  mínima de 5 s). Antes viravam falha.
+- **Caixa Postal só nos dias da agenda** (seg e qui). Evento "nunca lido"
+  rodava todo dia — e, como o protocolo da solicitação não era encontrado na
+  resposta (o SERPRO responde 200), a 1ª leitura nunca se completava: 1
+  chamada por dia. O protocolo agora é procurado em qualquer formato
+  (`acharProtocolo`); se ainda faltar, o corpo da resposta fica no resultado
+  da rotina (`fiscal_execucoes`) para diagnóstico.
+- 1ª abertura do painel após deploy reavalia todos os clientes (local).
+- **NFS-e pelo contador:** na tela do cliente em NFS-e, "Notas do cliente"
+  (emitidas e recebidas) com PDF (DANFSE), XML e "Atualizar situação" das que
+  estão processando; e **"Emitir nota"** em nome do cliente com o mesmo
+  assistente do app (`EmitWizard` recebe a API — `nfseApiCliente` /
+  `nfseApiContador`). Rotas novas: `GET /api/nfse/admin/clients/:id/notas`,
+  `POST /api/nfse/admin/clients/:id/emissoes`, `POST /api/nfse/admin/lookup-cnpj|lookup-cep`,
+  `POST /api/nfse/admin/emissoes/:id/sincronizar`, `GET /api/nfse/admin/emissoes/:id/danfse`.
+  Emissão do contador vai para a auditoria como "emitida pelo contador". A
+  aba "Notas emitidas" ganhou "Ver nota (PDF)".
+
 ## Pendências fiscais pelo Relatório de Situação Fiscal (out/2026)
 
 O painel do contador (`/admin`) passa a se basear no **Relatório de Situação

@@ -1,6 +1,9 @@
 import { apiFetch } from "./apiClient";
 import type { ServicoLC116 } from "./listaServicosLC116";
 
+// Quem chama: o próprio cliente (app) ou o contador agindo por ele.
+type Quem = "client" | "accountant";
+
 export type { ServicoLC116 };
 
 // ---------------------------------------------------------------------------
@@ -193,12 +196,12 @@ export async function getEmissao(id: string): Promise<NfseEmissaoDetail> {
   return data.emissao;
 }
 
-export async function lookupCnpjTomador(cnpj: string): Promise<TomadorLookup> {
-  const res = await apiFetch("/api/nfse/lookup-cnpj", {
+export async function lookupCnpjTomador(cnpj: string, url = "/api/nfse/lookup-cnpj", quem: Quem = "client"): Promise<TomadorLookup> {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cnpj }),
-  });
+  }, quem);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Falha ao consultar o CNPJ.");
   return data.tomador;
@@ -213,12 +216,12 @@ export interface CepEndereco {
   codigoMunicipio: string | null;
 }
 
-export async function lookupCepTomador(cep: string): Promise<CepEndereco> {
-  const res = await apiFetch("/api/nfse/lookup-cep", {
+export async function lookupCepTomador(cep: string, url = "/api/nfse/lookup-cep", quem: Quem = "client"): Promise<CepEndereco> {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cep }),
-  });
+  }, quem);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Falha ao consultar o CEP.");
   return data.endereco;
@@ -259,12 +262,12 @@ export interface EmitirNfseResult {
   motivo?: string | null;
 }
 
-export async function emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {
-  const res = await apiFetch("/api/nfse/emissoes", {
+export async function emitirNfse(input: EmitirNfseInput, url = "/api/nfse/emissoes", quem: Quem = "client"): Promise<EmitirNfseResult> {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
-  });
+  }, quem);
   const data = await res.json().catch(() => ({}));
   // 202 / body.processando = a nota foi enviada mas o Sefin ainda não confirmou.
   if (data.processando || res.status === 202) {
@@ -301,8 +304,8 @@ export interface SincronizarResult {
 }
 
 // Reconcilia uma emissão em 'processando' (consulta o Sefin; nunca reemite).
-export async function sincronizarEmissao(id: string): Promise<SincronizarResult> {
-  const res = await apiFetch(`/api/nfse/emissoes/${id}/sincronizar`, { method: "POST" });
+export async function sincronizarEmissao(id: string, base = "/api/nfse/emissoes", quem: Quem = "client"): Promise<SincronizarResult> {
+  const res = await apiFetch(`${base}/${id}/sincronizar`, { method: "POST" }, quem);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: data.error || "Falha ao consultar o Sefin." };
   return { ok: true, ...data };
@@ -380,14 +383,14 @@ export async function getListaServicos(): Promise<ServicoLC116[]> {
 }
 
 // DANFSE (PDF) — fetch as a blob so it can be viewed or shared as a file.
-export async function fetchDanfseBlob(id: string): Promise<Blob> {
-  const res = await apiFetch(`/api/nfse/emissoes/${id}/danfse`);
+export async function fetchDanfseBlob(id: string, base = "/api/nfse/emissoes", quem: Quem = "client"): Promise<Blob> {
+  const res = await apiFetch(`${base}/${id}/danfse`, {}, quem);
   if (!res.ok) throw new Error("Não foi possível obter o PDF da nota.");
   return res.blob();
 }
 
-export async function viewDanfse(id: string, numero?: string | null): Promise<void> {
-  const blob = await fetchDanfseBlob(id);
+export async function viewDanfse(id: string, numero?: string | null, base?: string, quem: Quem = "client"): Promise<void> {
+  const blob = await fetchDanfseBlob(id, base, quem);
   const { isNativeApp, shareNativeBlob } = await import("./native");
   if (isNativeApp()) {
     if (await shareNativeBlob(blob, `NFSe-${numero || id}.pdf`)) return;
@@ -397,8 +400,8 @@ export async function viewDanfse(id: string, numero?: string | null): Promise<vo
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export async function shareDanfse(id: string, numero?: string | null): Promise<"shared" | "downloaded"> {
-  const blob = await fetchDanfseBlob(id);
+export async function shareDanfse(id: string, numero?: string | null, base?: string, quem: Quem = "client"): Promise<"shared" | "downloaded"> {
+  const blob = await fetchDanfseBlob(id, base, quem);
   const filename = `NFSe-${numero || id}.pdf`;
   const file = new File([blob], filename, { type: "application/pdf" });
   const nav = navigator as Navigator & { canShare?: (d: any) => boolean };
@@ -423,8 +426,59 @@ export async function shareDanfse(id: string, numero?: string | null): Promise<"
 }
 
 // ---------------------------------------------------------------------------
+//  Assistente de emissão: o cliente (padrão) ou o contador emitindo por ele
+// ---------------------------------------------------------------------------
+
+export interface NfseEmitApi {
+  lookupCnpj: (cnpj: string) => Promise<TomadorLookup>;
+  lookupCep: (cep: string) => Promise<CepEndereco>;
+  emitir: (input: EmitirNfseInput) => Promise<EmitirNfseResult>;
+  sincronizar: (id: string) => Promise<SincronizarResult>;
+  verDanfse: (id: string, numero?: string | null) => Promise<void>;
+  compartilharDanfse: (id: string, numero?: string | null) => Promise<"shared" | "downloaded">;
+}
+
+export const nfseApiCliente: NfseEmitApi = {
+  lookupCnpj: (cnpj) => lookupCnpjTomador(cnpj),
+  lookupCep: (cep) => lookupCepTomador(cep),
+  emitir: (input) => emitirNfse(input),
+  sincronizar: (id) => sincronizarEmissao(id),
+  verDanfse: (id, numero) => viewDanfse(id, numero),
+  compartilharDanfse: (id, numero) => shareDanfse(id, numero),
+};
+
+/** O contador emite em nome do cliente (registrado na auditoria como dele). */
+export function nfseApiContador(clientId: string): NfseEmitApi {
+  const base = "/api/nfse/admin/emissoes";
+  return {
+    lookupCnpj: (cnpj) => lookupCnpjTomador(cnpj, "/api/nfse/admin/lookup-cnpj", "accountant"),
+    lookupCep: (cep) => lookupCepTomador(cep, "/api/nfse/admin/lookup-cep", "accountant"),
+    emitir: (input) => emitirNfse(input, `/api/nfse/admin/clients/${clientId}/emissoes`, "accountant"),
+    sincronizar: (id) => sincronizarEmissao(id, base, "accountant"),
+    verDanfse: (id, numero) => viewDanfse(id, numero, base, "accountant"),
+    compartilharDanfse: (id, numero) => shareDanfse(id, numero, base, "accountant"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 //  Accountant-facing API (/api/nfse/admin/*)
 // ---------------------------------------------------------------------------
+
+export interface AdminNotasCliente {
+  habilitado: boolean;
+  motivo: "sem_config" | "sem_certificado" | "inativo" | "sem_atividade" | null;
+  ambiente: string | null;
+  atividades: NfseAtividadeCliente[];
+  emitidas: NfseEmissao[];
+  tomadas: NfseEmissao[];
+}
+
+export async function adminGetNotasCliente(clientId: string): Promise<AdminNotasCliente> {
+  const res = await apiFetch(`/api/nfse/admin/clients/${clientId}/notas`, {}, "accountant");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Falha ao carregar as notas do cliente.");
+  return data;
+}
 
 export async function adminListNfseClients(): Promise<NfseClientOverview[]> {
   const res = await apiFetch("/api/nfse/admin/clients", {}, "accountant");

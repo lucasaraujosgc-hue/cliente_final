@@ -25,6 +25,7 @@ import {
   type NfseTestResult,
 } from "../../../lib/nfse";
 import { AtividadeForm } from "./AtividadeForm";
+import { NotasCliente } from "./NotasCliente";
 
 const FIELD =
   "w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 dark:text-white";
@@ -230,6 +231,9 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           {msg.text}
         </div>
       )}
+
+      {/* Notas do cliente + emitir em nome dele (recarrega quando a emissão é ligada/desligada) */}
+      <NotasCliente clientId={clientId} versao={`${cfg?.ativo}-${cfg?.hasCert}-${ativas}`} />
 
       {/* Certificado + dados fiscais */}
       <form onSubmit={saveConfig} className={CARD + " space-y-5"}>

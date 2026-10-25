@@ -3,6 +3,7 @@ import { db } from "../../db";
 import { clients, fiscalNotificacoes, fiscalPerfil, fiscalSitfis, fiscalStatus, parcelamentos } from "../../schema";
 import { LIMITE_MES, usoDoMes } from "./integra";
 import { sitfisRodando, ultimaExecucao } from "./monitor";
+import { ehSemProcuracao } from "./sitfis";
 import { PROCESSO_ROTULO, PROCESSOS, piorSituacao, type Processo, type Situacao } from "./regras";
 
 // Dados da tela "Pendências fiscais" — só leitura do banco, nenhuma chamada ao
@@ -48,6 +49,7 @@ export async function montarPainel() {
   const omissoes: Record<string, number> = {};
   let semOmissao = 0;
   const totais = { debitos: 0, dividaAtiva: 0 };
+  let totalSemProcuracao = 0;
 
   const clientes = lista
     .map((c) => {
@@ -72,6 +74,8 @@ export async function montarPainel() {
       const perfil = perfis.find((p) => p.clientId === c.id);
       const ok = sitfisOk.get(c.id);
       const ultimo = sitfisUltimo.get(c.id);
+      const semProcuracao = !!ultimo && !ultimo.ok && ehSemProcuracao(ultimo.erro);
+      if (semProcuracao) totalSemProcuracao++;
       return {
         id: c.id,
         nome: c.name,
@@ -84,8 +88,9 @@ export async function montarPainel() {
         sitfis: {
           emitidoEm: ok?.createdAt ?? null,
           temPdf: !!ok?.temPdf,
-          // Última tentativa falhou depois do último relatório bom.
-          erro: ultimo && !ultimo.ok ? ultimo.erro : null,
+          semProcuracao,
+          // Última tentativa falhou depois do último relatório bom (sem procuração não é falha).
+          erro: ultimo && !ultimo.ok && !semProcuracao ? ultimo.erro : null,
         },
         processos,
       };
@@ -120,6 +125,7 @@ export async function montarPainel() {
       semOmissao,
     },
     totais,
+    semProcuracao: totalSemProcuracao,
     clientes,
     notificacoes,
     uso: { mes: await usoDoMes(), limite: LIMITE_MES },

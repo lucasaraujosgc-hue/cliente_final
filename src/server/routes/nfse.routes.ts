@@ -96,6 +96,46 @@ async function loadClientOr404(id: string, res: any) {
 }
 
 // Coerce FormData "" → undefined so "campo em branco = manter" works.
+// Emite a NFS-e de `clientId` com o corpo já validado (nfseEmitSchema) e
+// registra na auditoria. Usado pelo app do cliente e pelo contador.
+async function emitirPeloCorpo(req: any, clientId: string, b: any, porContador: boolean) {
+  const emissao = await emitirNfse(clientId, {
+    atividadeId: b.atividadeId,
+    tomador: {
+      doc: b.tomador.doc,
+      nome: b.tomador.nome,
+      email: b.tomador.email || undefined,
+      telefone: b.tomador.telefone || undefined,
+      inscricaoMunicipal: b.tomador.inscricaoMunicipal || undefined,
+      endereco: b.tomador.endereco || undefined,
+    },
+    descricao: b.descricao,
+    valor: b.valor,
+    competencia: b.competencia || undefined,
+  });
+  await logAudit(req, "nfse.emissao", {
+    targetType: "nfse_emissao",
+    targetId: emissao.id,
+    summary: `NFS-e ${emissao.status}${emissao.numeroNota ? ` nº ${emissao.numeroNota}` : ""}${porContador ? " (emitida pelo contador)" : ""}`,
+    metadata: {
+      clientId,
+      status: emissao.status,
+      ambiente: emissao.ambiente,
+      idDps: emissao.idDps,
+      chaveAcesso: emissao.chaveAcesso,
+      porContador,
+    },
+  });
+  return {
+    ok: emissao.status === "emitida",
+    processando: emissao.status === "processando",
+    id: emissao.id,
+    status: emissao.status,
+    chaveAcesso: emissao.chaveAcesso,
+    numeroNota: emissao.numeroNota,
+  };
+}
+
 function blank(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
 }
@@ -197,41 +237,8 @@ export function registerNfseRoutes(app: Express) {
       if (!status.enabled) {
         return res.status(403).json({ error: "Emissão de NFS-e não habilitada para este cliente." });
       }
-      const b = req.body;
       try {
-        const emissao = await emitirNfse(clientId, {
-          atividadeId: b.atividadeId,
-          tomador: {
-            doc: b.tomador.doc,
-            nome: b.tomador.nome,
-            email: b.tomador.email || undefined,
-            telefone: b.tomador.telefone || undefined,
-            inscricaoMunicipal: b.tomador.inscricaoMunicipal || undefined,
-            endereco: b.tomador.endereco || undefined,
-          },
-          descricao: b.descricao,
-          valor: b.valor,
-          competencia: b.competencia || undefined,
-        });
-        await logAudit(req, "nfse.emissao", {
-          targetType: "nfse_emissao",
-          targetId: emissao.id,
-          summary: `NFS-e ${emissao.status}${emissao.numeroNota ? ` nº ${emissao.numeroNota}` : ""}`,
-          metadata: {
-            status: emissao.status,
-            ambiente: emissao.ambiente,
-            idDps: emissao.idDps,
-            chaveAcesso: emissao.chaveAcesso,
-          },
-        });
-        res.json({
-          ok: emissao.status === "emitida",
-          processando: emissao.status === "processando",
-          id: emissao.id,
-          status: emissao.status,
-          chaveAcesso: emissao.chaveAcesso,
-          numeroNota: emissao.numeroNota,
-        });
+        res.json(await emitirPeloCorpo(req, clientId, req.body, false));
       } catch (e) {
         if (sendNfseError(res, e)) return;
         throw e;
@@ -355,6 +362,106 @@ export function registerNfseRoutes(app: Express) {
     res.json({
       emissoes: rows.map((e) => ({ ...nfseEmissaoDetailDTO(e), clientId: e.clientId })),
     });
+  });
+
+  // ---- Contador emite e consulta as notas de um cliente -------------------
+
+  // Notas do cliente (emitidas e recebidas) + o que o assistente de emissão precisa.
+  app.get("/api/nfse/admin/clients/:id/notas", verifyAccountantAuth, async (req, res) => {
+    const client = await loadClientOr404(req.params.id, res);
+    if (!client) return;
+    const [emitidas, tomadas, atividades, status] = await Promise.all([
+      listEmissoes(client.id),
+      listEmissoesTomadas(client.id),
+      listAtividades(client.id, true),
+      nfseStatusForClient(client.id),
+    ]);
+    res.json({
+      habilitado: status.enabled,
+      // sem_config | sem_certificado | inativo | sem_atividade
+      motivo: status.enabled ? null : (status.motivo ?? null),
+      ambiente: status.ambiente,
+      atividades: atividades.map(nfseAtividadeClientDTO),
+      emitidas: emitidas.map(nfseEmissaoListDTO),
+      tomadas: tomadas.map(nfseEmissaoListDTO),
+    });
+  });
+
+  app.post(
+    "/api/nfse/admin/clients/:id/emissoes",
+    verifyAccountantAuth,
+    nfseEmitLimiter,
+    validateBody(nfseEmitSchema),
+    async (req, res) => {
+      const client = await loadClientOr404(req.params.id, res);
+      if (!client) return;
+      const status = await nfseStatusForClient(client.id);
+      if (!status.enabled) {
+        return res.status(403).json({ error: "Emissão de NFS-e não habilitada para este cliente." });
+      }
+      try {
+        res.json(await emitirPeloCorpo(req, client.id, req.body, true));
+      } catch (e) {
+        if (sendNfseError(res, e)) return;
+        throw e;
+      }
+    },
+  );
+
+  app.post("/api/nfse/admin/lookup-cnpj", verifyAccountantAuth, nfseLookupLimiter, validateBody(nfseCnpjLookupSchema), async (req, res) => {
+    try {
+      res.json({ tomador: await lookupCnpj(req.body.cnpj) });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
+  app.post("/api/nfse/admin/lookup-cep", verifyAccountantAuth, nfseLookupLimiter, validateBody(nfseCepLookupSchema), async (req, res) => {
+    try {
+      res.json({ endereco: await lookupCep(req.body.cep) });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
+  // Reconcilia uma emissão em 'processando' de qualquer cliente (nunca reenvia).
+  app.post("/api/nfse/admin/emissoes/:id/sincronizar", verifyAccountantAuth, nfseLookupLimiter, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    const emissao = await getEmissaoById(req.params.id);
+    if (!emissao) return res.status(404).json({ error: "Emissão não encontrada." });
+    try {
+      const row = await reconcileEmissao(emissao.clientId, emissao.id);
+      res.json({
+        ok: true,
+        id: row.id,
+        status: row.status,
+        chaveAcesso: row.chaveAcesso,
+        numeroNota: row.numeroNota,
+        rejeicaoMotivo: row.rejeicaoMotivo,
+      });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
+  });
+
+  // DANFSE (PDF) de qualquer nota — emitida ou recebida.
+  app.get("/api/nfse/admin/emissoes/:id/danfse", verifyAccountantAuth, async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+    const emissao = await getEmissaoById(req.params.id);
+    if (!emissao) return res.status(404).json({ error: "Emissão não encontrada." });
+    try {
+      const pdfPath = await getDanfsePdfPath(emissao);
+      await sendDiskFile(res, pdfPath, {
+        disposition: req.query.download === "1" ? "attachment" : "inline",
+        downloadName: `NFSe-${emissao.numeroNota || emissao.id}.pdf`,
+      });
+    } catch (e) {
+      if (sendNfseError(res, e)) return;
+      throw e;
+    }
   });
 
   // Contador: apaga uma tentativa rejeitada de qualquer cliente.

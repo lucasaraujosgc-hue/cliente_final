@@ -76,7 +76,7 @@ export interface ClienteFiscal {
   regime: string | null;
   processosManuais: boolean;
   temParcelamento: boolean;
-  sitfis: { emitidoEm: string | null; temPdf: boolean; erro: string | null };
+  sitfis: { emitidoEm: string | null; temPdf: boolean; semProcuracao: boolean; erro: string | null };
   processos: Partial<Record<Processo, StatusProcesso>>;
 }
 
@@ -96,6 +96,7 @@ export interface PainelFiscal {
   porProcesso: ({ processo: Processo; rotulo: string } & Record<Situacao, number>)[];
   omissoes: { porDeclaracao: { declaracao: string; clientes: number }[]; semOmissao: number };
   totais: { debitos: number; dividaAtiva: number };
+  semProcuracao: number; // clientes cuja última emissão foi recusada por falta de procuração
   clientes: ClienteFiscal[];
   notificacoes: NotificacaoFiscal[];
   uso: { mes: number; limite: number };

@@ -1,4 +1,4 @@
-import { and, eq, gte, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { db } from "../../db";
 import {
   clients,
@@ -11,7 +11,7 @@ import {
   parcelamentos,
 } from "../../schema";
 import { chamarIntegra, LimiteSerproError } from "./integra";
-import { emitirSitfis, relerDesatualizados, ultimoSitfisOk } from "./sitfis";
+import { ehSemProcuracao, emitirSitfis, relerDesatualizados, ultimoSitfis, ultimoSitfisOk } from "./sitfis";
 import type { SitfisResultado } from "./sitfisParser";
 import {
   AGENDA_PADRAO,
@@ -192,10 +192,20 @@ export async function avaliarCliente(clientId: string, hoje = new Date()) {
 
   // Relatório de situação fiscal (último emitido com sucesso).
   const sitfis = await ultimoSitfisOk(clientId);
-  const emitidoEm = sitfis?.createdAt ? new Date(sitfis.createdAt).toLocaleDateString("pt-BR") : null;
-  const porSitfis = avaliarSitfis((sitfis?.resultado as SitfisResultado | null) ?? null, emitidoEm);
-  for (const p of ["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA"] as const) {
-    if (processos.includes(p)) novos.push([p, porSitfis[p], "serpro"]);
+  const tentativa = await ultimoSitfis(clientId);
+  const SITFIS = ["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA"] as const;
+  if (!sitfis && tentativa && !tentativa.ok && ehSemProcuracao(tentativa.erro)) {
+    // Sem procuração e nenhum relatório lido: não há o que mostrar — o cliente
+    // não entra como "processando" (o painel o lista como "sem procuração").
+    await db
+      .delete(fiscalStatus)
+      .where(and(eq(fiscalStatus.clientId, clientId), inArray(fiscalStatus.processo, [...SITFIS])));
+  } else {
+    const emitidoEm = sitfis?.createdAt ? new Date(sitfis.createdAt).toLocaleDateString("pt-BR") : null;
+    const porSitfis = avaliarSitfis((sitfis?.resultado as SitfisResultado | null) ?? null, emitidoEm);
+    for (const p of SITFIS) {
+      if (processos.includes(p)) novos.push([p, porSitfis[p], "serpro"]);
+    }
   }
 
   // FGTS: guias do portal (último ano) conforme o cliente ou o contador marcam
@@ -247,6 +257,32 @@ export async function atualizarSitfisCliente(clientId: string, origem: "automati
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Protocolo da solicitação de eventos — aceita "protocolo"/"Protocolo", dados em string e aninhados. */
+export function acharProtocolo(dados: unknown, texto = ""): string | null {
+  let d: any = dados;
+  for (let i = 0; i < 2 && typeof d === "string"; i++) {
+    try {
+      d = JSON.parse(d);
+    } catch {
+      break;
+    }
+  }
+  const procurar = (o: any, nivel = 0): string | null => {
+    if (!o || typeof o !== "object" || nivel > 3) return null;
+    for (const [k, v] of Object.entries(o)) {
+      if (/^protocolo$/i.test(k) && (typeof v === "string" || typeof v === "number") && String(v).trim()) return String(v).trim();
+    }
+    for (const v of Object.values(o)) {
+      const achou = procurar(v, nivel + 1);
+      if (achou) return achou;
+    }
+    return null;
+  };
+  return procurar(d) ?? texto.match(/\\?"protocolo\\?"\s*:\s*\\?"([^"\\]+)/i)?.[1] ?? null;
+}
+
+let ultimoErroEventos: string | null = null;
+
 async function obterEventos(cnpjs: string[], ev: CodigoEvento, origem: "automatico" | "manual"): Promise<Map<string, string> | null> {
   const sol = await chamarIntegra({
     rota: "Monitorar",
@@ -256,9 +292,11 @@ async function obterEventos(cnpjs: string[], ev: CodigoEvento, origem: "automati
     dados: { evento: ev },
     origem,
   });
-  const protocolo = sol.dados?.protocolo;
+  const protocolo = acharProtocolo(sol.dados, sol.texto);
   if (!sol.ok || !protocolo) {
     log("eventos.solicitar_erro", { evento: ev, httpStatus: sol.httpStatus, corpo: sol.texto.slice(0, 500) });
+    // Fica no resultado da rotina (fiscal_execucoes) para diagnóstico.
+    ultimoErroEventos = `solicitar HTTP ${sol.httpStatus}: ${sol.texto.slice(0, 300)}`;
     return null;
   }
   const tempo = Number(sol.dados?.TempoEsperaMedioEmMs ?? sol.dados?.tempoEsperaMedioEmMs) || 3000;
@@ -275,6 +313,7 @@ async function obterEventos(cnpjs: string[], ev: CodigoEvento, origem: "automati
     const elementos = r.dados?.elementos ?? r.dados?.dados?.elementos;
     if (r.ok && Array.isArray(elementos)) return lerElementos(elementos);
     log("eventos.obter_aguardando", { evento: ev, httpStatus: r.httpStatus, corpo: r.texto.slice(0, 300) });
+    ultimoErroEventos = `obter HTTP ${r.httpStatus}: ${r.texto.slice(0, 300)}`;
     await espera(5000);
   }
   return null;
@@ -339,10 +378,15 @@ export async function rodarEventos(origem: "automatico" | "manual" = "automatico
 
   const cnpjDe = new Map([...porCnpj].map(([cnpj, id]) => [id, cnpj]));
   const afetados = new Set<string>();
+  const erros: string[] = [];
   let mudancas = 0;
   for (const ev of quais) {
+    ultimoErroEventos = null;
     const valores = await obterEventos(cnpjs, ev, origem);
-    if (!valores) continue;
+    if (!valores) {
+      erros.push(ultimoErroEventos ?? "sem resposta");
+      continue;
+    }
     const anteriores = await db.select().from(fiscalEventos).where(eq(fiscalEventos.evento, ev));
     for (const [cnpj, valor] of valores) {
       const clientId = porCnpj.get(cnpj);
@@ -398,7 +442,7 @@ export async function rodarEventos(origem: "automatico" | "manual" = "automatico
     }
   }
   for (const clientId of afetados) await avaliarCliente(clientId);
-  return { clientes: cnpjs.length, mudancas };
+  return { clientes: cnpjs.length, mudancas, ...(erros.length ? { erro: erros.join(" | ") } : {}) };
 }
 
 // --- relatório de todos os clientes -----------------------------------------------
@@ -410,12 +454,21 @@ export const sitfisRodando = () => sitfisEmAndamento;
 export async function rodarSitfisTodos(origem: "automatico" | "manual") {
   if (sitfisEmAndamento) return { emAndamento: true };
   sitfisEmAndamento = true;
-  const resultado = { inicio: new Date().toISOString(), ok: 0, falhas: 0, total: 0 };
+  const resultado = { inicio: new Date().toISOString(), ok: 0, falhas: 0, total: 0, semProcuracao: 0 };
   try {
     const todos = await db.select({ id: clients.id }).from(clients);
     for (const c of todos) {
       const processos = await processosDoCliente(c.id);
       if (!processos.some((p) => ["OMISSOES", "DEBITOS", "PARCELAMENTOS", "DIVIDA_ATIVA"].includes(p))) continue;
+      // Segunda-feira automática não insiste em quem está sem procuração (é
+      // recusa certa). Volta a entrar depois de um "Emitir agora" que dê certo.
+      if (origem === "automatico") {
+        const ultima = await ultimoSitfis(c.id);
+        if (ultima && !ultima.ok && ehSemProcuracao(ultima.erro)) {
+          resultado.semProcuracao++;
+          continue;
+        }
+      }
       resultado.total++;
       const r = await atualizarSitfisCliente(c.id, origem);
       if (r.ok) resultado.ok++;
@@ -459,8 +512,7 @@ export async function rodarRotinaDiaria(origem: "automatico" | "manual" = "autom
     await relerDesatualizados();
 
     // "Verificar agora" lê a Caixa Postal na hora; a rotina segue a agenda.
-    const jaLidos = new Set((await db.selectDistinct({ e: fiscalEventos.evento }).from(fiscalEventos)).map((r) => r.e));
-    const quais = origem === "manual" ? EVENTOS : eventosDoDia(new Date(), jaLidos, AGENDA);
+    const quais = origem === "manual" ? EVENTOS : eventosDoDia(new Date(), AGENDA);
     resultado.eventos = quais.length ? await rodarEventos(origem, quais) : { clientes: 0, mudancas: 0 };
 
     // Segunda-feira: relatório de situação fiscal de todos.

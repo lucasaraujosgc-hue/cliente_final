@@ -26,6 +26,10 @@ export function resolverPdfSitfis(pdfPath: string | null | undefined): string | 
 }
 
 const MAX_TENTATIVAS_EMITIR = 3;
+
+export const SEM_PROCURACAO = "Sem procuração no e-CAC para o relatório de situação fiscal deste cliente.";
+/** Última tentativa recusada por falta de procuração? (também reconhece o texto antigo) */
+export const ehSemProcuracao = (erro?: string | null) => /^Sem procura/i.test(erro || "");
 const MANTER_PDF_DIAS = 120;
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -67,9 +71,12 @@ export async function emitirSitfis(clientId: string, origem: "automatico" | "man
   if (cnpj.length !== 14) return { ok: false, erro: "CNPJ inválido no cadastro do cliente." };
 
   const falhar = async (erro: string, semProcuracao = false): Promise<EmissaoSitfis> => {
-    log("sitfis.falhou", { clientId, erro: erro.slice(0, 500) });
-    const id = await registrar(clientId, origem, { ok: false, erro: semProcuracao ? `Sem procuração: ${erro}` : erro });
-    return { ok: false, erro, semProcuracao, id };
+    log("sitfis.falhou", { clientId, semProcuracao, erro: erro.slice(0, 500) });
+    // Sem procuração não é falha do sistema: fica registrado com um texto curto
+    // (o detalhe do SERPRO vai só para o log).
+    const texto = semProcuracao ? SEM_PROCURACAO : erro;
+    const id = await registrar(clientId, origem, { ok: false, erro: texto });
+    return { ok: false, erro: texto, semProcuracao, id };
   };
 
   try {
@@ -95,7 +102,8 @@ export async function emitirSitfis(clientId: string, origem: "automatico" | "man
       return falhar(`Solicitação do relatório recusada: ${msg}`, sol.semProcuracao);
     }
 
-    let aguardar = tempoEsperaMs(sol.dados?.tempoEspera);
+    // Relatório pronto em ~4 s para a maioria; menos que isso costuma voltar 204.
+    let aguardar = Math.max(tempoEsperaMs(sol.dados?.tempoEspera), 5000);
     for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_EMITIR; tentativa++) {
       await espera(aguardar);
       const r = await chamarIntegra({
@@ -127,11 +135,14 @@ export async function emitirSitfis(clientId: string, origem: "automatico" | "man
         void limparAntigos(clientId);
         return { ok: true, resultado, id };
       }
-      if (r.httpStatus === 202) {
-        aguardar = tempoEsperaMs(r.dados?.tempoEspera, 5000);
-        continue;
-      }
       const msg = r.mensagens.map((m) => `${m.codigo || ""} ${m.texto || ""}`.trim()).join(" · ") || `HTTP ${r.httpStatus}`;
+      // Ainda gerando: 202 (documentado), 204 sem conteúdo ou ER03 ("tente
+      // novamente mais tarde") — espera mais e tenta de novo, com o mesmo protocolo.
+      if (r.httpStatus === 202 || r.httpStatus === 204 || /ER03|tente novamente/i.test(msg)) {
+        aguardar = Math.max(tempoEsperaMs(r.dados?.tempoEspera, 8000), tentativa * 8000);
+        if (tentativa < MAX_TENTATIVAS_EMITIR) continue;
+        return falhar(`O SERPRO ainda não terminou de gerar o relatório (${msg}). Tente de novo mais tarde.`);
+      }
       return falhar(`Emissão do relatório recusada: ${msg}`, r.semProcuracao);
     }
     return falhar("O SERPRO não terminou de gerar o relatório a tempo. Tente de novo mais tarde.");

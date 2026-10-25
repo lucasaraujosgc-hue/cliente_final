@@ -171,7 +171,7 @@ Fora do `startServer`: `pool.on("error")` + `unhandledRejection` só logam;
 | `integration.routes.ts` | `/api/integration/*` | `verifyIntegrationToken` | upload-doc, sync-client, update-billing |
 | `webhook.routes.ts` | `/api/webhook/*` | token de integração no corpo (`hash_empresa`/`companyHash`) | receitas (SITFIS/base64), documentos (multipart/JSON) |
 | `notifications.routes.ts` | `/api/notifications/*`, `/api/admin/notifications/*`, `/api/accountant/subscriptions*`, `/api/vapidPublicKey` | client / accountant | subscribe, send, regras agendadas, listar/apagar dispositivos |
-| `nfse.routes.ts` | `/api/nfse/*`, `/api/nfse/admin/*` | client / accountant | status+gating, atividades, emissões (listar/emitir/cancelar/DANFSE), lookup-cnpj, lista LC 116; admin: config+certificado (multipart), atividades CRUD, testar, emissões |
+| `nfse.routes.ts` | `/api/nfse/*`, `/api/nfse/admin/*` | client / accountant | status+gating, atividades, emissões (listar/emitir/cancelar/DANFSE), lookup-cnpj, lista LC 116; admin: config+certificado (multipart), atividades CRUD, testar, emissões; o contador lista as notas do cliente (emitidas/recebidas), abre DANFSE/XML e emite em nome dele |
 
 Lista completa de paths: `grep -rhoE '"/api/[^"]+"' src/server/routes/`.
 

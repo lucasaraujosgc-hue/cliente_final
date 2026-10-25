@@ -17,6 +17,7 @@ import {
   adminDownloadEmissaoXml,
   adminExcluirEmissao,
   centavosToBRL,
+  viewDanfse,
   nfseStatusLabel,
   type NfseClientOverview,
   type NfseEmissaoDetail,
@@ -270,6 +271,14 @@ function EmissoesTab() {
                   )}
 
                   <div className="flex flex-wrap gap-2 pt-1">
+                    {e.chaveAcesso && (e.status === "emitida" || e.status === "cancelada") && (
+                      <button
+                        onClick={() => viewDanfse(e.id, e.numeroNota, "/api/nfse/admin/emissoes", "accountant").catch((err) => setXmlErr(err.message || "Falha ao abrir a nota."))}
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <FileText className="h-3.5 w-3.5" /> Ver nota (PDF)
+                      </button>
+                    )}
                     {e.hasXmlDps && (
                       <button onClick={() => baixar(e.id, "dps")} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
                         <Download className="h-3.5 w-3.5" /> XML da DPS

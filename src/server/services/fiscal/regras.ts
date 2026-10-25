@@ -230,9 +230,13 @@ export const AGENDA_PADRAO: Agenda = { sitfisDiasSemana: [1], caixaPostalDiasSem
 
 const diaDaSemanaBrt = (agora: Date) => new Date(agora.getTime() - 3 * 3_600_000).getUTCDay();
 
-/** Caixa Postal hoje? (evento nunca lido roda na hora, como linha de base). */
-export function eventosDoDia(agora: Date, jaLidos: Set<string>, agenda: Agenda = AGENDA_PADRAO): CodigoEvento[] {
-  return !jaLidos.has("E0601") || agenda.caixaPostalDiasSemana.includes(diaDaSemanaBrt(agora)) ? ["E0601"] : [];
+/**
+ * Caixa Postal hoje? Só nos dias da agenda (seg e qui). Antes, evento nunca
+ * lido rodava na hora — e, como a 1ª leitura não se completava, isso virou uma
+ * chamada todo dia.
+ */
+export function eventosDoDia(agora: Date, agenda: Agenda = AGENDA_PADRAO): CodigoEvento[] {
+  return agenda.caixaPostalDiasSemana.includes(diaDaSemanaBrt(agora)) ? ["E0601"] : [];
 }
 
 /** Dia de emitir o relatório de situação fiscal? */

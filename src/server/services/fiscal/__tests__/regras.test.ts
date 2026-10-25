@@ -15,6 +15,7 @@ import {
 } from "../regras";
 import type { SitfisResultado, SitfisSecao } from "../sitfisParser";
 import { tipoGuiaDoDocumento } from "../guias";
+import { acharProtocolo } from "../monitor";
 
 const hoje = new Date(2026, 9, 15); // 15/10/2026 → competência 09/2026
 const doc = (over: Partial<DocGuia>): DocGuia => ({ category: "FGTS", competence: "09/2026", status: "new", ...over });
@@ -157,7 +158,6 @@ describe("eventos de atualização", () => {
 });
 
 describe("agenda (custo no Integra Contador)", () => {
-  const lidos = new Set(["E0601"]);
   // 07h BRT = 10h UTC
   const em = (iso: string) => new Date(`${iso}T10:00:00Z`);
 
@@ -168,22 +168,34 @@ describe("agenda (custo no Integra Contador)", () => {
   });
 
   it("Caixa Postal na segunda e na quinta; dia comum sem chamada", () => {
-    expect(eventosDoDia(em("2026-10-19"), lidos)).toEqual(["E0601"]);
-    expect(eventosDoDia(em("2026-10-22"), lidos)).toEqual(["E0601"]);
-    expect(eventosDoDia(em("2026-10-21"), lidos)).toEqual([]);
+    expect(eventosDoDia(em("2026-10-19"))).toEqual(["E0601"]);
+    expect(eventosDoDia(em("2026-10-22"))).toEqual(["E0601"]);
+    expect(eventosDoDia(em("2026-10-21"))).toEqual([]);
   });
 
-  it("evento nunca lido roda na hora (linha de base)", () => {
-    expect(eventosDoDia(em("2026-10-21"), new Set())).toEqual(["E0601"]);
+  it("nunca roda fora da agenda — nem para fazer a 1ª leitura", () => {
+    expect(eventosDoDia(em("2026-10-24"))).toEqual([]); // sábado
+    expect(eventosDoDia(em("2026-10-21"), { sitfisDiasSemana: [1], caixaPostalDiasSemana: [3] })).toEqual(["E0601"]);
   });
 
   it("usa o dia de Brasília: 22h BRT de domingo ainda é domingo", () => {
-    expect(eventosDoDia(new Date("2026-10-19T01:00:00Z"), lidos)).toEqual([]); // 18/10 22h BRT
+    expect(eventosDoDia(new Date("2026-10-19T01:00:00Z"))).toEqual([]); // 18/10 22h BRT
     expect(diaDeSitfis(new Date("2026-10-19T01:00:00Z"))).toBe(false);
   });
 
   it("lista de dias configurável", () => {
     expect(lerListaNumeros("1, 4,9", 0, 6)).toEqual([1, 4]);
     expect(lerListaNumeros("", 0, 6)).toBeNull();
+  });
+});
+
+describe("protocolo da solicitação de eventos", () => {
+  it("acha o protocolo em formatos diferentes de resposta", () => {
+    expect(acharProtocolo({ protocolo: "abc-1" })).toBe("abc-1");
+    expect(acharProtocolo({ Protocolo: "abc-2", TempoEsperaMedioEmMs: 3000 })).toBe("abc-2");
+    expect(acharProtocolo(JSON.stringify(JSON.stringify({ protocolo: "abc-3" })))).toBe("abc-3");
+    expect(acharProtocolo({ dados: { protocolo: "abc-4" } })).toBe("abc-4");
+    expect(acharProtocolo(null, '{"dados":"{\\"protocolo\\":\\"abc-5\\"}"}')).toBe("abc-5");
+    expect(acharProtocolo({ mensagens: [] })).toBeNull();
   });
 });

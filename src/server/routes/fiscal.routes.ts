@@ -34,13 +34,14 @@ import { guiasDoCliente, publicarGuia } from "../services/fiscal/guias";
 
 let rotinaEmAndamento = false;
 
-// Leitor do relatório mudou desde o último boot? Relê os PDFs guardados e
-// reavalia esses clientes (sem SERPRO) — uma vez por processo, na 1ª abertura.
+// 1ª abertura do painel depois de um deploy/reinício: relê os relatórios
+// guardados se o leitor mudou e reavalia todos os clientes com as regras
+// atuais — tudo local, sem SERPRO. Uma vez por processo.
 let releitura: Promise<void> | null = null;
 const relerUmaVez = () =>
   (releitura ??= relerDesatualizados()
-    .then(async (ids) => {
-      for (const id of ids) await avaliarCliente(id);
+    .then(async () => {
+      for (const c of await db.select({ id: clients.id }).from(clients)) await avaliarCliente(c.id);
     })
     .catch((e) => {
       releitura = null; // tenta de novo na próxima abertura
