@@ -2,7 +2,7 @@ import { apiFetch, openDocument } from "../../lib/apiClient";
 import { registerGuiaInteraction } from "../../lib/guiaInteraction";
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
-import { format, parseISO, differenceInDays, subMonths } from "date-fns";
+import { format, parseISO, differenceInDays, startOfDay, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 
@@ -86,6 +86,12 @@ export function ClientVault() {
         const [day, month, year] = dateStr.split("/").map(Number);
         return new Date(year, month - 1, day);
       }
+      if (dateStr.includes("-")) {
+        // YYYY-MM-DD: monta a data local. `new Date("2026-10-20")` é meia-noite
+        // UTC, que no fuso do Brasil cai no dia anterior.
+        const [year, month, day] = dateStr.split("T")[0].split("-").map(Number);
+        return new Date(year, month - 1, day);
+      }
       return new Date(dateStr);
     } catch (e) {
       return null;
@@ -98,7 +104,8 @@ export function ClientVault() {
     if (!doc.dueDate) return { text: "Pendente", tone: "warn" };
     const parsedDue = parseDueDate(doc.dueDate);
     if (!parsedDue) return { text: "Pendente", tone: "warn" };
-    const diff = differenceInDays(parsedDue, new Date());
+    // Dias de calendário, como em Atrasados e na Visão Geral (sem contar a hora).
+    const diff = differenceInDays(startOfDay(parsedDue), startOfDay(new Date()));
     if (diff < 0) return { text: `Atrasada ${Math.abs(diff)}d`, tone: "danger" };
     if (diff <= 4) return { text: `Vence em ${diff}d`, tone: "warn" };
     return { text: "Pendente", tone: "muted" };

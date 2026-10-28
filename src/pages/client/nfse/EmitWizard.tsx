@@ -236,8 +236,14 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
           <h2 className="font-serif text-xl font-semibold text-ink">Nota emitida com sucesso</h2>
           <p className="mt-1 text-sm text-muted">
             {result?.numeroNota ? `Nota nº ${result.numeroNota}` : "Nota registrada"}
-            {result?.chaveAcesso ? ` · chave ${result.chaveAcesso}` : ""}
           </p>
+          {/* A chave tem 50 dígitos sem espaço: quebra em qualquer ponto para não
+              estourar a largura no celular. */}
+          {result?.chaveAcesso && (
+            <p className="mx-auto mt-1 max-w-sm break-all font-mono text-[11px] leading-relaxed text-faint">
+              chave {result.chaveAcesso}
+            </p>
+          )}
         </div>
         {shareMsg && <p className="text-xs text-muted">{shareMsg}</p>}
         <div className="mx-auto flex max-w-sm flex-col gap-2">
