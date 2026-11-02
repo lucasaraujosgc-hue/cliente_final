@@ -130,6 +130,7 @@ function ClientsTab({ onSelect }: { onSelect: (id: string) => void }) {
                         <>
                           {" · "}
                           {c.ativo ? "ativa" : c.certVencido ? "certificado vencido" : "configurando"}
+                          {c.usarProcuracao && " · por procuração"}
                           {" · "}
                           {c.atividadesAtivas} atividade{c.atividadesAtivas === 1 ? "" : "s"}
                           {c.emissoes > 0 && ` · ${c.emissoes} nota${c.emissoes === 1 ? "" : "s"}`}

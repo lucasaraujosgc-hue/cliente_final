@@ -205,6 +205,7 @@ export const nfseConfigSchema = z.object({
   serieDps: optStr(5),
   ativo: optBoolStr,
   certSenha: optStr(200),
+  usarProcuracao: optBoolStr, // emitir com o certificado do escritório (procuração)
 });
 
 // Accountant: one pre-configured activity (JSON). O contador informa TODOS os

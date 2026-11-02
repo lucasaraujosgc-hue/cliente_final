@@ -124,6 +124,7 @@ export interface NfseAdminConfig {
   ambiente: string;
   hasCert: boolean;
   certMissing: boolean;
+  usarProcuracao: boolean; // emite com o certificado do escritório (procuração RFB)
   certCnpj: string | null;
   certValidadeAte: string | null;
   hasCertSenha: boolean;
@@ -145,6 +146,7 @@ export interface NfseClientOverview {
   configured: boolean;
   ativo: boolean;
   ambiente: string | null;
+  usarProcuracao?: boolean;
   hasCert: boolean;
   certValidadeAte: string | null;
   certVencido: boolean;
@@ -485,6 +487,8 @@ export interface AdminClientNfse {
   client: { id: string; name: string; cnpj: string; cnpjFormatado: string };
   config: NfseAdminConfig | null;
   atividades: NfseAtividade[];
+  // Certificado do escritório (Integra Contador), usado por procuração.
+  certEscritorio: { cnpj: string | null; validadeAte: string; vencido: boolean } | null;
 }
 
 export async function adminGetClientNfse(clientId: string): Promise<AdminClientNfse> {
@@ -546,6 +550,7 @@ export async function adminDeleteAtividade(clientId: string, atividadeId: string
 
 export interface NfseTestResult {
   ok: boolean;
+  procuracao?: boolean;
   ambiente?: string;
   certCnpj?: string | null;
   certValidadeAte?: string | null;

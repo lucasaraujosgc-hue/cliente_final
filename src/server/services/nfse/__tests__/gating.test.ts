@@ -50,6 +50,16 @@ async function addAtividade(over: Partial<typeof nfseAtividades.$inferInsert> = 
 }
 
 describe("nfseStatusForClient — gating", () => {
+  it("por procuração não exige o certificado do cliente, mas exige o do escritório", async () => {
+    await pg.exec(`TRUNCATE serpro_config RESTART IDENTITY;`);
+    await addConfig({ ativo: true, usarProcuracao: true });
+    await addAtividade();
+    expect((await nfseStatusForClient(CLIENT_ID)).motivo).toBe("sem_certificado");
+    await testDb.insert(schema.serproConfig).values({ certPath: "/x/escritorio.pfx" });
+    expect((await nfseStatusForClient(CLIENT_ID)).enabled).toBe(true);
+    await pg.exec(`TRUNCATE serpro_config RESTART IDENTITY;`);
+  });
+
   it("sem_config when there is no config row", async () => {
     const s = await nfseStatusForClient(CLIENT_ID);
     expect(s.enabled).toBe(false);

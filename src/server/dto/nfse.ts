@@ -14,6 +14,7 @@ export function nfseConfigDTO(c: NfseConfigRow | null, certExists: boolean) {
     ambiente: c.ambiente,
     hasCert: certExists,
     certMissing: !!c.certPath && !certExists,
+    usarProcuracao: c.usarProcuracao,
     certCnpj: c.certCnpj ?? null,
     certValidadeAte: c.certValidadeAte ?? null,
     hasCertSenha: !!c.certSenha,

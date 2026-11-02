@@ -56,6 +56,7 @@ export { lookupCnpj, lookupCep, type TomadorLookup, type TomadorEndereco, type C
 
 export {
   loadClientCertContext,
+  infoCertEscritorio,
   parsePfx,
   cnpjRaizMatches,
   clearAgentCache,

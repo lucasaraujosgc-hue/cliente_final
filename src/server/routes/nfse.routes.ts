@@ -37,6 +37,7 @@ import {
   deleteAtividade,
   nfseClientsOverview,
   loadClientCertContext,
+  infoCertEscritorio,
   lookupCnpj,
   lookupCep,
   emitirNfse,
@@ -534,10 +535,13 @@ export function registerNfseRoutes(app: Express) {
     if (!client) return;
     const config = await getClientConfig(client.id);
     const atividades = await listAtividades(client.id);
+    const esc = await infoCertEscritorio();
     res.json({
       client: { id: client.id, name: client.name, cnpj: client.cnpj, cnpjFormatado: formatCnpj(client.cnpj) },
       config: nfseConfigDTO(config, await certFileExists(config)),
       atividades: atividades.map(nfseAtividadeAdminDTO),
+      // Certificado do escritório (Integra Contador) — para emitir por procuração.
+      certEscritorio: esc ? { cnpj: esc.cnpj ? formatCnpj(esc.cnpj) : null, validadeAte: esc.validadeAte, vencido: esc.vencido } : null,
     });
   });
 
@@ -563,6 +567,7 @@ export function registerNfseRoutes(app: Express) {
         serieDps: blank(b.serieDps),
         ativo: b.ativo,
         certSenha: blank(b.certSenha),
+        usarProcuracao: b.usarProcuracao,
       };
       try {
         const { config, warnings } = await upsertClientConfig(
@@ -574,8 +579,8 @@ export function registerNfseRoutes(app: Express) {
         await logAudit(req, "nfse.config.update", {
           targetType: "client",
           targetId: client.id,
-          summary: `NFS-e config atualizada${req.file ? " (novo certificado)" : ""}`,
-          metadata: { ativo: config.ativo, ambiente: config.ambiente, municipio: config.codigoMunicipio },
+          summary: `NFS-e config atualizada${req.file ? " (novo certificado)" : ""}${input.usarProcuracao !== undefined ? (config.usarProcuracao ? " (emite por procuração)" : " (emite com o certificado do cliente)") : ""}`,
+          metadata: { ativo: config.ativo, ambiente: config.ambiente, municipio: config.codigoMunicipio, usarProcuracao: config.usarProcuracao },
         });
         res.json({
           config: nfseConfigDTO(config, await certFileExists(config)),
@@ -653,8 +658,12 @@ export function registerNfseRoutes(app: Express) {
       const base = {
         ok: true as boolean,
         ambiente: ctx.config.ambiente,
-        certCnpj: ctx.config.certCnpj ? formatCnpj(ctx.config.certCnpj) : null,
-        certValidadeAte: ctx.config.certValidadeAte,
+        // Por procuração: o certificado testado é o do escritório.
+        procuracao: ctx.procuracao,
+        certCnpj: ctx.procuracao
+          ? (ctx.parsed.cnpj ? formatCnpj(ctx.parsed.cnpj) : null)
+          : ctx.config.certCnpj ? formatCnpj(ctx.config.certCnpj) : null,
+        certValidadeAte: ctx.procuracao ? ctx.parsed.notAfter : ctx.config.certValidadeAte,
         codigoMunicipio: ctx.config.codigoMunicipio,
         convenio: null as null | { aderente: boolean },
         aviso: null as string | null,

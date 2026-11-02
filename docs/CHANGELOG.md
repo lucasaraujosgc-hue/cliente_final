@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## NFS-e por procuração com o certificado do escritório (nov/2026)
+
+Desde 01/11/2026 as APIs de emissão e distribuição da NFS-e Nacional aceitam
+representação (Guia do Emissor Web v1.3, tópico 11): procuração eletrônica na
+RFB com o serviço NFS-e ou vínculo na base CNPJ, validada pelo certificado da
+conexão e pela assinatura.
+
+- Por cliente, em NFS-e → cliente: **"Certificado do escritório (procuração)"**
+  ou **"Certificado A1 do cliente"** (`nfse_config.usar_procuracao`, migração
+  `0016_nfse_procuracao`).
+- Por procuração, o mTLS e a assinatura da DPS/eventos usam o certificado do
+  Integra Contador (`serpro_config`); a DPS segue com o CNPJ do cliente como
+  prestador; a busca no portal nacional usa `cnpjConsulta` = CNPJ do cliente.
+  O A1 do cliente deixa de ser exigido para ativar a emissão.
+- O painel mostra CNPJ e validade do certificado do escritório; a lista de
+  clientes marca "por procuração".
+- **Não validado contra a Sefin real** — a funcionalidade da Receita é de
+  01/11/2026 e a documentação técnica da API não é pública: fazer uma nota de
+  teste com um cliente antes de liberar aos demais.
+
 ## NFS-e: tomador só por CNPJ, CPF ou "sem tomador" (nov/2026)
 
 Conferido com a documentação oficial em produção (Anexo I e XSD v1.01 de

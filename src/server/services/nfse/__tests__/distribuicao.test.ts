@@ -10,7 +10,7 @@ const pg = new PGlite();
 const testDb = drizzle(pg, { schema });
 vi.mock("../../../db", () => ({ db: testDb, pool: {} }));
 
-const cert = { config: { ambiente: "homologacao", certCnpj: "52613515000160" }, agent: {}, parsed: {} };
+const cert = { config: { ambiente: "homologacao", certCnpj: "52613515000160" }, agent: {}, parsed: {}, procuracao: false };
 vi.mock("../cert", () => ({ loadClientCertContext: async () => cert }));
 
 const distribuir = vi.fn();
@@ -73,6 +73,18 @@ beforeEach(async () => {
 });
 
 describe("sincronizarDistribuicao", () => {
+  it("por procuração (certificado do escritório) consulta o CNPJ do cliente representado", async () => {
+    await testDb.update(clients).set({ cnpj: "11222333000181" }).where(eq(clients.id, CLIENT_ID));
+    cert.procuracao = true;
+    try {
+      distribuir.mockResolvedValueOnce({ status: "NENHUM_DOCUMENTO_LOCALIZADO", docs: [], ultimoNsu: 0, alertas: [], erros: [], raw: {} });
+      await sincronizarDistribuicao(CLIENT_ID);
+      expect(distribuir.mock.calls[0][2]).toBe("11222333000181"); // (agent, ambiente, cnpjConsulta, nsu)
+    } finally {
+      cert.procuracao = false;
+    }
+  });
+
   it("insere NFS-e recebidas do portal com origem='distribuicao' e avança o NSU", async () => {
     distribuir.mockResolvedValueOnce({
       status: "DOCUMENTOS_LOCALIZADOS",

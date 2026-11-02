@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { nfseConfig, nfseEmissoes } from "../../schema";
+import { clients, nfseConfig, nfseEmissoes } from "../../schema";
 import { normalizeInscricao, inscricaoRaizMatches } from "./inscricao";
 import { loadClientCertContext } from "./cert";
 import { contribuintesBase, distribuirDFe, type Ambiente, type DistribuicaoDoc } from "./client";
@@ -146,7 +146,13 @@ export async function sincronizarDistribuicao(
 
   const cert = await loadClientCertContext(clientId);
   const ambiente = (cert.config.ambiente === "producao" ? "producao" : "homologacao") as Ambiente;
-  const cnpj = normalizeInscricao(cert.config.certCnpj || "");
+  // Por procuração o certificado é do escritório: consulta-se o CNPJ do
+  // cliente (o representado). Com o A1 do cliente, o CNPJ do próprio certificado.
+  let cnpj = normalizeInscricao(cert.config.certCnpj || "");
+  if (cert.procuracao) {
+    const [cli] = await db.select({ cnpj: clients.cnpj }).from(clients).where(eq(clients.id, clientId));
+    cnpj = normalizeInscricao(cli?.cnpj || "");
+  }
   if (!cnpj) throw new NfseError("Não foi possível identificar o CNPJ do certificado.", { status: 400 });
 
   // reiniciar=true varre desde o NSU 0 (diagnóstico / troca de ambiente).

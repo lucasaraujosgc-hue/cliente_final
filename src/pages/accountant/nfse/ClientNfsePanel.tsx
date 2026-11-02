@@ -54,6 +54,7 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
     certSenha: "",
     optanteSimplesNacional: true,
     incentivoFiscal: false,
+    usarProcuracao: false,
   });
 
   const [editingAtv, setEditingAtv] = useState<NfseAtividade | null | undefined>(undefined);
@@ -72,6 +73,7 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           certSenha: "",
           optanteSimplesNacional: d.config.optanteSimplesNacional,
           incentivoFiscal: d.config.incentivoFiscal,
+          usarProcuracao: d.config.usarProcuracao,
         });
       }
     } finally {
@@ -99,6 +101,7 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           serieDps: form.serieDps,
           optanteSimplesNacional: String(form.optanteSimplesNacional),
           incentivoFiscal: String(form.incentivoFiscal),
+          usarProcuracao: String(form.usarProcuracao),
           certSenha: form.certSenha,
         },
         certFile,
@@ -189,7 +192,10 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
 
   const cfg = data.config;
   const ativas = data.atividades.filter((a) => a.ativo).length;
-  const canActivate = !!cfg?.hasCert && ativas > 0;
+  // Por procuração vale o certificado do escritório (Integra Contador).
+  const escOk = !!data.certEscritorio && !data.certEscritorio.vencido;
+  const certPronto = cfg?.usarProcuracao ? escOk : !!cfg?.hasCert;
+  const canActivate = certPronto && ativas > 0;
 
   return (
     <div className="space-y-5">
@@ -211,7 +217,7 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
               ? "bg-emerald-600 text-white hover:bg-emerald-700"
               : "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200")
           }
-          title={!cfg?.ativo && !canActivate ? "Envie o certificado e cadastre uma atividade ativa" : ""}
+          title={!cfg?.ativo && !canActivate ? "Defina o certificado (do cliente ou procuração) e cadastre uma atividade ativa" : ""}
         >
           <Power className="h-4 w-4" />
           {cfg?.ativo ? "Emissão ativa" : "Emissão inativa"}
@@ -233,50 +239,98 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
       )}
 
       {/* Notas do cliente + emitir em nome dele (recarrega quando a emissão é ligada/desligada) */}
-      <NotasCliente clientId={clientId} versao={`${cfg?.ativo}-${cfg?.hasCert}-${ativas}`} />
+      <NotasCliente clientId={clientId} versao={`${cfg?.ativo}-${certPronto}-${ativas}`} />
 
       {/* Certificado + dados fiscais */}
       <form onSubmit={saveConfig} className={CARD + " space-y-5"}>
         <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
-          {cfg?.hasCert && !cfg?.certMissing ? (
+          {(form.usarProcuracao ? escOk : cfg?.hasCert && !cfg?.certMissing) ? (
             <ShieldCheck className="h-5 w-5 text-emerald-500" />
           ) : (
             <ShieldAlert className="h-5 w-5 text-amber-500" />
           )}
-          <h3 className="font-bold text-slate-800 dark:text-white">Certificado digital A1 do cliente</h3>
+          <h3 className="font-bold text-slate-800 dark:text-white">Certificado para emitir</h3>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className={LABEL}>Arquivo .pfx / .p12</label>
-            <div className="mt-1 flex items-center gap-3">
-              <input id="cert" type="file" accept=".pfx,.p12" className="hidden" onChange={(e) => setCertFile(e.target.files?.[0] || null)} />
-              <label htmlFor="cert" className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                <Upload className="h-4 w-4" /> Selecionar
-              </label>
-              <span className="truncate text-sm text-slate-500">
-                {certFile
-                  ? certFile.name
-                  : cfg?.certMissing
-                    ? "Arquivo não encontrado — reenvie"
-                    : cfg?.hasCert
-                      ? `Salvo · ${cfg.certCnpj ?? "CNPJ n/d"} · válido até ${fmtDate(cfg.certValidadeAte)}`
-                      : "Nenhum certificado"}
+        {/* Com qual certificado a nota é emitida */}
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[
+            { v: true, titulo: "Certificado do escritório (procuração)", sub: "Usa o certificado do Integra Contador. O cliente precisa ter dado procuração ao escritório na Receita (serviço NFS-e)." },
+            { v: false, titulo: "Certificado A1 do cliente", sub: "Envie o .pfx/.p12 do próprio cliente." },
+          ].map((o) => (
+            <label
+              key={String(o.v)}
+              className={
+                "flex cursor-pointer gap-3 rounded-xl border p-3 text-sm transition-colors " +
+                (form.usarProcuracao === o.v
+                  ? "border-indigo-400 bg-indigo-50 dark:border-indigo-700 dark:bg-indigo-950/40"
+                  : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800")
+              }
+            >
+              <input type="radio" name="modoCert" className="mt-1" checked={form.usarProcuracao === o.v} onChange={() => setForm({ ...form, usarProcuracao: o.v })} />
+              <span>
+                <span className="block font-semibold text-slate-800 dark:text-slate-100">{o.titulo}</span>
+                <span className="block text-xs text-slate-500">{o.sub}</span>
               </span>
+            </label>
+          ))}
+        </div>
+
+        {form.usarProcuracao ? (
+          <div
+            className={
+              "rounded-xl px-4 py-3 text-sm " +
+              (escOk
+                ? "bg-slate-50 text-slate-700 dark:bg-slate-800/60 dark:text-slate-200"
+                : "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200")
+            }
+          >
+            {data.certEscritorio && !data.certEscritorio.vencido ? (
+              <>
+                Certificado do escritório · CNPJ {data.certEscritorio.cnpj ?? "n/d"} · válido até {fmtDate(data.certEscritorio.validadeAte)}.
+                <span className="block text-xs text-slate-500">
+                  A nota sai em nome de {data.client.name}; a Sefin confere a procuração. Faça uma nota de teste antes de liberar ao cliente.
+                </span>
+              </>
+            ) : data.certEscritorio?.vencido ? (
+              "O certificado do escritório está vencido — renove em Configurações → Integra Contador."
+            ) : (
+              "O certificado do escritório não está configurado — envie-o em Configurações → Integra Contador."
+            )}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={LABEL}>Arquivo .pfx / .p12</label>
+              <div className="mt-1 flex items-center gap-3">
+                <input id="cert" type="file" accept=".pfx,.p12" className="hidden" onChange={(e) => setCertFile(e.target.files?.[0] || null)} />
+                <label htmlFor="cert" className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <Upload className="h-4 w-4" /> Selecionar
+                </label>
+                <span className="truncate text-sm text-slate-500">
+                  {certFile
+                    ? certFile.name
+                    : cfg?.certMissing
+                      ? "Arquivo não encontrado — reenvie"
+                      : cfg?.hasCert
+                        ? `Salvo · ${cfg.certCnpj ?? "CNPJ n/d"} · válido até ${fmtDate(cfg.certValidadeAte)}`
+                        : "Nenhum certificado"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <label className={LABEL}>Senha do certificado</label>
+              <input
+                type="password"
+                autoComplete="off"
+                className={FIELD + " mt-1"}
+                placeholder={cfg?.hasCertSenha ? "•••••• (em branco = manter)" : "Senha do arquivo"}
+                value={form.certSenha}
+                onChange={(e) => setForm({ ...form, certSenha: e.target.value })}
+              />
             </div>
           </div>
-          <div>
-            <label className={LABEL}>Senha do certificado</label>
-            <input
-              type="password"
-              autoComplete="off"
-              className={FIELD + " mt-1"}
-              placeholder={cfg?.hasCertSenha ? "•••••• (em branco = manter)" : "Senha do arquivo"}
-              value={form.certSenha}
-              onChange={(e) => setForm({ ...form, certSenha: e.target.value })}
-            />
-          </div>
-        </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -319,13 +373,13 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
             {saving ? "Salvando…" : "Salvar configuração"}
           </button>
-          <button type="button" onClick={runTest} disabled={testing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+          <button type="button" onClick={runTest} disabled={testing || !certPronto} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
             {testing ? "Testando…" : "Testar certificado"}
           </button>
-          <button type="button" onClick={() => buscarPortal(false)} disabled={syncing || !cfg?.hasCert} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+          <button type="button" onClick={() => buscarPortal(false)} disabled={syncing || !certPronto} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
             {syncing ? "Buscando…" : "Buscar notas no portal nacional"}
           </button>
-          <button type="button" onClick={() => buscarPortal(true)} disabled={syncing || !cfg?.hasCert} title="Recomeça a busca do NSU 0 — use ao trocar de ambiente ou se desconfiar que faltam notas" className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+          <button type="button" onClick={() => buscarPortal(true)} disabled={syncing || !certPronto} title="Recomeça a busca do NSU 0 — use ao trocar de ambiente ou se desconfiar que faltam notas" className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
             {syncing ? "…" : "Rebuscar do início"}
           </button>
         </div>
@@ -341,7 +395,7 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           >
             {test.ok ? (
               <>
-                Certificado OK · CNPJ {test.certCnpj ?? "n/d"} · válido até {fmtDate(test.certValidadeAte)}
+                {test.procuracao ? "Certificado do escritório OK (procuração)" : "Certificado OK"} · CNPJ {test.certCnpj ?? "n/d"} · válido até {fmtDate(test.certValidadeAte)}
                 {test.certVencido && " · ATENÇÃO: vencido"}
               </>
             ) : (

@@ -190,6 +190,10 @@ export const nfseConfig = pgTable('nfse_config', {
   certSenha: text('cert_senha'), // cifrada (enc:v1:...)
   certCnpj: text('cert_cnpj'), // CNPJ lido do subject do certificado
   certValidadeAte: timestamp('cert_validade_ate', { withTimezone: true }),
+  // Emite com o certificado do ESCRITÓRIO (o do Integra Contador) em vez do A1
+  // do cliente — representação por procuração eletrônica da RFB com o serviço
+  // NFS-e, liberada nas APIs da NFS-e Nacional em 01/11/2026.
+  usarProcuracao: boolean('usar_procuracao').default(false).notNull(),
   codigoMunicipio: text('codigo_municipio'), // IBGE 7 dígitos do município emissor
   // 'simples_nacional' | 'mei' | 'normal'
   regimeTributario: text('regime_tributario').default('simples_nacional').notNull(),

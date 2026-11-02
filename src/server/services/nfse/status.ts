@@ -1,6 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { nfseConfig, nfseAtividades } from "../../schema";
+import { nfseConfig, nfseAtividades, serproConfig } from "../../schema";
 
 // When emission is expected to be broadly available. Clients without a full
 // setup keep seeing this date (the existing "a partir de novembro/2026" card).
@@ -40,7 +40,11 @@ export async function nfseStatusForClient(clientId: string): Promise<NfseClientS
 
   const [config] = await db.select().from(nfseConfig).where(eq(nfseConfig.clientId, clientId));
   if (!config) return disabled("sem_config");
-  if (!config.certPath) return disabled("sem_certificado");
+  // Por procuração vale o certificado do escritório (Integra Contador).
+  if (config.usarProcuracao) {
+    const [esc] = await db.select({ certPath: serproConfig.certPath }).from(serproConfig).limit(1);
+    if (!esc?.certPath) return disabled("sem_certificado");
+  } else if (!config.certPath) return disabled("sem_certificado");
   if (!config.ativo) return disabled("inativo");
 
   const [{ n }] = await db

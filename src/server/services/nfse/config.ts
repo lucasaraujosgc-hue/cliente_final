@@ -42,6 +42,7 @@ export interface UpsertConfigInput {
   serieDps?: string;
   ativo?: boolean;
   certSenha?: string; // blank = keep current
+  usarProcuracao?: boolean; // emitir com o certificado do escritório
 }
 
 export interface UpsertConfigResult {
@@ -79,6 +80,7 @@ export async function upsertClientConfig(
     }
   }
   if (input.serieDps !== undefined) update.serieDps = String(input.serieDps).slice(0, 5) || "00001";
+  if (input.usarProcuracao !== undefined) update.usarProcuracao = input.usarProcuracao;
 
   const senhaInformada = typeof input.certSenha === "string" && input.certSenha.length > 0;
   if (senhaInformada) update.certSenha = encryptSecret(input.certSenha!.trim());
@@ -170,14 +172,15 @@ export async function upsertClientConfig(
   const willBeActive = input.ativo ?? existing?.ativo ?? false;
   if (input.ativo !== undefined) update.ativo = input.ativo;
   if (willBeActive) {
-    const certOk = Boolean(update.certPath || existing?.certPath);
+    const usaProcuracao = update.usarProcuracao ?? existing?.usarProcuracao ?? false;
+    const certOk = usaProcuracao || Boolean(update.certPath || existing?.certPath);
     const [{ n }] = await db
       .select({ n: sql<number>`count(*)` })
       .from(nfseAtividades)
       .where(and(eq(nfseAtividades.clientId, clientId), eq(nfseAtividades.ativo, true)));
     if (!certOk || Number(n) === 0) {
       throw new NfseError(
-        "Para ativar a emissão, envie o certificado e cadastre ao menos uma atividade ativa.",
+        "Para ativar a emissão, envie o certificado (ou escolha emitir por procuração) e cadastre ao menos uma atividade ativa.",
         { status: 400, reason: "activation_incomplete" },
       );
     }
@@ -343,6 +346,7 @@ export interface NfseClientOverview {
   configured: boolean;
   ativo: boolean;
   ambiente: string | null;
+  usarProcuracao: boolean;
   hasCert: boolean;
   certValidadeAte: Date | null;
   certVencido: boolean;
@@ -384,9 +388,11 @@ export async function nfseClientsOverview(): Promise<NfseClientOverview[]> {
       configured: Boolean(cfg),
       ativo: Boolean(cfg?.ativo),
       ambiente: cfg?.ambiente ?? null,
-      hasCert: Boolean(cfg?.certPath),
-      certValidadeAte: cfg?.certValidadeAte ?? null,
-      certVencido: Boolean(cfg?.certValidadeAte && cfg.certValidadeAte.getTime() <= now),
+      // Por procuração o certificado é o do escritório (validade vista no painel do cliente).
+      usarProcuracao: Boolean(cfg?.usarProcuracao),
+      hasCert: Boolean(cfg?.certPath) || Boolean(cfg?.usarProcuracao),
+      certValidadeAte: cfg?.usarProcuracao ? null : (cfg?.certValidadeAte ?? null),
+      certVencido: !cfg?.usarProcuracao && Boolean(cfg?.certValidadeAte && cfg.certValidadeAte.getTime() <= now),
       codigoMunicipio: cfg?.codigoMunicipio ?? null,
       atividadesAtivas: atvByClient.get(c.id) ?? 0,
       emissoes: emiByClient.get(c.id) ?? 0,

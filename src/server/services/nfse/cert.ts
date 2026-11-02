@@ -3,7 +3,7 @@ import https from "https";
 import tls from "tls";
 import forge from "node-forge";
 import { db } from "../../db";
-import { nfseConfig } from "../../schema";
+import { nfseConfig, serproConfig } from "../../schema";
 import { eq } from "drizzle-orm";
 import { decryptBytes, decryptSecret } from "../secretbox";
 import { normalizeInscricao, inscricaoRaizMatches } from "./inscricao";
@@ -170,6 +170,76 @@ export interface ClientCertContext {
   pfxBuffer: Buffer;
   agent: https.Agent;
   parsed: ParsedCert; // keyPem / certPem for signing, cnpj + validity
+  // true = certificado do ESCRITÓRIO (procuração eletrônica RFB, serviço NFS-e):
+  // a DPS continua em nome do cliente (prest/CNPJ), mas a conexão mTLS e a
+  // assinatura são do escritório; na distribuição, cnpjConsulta = CNPJ do cliente.
+  procuracao: boolean;
+}
+
+// --- certificado do escritório (o mesmo do Integra Contador) ------------------
+// Fica em serpro_config (cifrado com SECRETS_KEY, como o do cliente). Usado
+// quando o cliente emite por procuração — o A1 do cliente deixa de ser preciso.
+
+interface CertEscritorio {
+  senha: string;
+  pfxBuffer: Buffer;
+  agent: https.Agent;
+  parsed: ParsedCert;
+}
+
+export async function loadOfficeCert(): Promise<CertEscritorio> {
+  const [row] = await db.select().from(serproConfig).limit(1);
+  if (!row?.certPath) {
+    throw new NfseError(
+      "O certificado do escritório não está configurado. Envie-o em Configurações → Integra Contador para emitir por procuração.",
+      { status: 400, reason: "cert_missing" },
+    );
+  }
+  let pfxBuffer: Buffer;
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(row.certPath);
+    pfxBuffer = decryptBytes(await fs.promises.readFile(row.certPath));
+  } catch {
+    throw new NfseError("O certificado do escritório não pôde ser lido no servidor. Reenvie-o em Configurações → Integra Contador.", {
+      status: 400,
+      reason: "cert_missing",
+    });
+  }
+  const senha = decryptSecret(row.certSenha) || "";
+  const cacheKey = `escritorio:${row.certPath}`;
+  const cached = agentCache.get(cacheKey);
+  let agent: https.Agent;
+  let parsed: ParsedCert;
+  if (cached && cached.mtimeMs === stat.mtimeMs) {
+    agent = cached.agent;
+    parsed = cached.parsed;
+  } else {
+    parsed = parsePfx(pfxBuffer, senha);
+    const creds = mtlsCredentials(pfxBuffer, senha, parsed);
+    agent = new https.Agent({ ...creds.options, keepAlive: true, rejectUnauthorized: true });
+    agentCache.set(cacheKey, { agent, parsed, mtimeMs: stat.mtimeMs });
+  }
+  if (parsed.notAfter.getTime() <= Date.now()) {
+    throw new NfseError(
+      `O certificado do escritório venceu em ${parsed.notAfter.toLocaleDateString("pt-BR")}. Renove-o em Configurações → Integra Contador.`,
+      { status: 400, reason: "cert_expired" },
+    );
+  }
+  return { senha, pfxBuffer, agent, parsed };
+}
+
+/** CNPJ e validade do certificado do escritório, para mostrar no painel (null se não houver). */
+export async function infoCertEscritorio(): Promise<{ cnpj: string | null; validadeAte: Date; vencido: boolean } | null> {
+  try {
+    const c = await loadOfficeCert();
+    return { cnpj: c.parsed.cnpj, validadeAte: c.parsed.notAfter, vencido: false };
+  } catch (e) {
+    if (e instanceof NfseError && e.reason === "cert_expired") {
+      return { cnpj: null, validadeAte: new Date(0), vencido: true };
+    }
+    return null;
+  }
 }
 
 // Loads a client's NFS-e config, decrypts the certificate in memory, and returns
@@ -179,6 +249,7 @@ export interface ClientCertContext {
 export async function loadClientCertContext(clientId: string): Promise<ClientCertContext> {
   const [config] = await db.select().from(nfseConfig).where(eq(nfseConfig.clientId, clientId));
   if (!config) throw notConfigured();
+  if (config.usarProcuracao) return { config, ...(await loadOfficeCert()), procuracao: true };
   if (!config.certPath) throw certMissing();
 
   let pfxBuffer: Buffer;
@@ -218,7 +289,7 @@ export async function loadClientCertContext(clientId: string): Promise<ClientCer
     );
   }
 
-  return { config, senha, pfxBuffer, agent, parsed };
+  return { config, senha, pfxBuffer, agent, parsed, procuracao: false };
 }
 
 export function clearAgentCache(clientId?: string) {

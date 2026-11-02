@@ -173,6 +173,12 @@ saem: `password_hash`, `integration_hash`, `integration_hash_digest`,
   chave/cert PEM p/ a assinatura XMLDSig; valida o CNPJ raiz do certificado contra
   o do cliente e a data de validade. Nenhuma rota devolve `cert_path`/`cert_senha`
   (`dto/nfse.ts` só expõe `hasCert`/`certCnpj`/`certValidadeAte`).
+- **NFS-e por procuração** (`nfse_config.usar_procuracao`): o cliente não tem A1
+  no portal; `loadClientCertContext` usa o certificado do **escritório** (o do
+  Integra Contador, `serpro_config`), decriptado do mesmo jeito, para o mTLS e a
+  assinatura — a DPS segue em nome do cliente e a Sefin confere a procuração
+  eletrônica (RFB, serviço NFS-e). O painel recebe só CNPJ/validade desse
+  certificado (`certEscritorio`), nunca o arquivo ou a senha.
 
 ## 9. SECRETS_KEY
 
