@@ -199,7 +199,7 @@ function EmissoesTab() {
                     <p className="truncate font-semibold text-slate-800 dark:text-white">
                       {e.papel === "tomador"
                         ? e.prestadorNome || e.prestadorDoc || "—"
-                        : e.tomadorNome || e.tomadorDoc || "—"}
+                        : e.tomadorNome || e.tomadorDoc || "Sem tomador"}
                     </p>
                     <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
                       <span>

@@ -101,14 +101,9 @@ async function loadClientOr404(id: string, res: any) {
 async function emitirPeloCorpo(req: any, clientId: string, b: any, porContador: boolean) {
   const emissao = await emitirNfse(clientId, {
     atividadeId: b.atividadeId,
-    tomador: {
-      doc: b.tomador.doc,
-      nome: b.tomador.nome,
-      email: b.tomador.email || undefined,
-      telefone: b.tomador.telefone || undefined,
-      inscricaoMunicipal: b.tomador.inscricaoMunicipal || undefined,
-      endereco: b.tomador.endereco || undefined,
-    },
+    // Só CPF/CNPJ e nome — endereço/telefone/e-mail que versões antigas do app
+    // ainda mandem são descartados pelo schema.
+    tomador: b.tomador?.doc ? { doc: b.tomador.doc, nome: b.tomador.nome } : null,
     descricao: b.descricao,
     valor: b.valor,
     competencia: b.competencia || undefined,

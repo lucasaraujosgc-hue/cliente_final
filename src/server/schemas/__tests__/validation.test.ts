@@ -108,43 +108,36 @@ describe("validation schemas", () => {
     expect(serproConfigSchema.safeParse({ ambiente: "prod" }).success).toBe(false);
   });
 
-  describe("nfseEmitSchema — tolera o retorno da consulta de CNPJ", () => {
+  describe("nfseEmitSchema — tomador por CNPJ, CPF ou nenhum", () => {
     const uuid = "11111111-1111-4111-8111-111111111111";
-    const base = { atividadeId: uuid, tomador: { doc: "98765432000110", nome: "Tomadora SA" }, descricao: "Serviço", valor: 25000 };
+    const base = { atividadeId: uuid, tomador: { doc: "11222333000181", nome: "Tomadora SA" }, descricao: "Serviço", valor: 25000 };
 
-    it("aceita endereço com campos null (BrasilAPI)", () => {
+    it("descarta endereço, telefone e e-mail (versões antigas do app ainda mandam)", () => {
       const r = nfseEmitSchema.safeParse({
         ...base,
-        tomador: {
-          ...base.tomador,
-          email: null,
-          telefone: null,
-          endereco: { logradouro: "Rua X", numero: null, complemento: null, bairro: "Centro", codigoMunicipio: "3550308", municipio: "São Paulo", uf: "SP", cep: null },
-        },
+        tomador: { ...base.tomador, email: "a@b.com", telefone: "11999999999", endereco: { logradouro: "Rua X" } },
       });
       expect(r.success).toBe(true);
-      if (r.success) {
-        expect(r.data.tomador.endereco?.numero).toBeUndefined();
-        expect(r.data.tomador.email).toBeUndefined();
-      }
+      if (r.success) expect(r.data.tomador).toEqual({ doc: "11222333000181", nome: "Tomadora SA" });
     });
 
-    it("descarta e-mail malformado em vez de rejeitar", () => {
-      const r = nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, email: "FULANO@;GMAIL" } });
-      expect(r.success).toBe(true);
-      if (r.success) expect(r.data.tomador.email).toBeUndefined();
+    it("normaliza o documento (tira pontuação, CNPJ alfanumérico em maiúsculas)", () => {
+      const r1 = nfseEmitSchema.safeParse({ ...base, tomador: { doc: "11.222.333/0001-81" } });
+      expect(r1.success && r1.data.tomador?.doc).toBe("11222333000181");
+      const r2 = nfseEmitSchema.safeParse({ ...base, tomador: { doc: "12.abc.345/01de-35" } });
+      expect(r2.success && r2.data.tomador?.doc).toBe("12ABC34501DE35");
     });
 
-    it("normaliza o documento do tomador (tira pontuação)", () => {
-      const r = nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, doc: "98.765.432/0001-10" } });
-      expect(r.success).toBe(true);
-      if (r.success) expect(r.data.tomador.doc).toBe("98765432000110");
+    it("sem tomador: ausente ou null", () => {
+      expect(nfseEmitSchema.safeParse({ ...base, tomador: null }).success).toBe(true);
+      const { tomador: _t, ...semTomador } = base;
+      expect(nfseEmitSchema.safeParse(semTomador).success).toBe(true);
     });
 
-    it("ainda exige atividade, nome e valor > 0", () => {
+    it("documento com tamanho errado é recusado; atividade e valor continuam obrigatórios", () => {
+      expect(nfseEmitSchema.safeParse({ ...base, tomador: { doc: "123" } }).success).toBe(false);
       expect(nfseEmitSchema.safeParse({ ...base, atividadeId: "x" }).success).toBe(false);
       expect(nfseEmitSchema.safeParse({ ...base, valor: 0 }).success).toBe(false);
-      expect(nfseEmitSchema.safeParse({ ...base, tomador: { ...base.tomador, nome: "" } }).success).toBe(false);
     });
   });
 });

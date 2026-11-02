@@ -1,4 +1,4 @@
-import { normalizeCnpj } from "../../../lib/cnpj";
+import { cnpjValido, limparInscricao } from "../../../lib/inscricao";
 import { NfseError } from "./errors";
 import { nfseLog } from "./log";
 
@@ -108,16 +108,17 @@ async function fromReceitaWs(cnpj: string): Promise<TomadorLookup> {
 }
 
 export async function lookupCnpj(rawCnpj: string): Promise<TomadorLookup> {
-  const cnpj = normalizeCnpj(rawCnpj);
-  if (cnpj.length !== 14) {
-    throw new NfseError("Informe um CNPJ válido (14 dígitos).", { status: 400, reason: "cnpj_invalido" });
+  // Também alfanumérico (jul/2026+): se o provedor ainda não o conhece, cai no
+  // "não foi possível consultar" e a razão social é digitada.
+  const cnpj = limparInscricao(rawCnpj);
+  if (!cnpjValido(cnpj)) {
+    throw new NfseError("CNPJ inválido — confira os números.", { status: 400, reason: "cnpj_invalido" });
   }
 
   const hit = cache.get(cnpj);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
 
-  // Falha de provedor vai para o log: em produção a consulta falhava sem deixar
-  // rastro, e a nota seguia sem o endereço do tomador (rejeição E0235).
+  // Falha de provedor vai para o log (antes falhava sem deixar rastro).
   const tentar = (fonte: string, fn: () => Promise<TomadorLookup>) =>
     fn().catch((e) => {
       nfseLog("warn", "cnpj.lookup_falhou", { fonte, msg: e instanceof Error ? e.message : String(e) });
@@ -128,7 +129,7 @@ export async function lookupCnpj(rawCnpj: string): Promise<TomadorLookup> {
 
   if (!data || !data.razaoSocial) {
     throw new NfseError(
-      "Não foi possível consultar o CNPJ agora. Confira o número ou preencha os dados do tomador manualmente.",
+      "Não foi possível consultar o CNPJ agora. Confira o número ou digite a razão social do tomador.",
       { status: 502, reason: "lookup_failed" },
     );
   }

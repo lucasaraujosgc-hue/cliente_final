@@ -1,4 +1,5 @@
 import type { NfseConfigRow, NfseAtividadeRow, NfseEmissaoRow } from "../types";
+import { tomadorExigeEndereco } from "../services/nfse/regras";
 
 // Response shapes for the NFS-e tables. NEVER spread a raw nfse_config row into
 // a response — it carries cert_path and the (encrypted) cert_senha. The client
@@ -72,6 +73,8 @@ export function nfseAtividadeClientDTO(a: NfseAtividadeRow) {
     descricaoPadrao: a.descricaoPadrao,
     aliquotaIss: a.aliquotaIss,
     issRetido: a.issRetido,
+    // ISS retido ou 17.05.01: a nota exige o tomador com CNPJ (o endereço vem do cadastro).
+    exigeTomadorCnpj: tomadorExigeEndereco(a.codTributacaoNac || a.itemListaServico, a.issRetido),
   };
 }
 

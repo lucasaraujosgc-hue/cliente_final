@@ -61,11 +61,7 @@ function okResult(over: Record<string, unknown> = {}) {
 
 const input = {
   atividadeId: "",
-  tomador: {
-    doc: "98765432000110",
-    nome: "Tomadora SA",
-    endereco: { logradouro: "Av. Paulista", numero: "1000", bairro: "Bela Vista", codigoMunicipio: "3550308", cep: "01310100" },
-  },
+  tomador: { doc: "11222333000181", nome: "Tomadora SA" } as { doc: string; nome: string } | null,
   descricao: "Serviço de teste",
   valor: 25000,
   competencia: "08/2026",
@@ -166,7 +162,25 @@ describe("emitirNfse — orquestração", () => {
 
   it("CNPJ do tomador alfanumérico é preservado como string", async () => {
     postNfse.mockResolvedValueOnce(okResult());
-    const row = await emitirNfse(CLIENT_ID, { ...input, tomador: { ...input.tomador, doc: "12ABC678000D99", nome: "Alfa SA" } });
-    expect(row.tomadorDoc).toBe("12ABC678000D99");
+    const row = await emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "12ABC678000D64", nome: "Alfa SA" } });
+    expect(row.tomadorDoc).toBe("12ABC678000D64");
+  });
+
+  it("sem tomador: emite sem o grupo <toma> e grava sem documento", async () => {
+    postNfse.mockResolvedValueOnce(okResult());
+    const row = await emitirNfse(CLIENT_ID, { ...input, tomador: null });
+    expect(row.status).toBe("emitida");
+    expect(row.tomadorDoc).toBeNull();
+    expect(String(postNfse.mock.calls[0][2])).not.toContain("<toma>"); // (agent, ambiente, dpsAssinada)
+  });
+
+  it("CPF exige o nome; CPF/CNPJ com dígito errado é barrado antes de gastar número", async () => {
+    const [antes] = await testDb.select().from(nfseConfig).where(eq(nfseConfig.clientId, CLIENT_ID));
+    await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "52998224725", nome: "" } })).rejects.toMatchObject({ reason: "tomador_nome" });
+    await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "52998224700", nome: "Fulano" } })).rejects.toMatchObject({ reason: "tomador_doc" });
+    await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "98765432000110", nome: "X" } })).rejects.toMatchObject({ reason: "tomador_doc" });
+    expect(postNfse).not.toHaveBeenCalled();
+    const [cfg] = await testDb.select().from(nfseConfig).where(eq(nfseConfig.clientId, CLIENT_ID));
+    expect(cfg.proxNumeroDps).toBe(antes.proxNumeroDps);
   });
 });

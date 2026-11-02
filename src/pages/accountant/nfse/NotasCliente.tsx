@@ -116,7 +116,7 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
       <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
         {lista.map((e) => {
           const s = nfseStatusLabel(e.status);
-          const outro = aba === "tomadas" ? e.prestadorNome || e.prestadorDoc : e.tomadorNome || e.tomadorDoc;
+          const outro = aba === "tomadas" ? e.prestadorNome || e.prestadorDoc : e.tomadorNome || e.tomadorDoc || "Sem tomador";
           const temPdf = !!e.chaveAcesso && (e.status === "emitida" || e.status === "cancelada");
           return (
             <li key={e.id} className="py-3 text-sm">

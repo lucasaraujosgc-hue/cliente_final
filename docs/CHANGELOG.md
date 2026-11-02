@@ -1,5 +1,28 @@
 # CHANGELOG.md
 
+## NFS-e: tomador só por CNPJ, CPF ou "sem tomador" (nov/2026)
+
+Conferido com a documentação oficial em produção (Anexo I e XSD v1.01 de
+09/02/2026; NT 009 v1.01):
+
+- O grupo do tomador é **opcional** na DPS. Quando informado, só o nome é
+  obrigatório; endereço, telefone e e-mail são opcionais.
+- Endereço do tomador só é exigido pela Sefin com **ISS retido** (E0237, e
+  E0204 exige o tomador) ou serviço **17.05.01** (E0234). A E0235 ("tomador
+  CNPJ exige endereço") não é executada na Sefin Nacional — no Anexo I vale só
+  para NFS-e compartilhada pelos municípios. Ela nunca foi devolvida pela Sefin
+  nas emissões reais; o sistema a exigia por precaução (out/2026), agora não.
+- Assistente de emissão (cliente e contador): **CNPJ / CPF / Sem tomador**.
+  CNPJ → razão social do cadastro na tela para confirmar (digitada só se a
+  consulta falhar); CPF → nome (obrigatório na nota; não há consulta pública de
+  nome por CPF); nenhum campo de endereço, telefone ou e-mail. Atividade com ISS
+  retido/17.05.01 só aceita tomador CNPJ — o servidor usa o endereço do cadastro
+  da Receita (`services/nfse/tomador.ts`).
+- CPF/CNPJ validados pelo dígito verificador antes de reservar o número da DPS,
+  inclusive **CNPJ alfanumérico** (`src/lib/inscricao.ts`; o assistente apagava
+  as letras). Versões antigas do app que ainda mandam endereço/telefone/e-mail
+  continuam funcionando (os campos são ignorados).
+
 ## Painel fiscal: filtros, sem procuração, Caixa Postal; NFS-e pelo contador (out/2026)
 
 - **Filtro por situação** na lista de clientes (Todas / Em dia / Pendente /

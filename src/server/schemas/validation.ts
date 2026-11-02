@@ -253,57 +253,22 @@ export const nfseCepLookupSchema = z.object({
   cep: z.string().min(8, "CEP inválido.").max(10),
 });
 
-// Campo de texto opcional que TOLERA null (a consulta de CNPJ devolve muitos
-// null) e "". Normaliza tudo isso para undefined; corta no tamanho máximo em
-// vez de rejeitar.
-const soft = (max = 300) =>
-  z
-    .any()
-    .transform((v) => {
-      if (v === null || v === undefined) return undefined;
-      const s = String(v).trim();
-      return s ? s.slice(0, max) : undefined;
-    })
-    .optional();
-
-const nfseEnderecoSchema = z
-  .object({
-    logradouro: soft(150),
-    numero: soft(20),
-    complemento: soft(80),
-    bairro: soft(80),
-    codigoMunicipio: soft(10),
-    municipio: soft(120),
-    uf: soft(2),
-    cep: soft(12),
-  })
-  .partial()
-  .nullish()
-  .transform((v) => v ?? undefined);
-
 // Client: emit a new NFS-e (JSON). `valor` is in centavos. O cliente só informa
 // tomador + descrição + valor — o resto vem da atividade pré-configurada.
 export const nfseEmitSchema = z.object({
   atividadeId: z.string().uuid("Selecione uma atividade."),
-  tomador: z.object({
-    doc: z
-      .string()
-      .transform((s) => s.replace(/[^0-9A-Za-z]/g, "").toUpperCase())
-      .pipe(z.string().min(11, "Documento do tomador inválido.").max(14)),
-    nome: z.string().trim().min(1, "Razão social do tomador é obrigatória.").max(200),
-    // E-mail da consulta de CNPJ pode vir malformado / múltiplo / null —
-    // aproveita só se parecer um e-mail, senão descarta.
-    email: z
-      .any()
-      .transform((v) => {
-        const s = String(v ?? "").trim();
-        return /^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]{2,}$/.test(s) ? s.slice(0, 200) : undefined;
-      })
-      .optional(),
-    telefone: soft(20),
-    inscricaoMunicipal: soft(20),
-    endereco: nfseEnderecoSchema,
-  }),
+  // CNPJ (também alfanumérico), CPF + nome, ou ausente/null = sem tomador
+  // (consumidor não identificado). Campos extras (endereço, telefone, e-mail de
+  // versões antigas do app) são ignorados.
+  tomador: z
+    .object({
+      doc: z
+        .string()
+        .transform((s) => s.replace(/[^0-9A-Za-z]/g, "").toUpperCase())
+        .pipe(z.string().refine((s) => s === "" || s.length === 11 || s.length === 14, "Documento do tomador inválido.")),
+      nome: z.string().trim().max(200).optional().nullable(),
+    })
+    .nullish(),
   descricao: z.string().trim().min(1, "Descrição do serviço é obrigatória.").max(2000),
   valor: z
     .number()

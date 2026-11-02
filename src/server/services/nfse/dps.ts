@@ -259,7 +259,14 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   const regEspTrib = String(input.prestador.regEspTrib ?? "0");
   regTrib.ele("regEspTrib").txt(regEspTrib);
 
-  // toma (opcional)
+  // toma (opcional: sem ele = consumidor não identificado). Obrigatório só com
+  // ISS retido (E0204/E0237) ou serviço 17.05.01 (E0234).
+  if (!(input.tomador && (isCnpj(tomadorDoc) || isCpf(tomadorDoc))) && tomadorExigeEndereco(cTribNac, !!input.valores.issRetido)) {
+    throw new NfseError(
+      "Esta nota precisa do tomador (CNPJ): o ISS é retido pelo tomador ou o serviço é 17.05.01.",
+      { status: 400, reason: "tomador_obrigatorio" },
+    );
+  }
   if (input.tomador && (isCnpj(tomadorDoc) || isCpf(tomadorDoc))) {
     const toma = inf.ele("toma");
     if (isCnpj(tomadorDoc)) toma.ele("CNPJ").txt(tomadorDoc);
@@ -276,10 +283,10 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
     const nro = sanitizeText(e?.numero).slice(0, 60);
     const xBairro = sanitizeText(e?.bairro).slice(0, 60);
     const enderecoCompleto = !!(e && xLgr && nro && xBairro && cMun.length === 7 && cep.length === 8);
-    // E0235 / E0237: com tomador CNPJ (ou ISS retido) o endereço é obrigatório.
-    if (!enderecoCompleto && tomadorExigeEndereco(isCnpj(tomadorDoc), !!input.valores.issRetido)) {
+    // E0237 (ISS retido) / E0234 (17.05.01): aí o endereço do tomador é obrigatório.
+    if (!enderecoCompleto && tomadorExigeEndereco(cTribNac, !!input.valores.issRetido)) {
       throw new NfseError(
-        "Falta o endereço completo do tomador (CEP, logradouro, número, bairro e município). Ele é obrigatório quando o tomador é identificado por CNPJ.",
+        "Falta o endereço do tomador, obrigatório quando o ISS é retido pelo tomador ou o serviço é 17.05.01.",
         { status: 400, reason: "tomador_endereco" },
       );
     }

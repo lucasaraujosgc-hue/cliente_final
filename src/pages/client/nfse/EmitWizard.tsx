@@ -1,37 +1,33 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Search,
   Check,
   Loader2,
   FileText,
   Share2,
   Plus,
   AlertTriangle,
+  Building2,
+  User,
+  UserX,
+  CheckCircle2,
 } from "lucide-react";
 import {
-  enderecoCompleto,
   nfseApiCliente,
   centavosToBRL,
   type NfseEmitApi,
   type NfseAtividadeCliente,
-  type NfseEndereco,
 } from "../../../lib/nfse";
-import { formatCnpj, normalizeCnpj } from "../../../lib/cnpj";
+import { cnpjValido, cpfValido, formatarInscricao, limparInscricao } from "../../../lib/inscricao";
 
 const FIELD =
   "w-full rounded-lg border border-line bg-sunken px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint focus:border-brand focus:bg-surface focus:outline-none";
 const LABEL = "mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted";
 
 export interface WizardPrefill {
-  tomador: {
-    doc: string;
-    nome: string;
-    email?: string | null;
-    telefone?: string | null;
-    endereco?: NfseEndereco | null;
-  };
+  // Nota duplicada: doc vazio/nulo = nota sem tomador.
+  tomador: { doc: string | null; nome: string | null } | null;
   atividadeId: string | null;
   descricao: string;
   valor: number | null; // centavos
@@ -47,56 +43,61 @@ interface Props {
 
 type Step = 1 | 2 | 3 | "sending" | "success" | "error" | "processando";
 
+// Quem recebe a nota. Endereço, telefone e e-mail não são pedidos: quando a
+// Sefin exige o endereço (ISS retido ou serviço 17.05.01), o servidor usa o do
+// cadastro do CNPJ — ver services/nfse/tomador.ts.
+type TipoTomador = "cnpj" | "cpf" | "nenhum";
+const tipoDoDoc = (doc?: string | null): TipoTomador => {
+  const d = limparInscricao(doc);
+  return d.length === 11 ? "cpf" : d.length === 14 ? "cnpj" : "nenhum";
+};
+
 export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente }: Props) {
-  // Nota duplicada cujo tomador ficou sem endereço volta ao passo 1 para completar.
-  const [step, setStep] = useState<Step>(prefill && enderecoCompleto(prefill.tomador.endereco) ? 3 : 1);
-  const [cnpj, setCnpj] = useState(prefill?.tomador.doc ? formatCnpj(prefill.tomador.doc) : "");
+  const [tipo, setTipo] = useState<TipoTomador>(prefill ? tipoDoDoc(prefill.tomador?.doc) : "cnpj");
+  const [doc, setDoc] = useState(prefill?.tomador?.doc ? formatarInscricao(prefill.tomador.doc) : "");
+  const [nome, setNome] = useState(prefill?.tomador?.nome ?? "");
+  // CNPJ: razão social vinda da consulta (só confirmar). Falhou → digita.
   const [looking, setLooking] = useState(false);
   const [lookupError, setLookupError] = useState("");
+  const [municipio, setMunicipio] = useState("");
+  const docLimpo = limparInscricao(doc);
+  const docValido = tipo === "cnpj" ? cnpjValido(docLimpo) : tipo === "cpf" ? cpfValido(docLimpo) : true;
+  const tomadorOk = tipo === "nenhum" || (docValido && !!nome.trim() && !looking);
+  // Nota duplicada já completa vai direto ao valor.
+  const [step, setStep] = useState<Step>(prefill && (tipo === "nenhum" || (docValido && !!nome.trim())) ? 3 : 1);
 
-  const [tomador, setTomador] = useState({
-    doc: prefill?.tomador.doc ?? "",
-    nome: prefill?.tomador.nome ?? "",
-    email: prefill?.tomador.email ?? "",
-    telefone: prefill?.tomador.telefone ?? "",
-    endereco: (prefill?.tomador.endereco ?? null) as NfseEndereco | null,
-  });
+  // CNPJ completo e válido → busca a razão social para confirmar na tela.
+  useEffect(() => {
+    if (tipo !== "cnpj" || !cnpjValido(docLimpo)) return;
+    if (prefill?.tomador?.nome && limparInscricao(prefill.tomador.doc) === docLimpo) return; // duplicada
+    let vivo = true;
+    setLooking(true);
+    setLookupError("");
+    setNome("");
+    setMunicipio("");
+    api
+      .lookupCnpj(docLimpo)
+      .then((t) => {
+        if (!vivo) return;
+        setNome(t.razaoSocial || "");
+        setMunicipio(t.endereco?.municipio ? `${t.endereco.municipio}/${t.endereco.uf ?? ""}` : "");
+        if (!t.razaoSocial) setLookupError("A consulta não trouxe a razão social.");
+      })
+      .catch((e: any) => vivo && setLookupError(e?.message || "Não foi possível consultar o CNPJ."))
+      .finally(() => vivo && setLooking(false));
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo, docLimpo]);
 
-  // Endereço do tomador — obrigatório na DPS quando o tomador tem CNPJ (a Sefin
-  // recusa com E0235). Vem da consulta do CNPJ; se ela falhar, o usuário
-  // preenche e o CEP traz o município.
-  const [cepLooking, setCepLooking] = useState(false);
-  const [cepError, setCepError] = useState("");
-  const setEnd = (patch: Partial<NfseEndereco>) =>
-    setTomador((t) => ({ ...t, endereco: { ...(t.endereco ?? {}), ...patch } }));
-  const onCep = async (raw: string) => {
-    const cep = raw.replace(/\D/g, "").slice(0, 8);
-    // O município tem de ser o do CEP (regra E0240): CEP novo zera o anterior.
-    setEnd({ cep, municipio: null, uf: null, codigoMunicipio: null });
-    setCepError("");
-    if (cep.length !== 8) return;
-    setCepLooking(true);
-    try {
-      const r = await api.lookupCep(cep);
-      setTomador((t) => ({
-        ...t,
-        endereco: {
-          ...(t.endereco ?? {}),
-          cep,
-          logradouro: t.endereco?.logradouro || r.logradouro,
-          bairro: t.endereco?.bairro || r.bairro,
-          municipio: r.municipio,
-          uf: r.uf,
-          codigoMunicipio: r.codigoMunicipio,
-        },
-      }));
-    } catch (e: any) {
-      setCepError(e.message || "Não foi possível consultar o CEP.");
-    } finally {
-      setCepLooking(false);
-    }
+  const trocarTipo = (t: TipoTomador) => {
+    setTipo(t);
+    setDoc("");
+    setNome("");
+    setLookupError("");
+    setMunicipio("");
   };
-  const enderecoOk = enderecoCompleto(tomador.endereco);
 
   const [atividadeId, setAtividadeId] = useState(prefill?.atividadeId ?? "");
   const [descricao, setDescricao] = useState(prefill?.descricao ?? "");
@@ -125,39 +126,13 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
   }, [valorStr]);
 
-  const buscarCnpj = async () => {
-    setLookupError("");
-    setLooking(true);
-    try {
-      const t = await api.lookupCnpj(cnpj);
-      setTomador({
-        doc: t.cnpj,
-        nome: t.razaoSocial,
-        email: t.email ?? "",
-        telefone: t.telefone ?? "",
-        endereco: t.endereco,
-      });
-    } catch (e: any) {
-      setLookupError(e.message || "Não foi possível consultar o CNPJ.");
-      setTomador((s) => ({ ...s, doc: normalizeCnpj(cnpj) }));
-    } finally {
-      setLooking(false);
-    }
-  };
-
   const [syncing, setSyncing] = useState(false);
 
   const submit = async () => {
     setStep("sending");
     const r = await api.emitir({
       atividadeId,
-      tomador: {
-        doc: tomador.doc,
-        nome: tomador.nome,
-        email: tomador.email || undefined,
-        telefone: tomador.telefone || undefined,
-        endereco: tomador.endereco || undefined,
-      },
+      tomador: tipo === "nenhum" ? null : { doc: docLimpo, nome: nome.trim() },
       descricao,
       valor: valorCentavos,
     });
@@ -190,8 +165,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
 
   const reset = () => {
     setStep(1);
-    setCnpj("");
-    setTomador({ doc: "", nome: "", email: "", telefone: "", endereco: null });
+    trocarTipo("cnpj");
     setAtividadeId("");
     setDescricao("");
     setValorStr("");
@@ -343,118 +317,97 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
 
   // ---- step 1: tomador ----------------------------------------------------
   if (step === 1) {
+    const OPCOES: { v: TipoTomador; rotulo: string; Icone: typeof Building2 }[] = [
+      { v: "cnpj", rotulo: "CNPJ", Icone: Building2 },
+      { v: "cpf", rotulo: "CPF", Icone: User },
+      { v: "nenhum", rotulo: "Sem tomador", Icone: UserX },
+    ];
+    const completo = tipo === "cnpj" ? docLimpo.length === 14 : docLimpo.length === 11;
     return (
       <div>
         <Header title="Para quem é a nota?" />
         <div className="space-y-4">
-          <div>
-            <label className={LABEL}>CNPJ do tomador</label>
-            <div className="flex gap-2">
-              <input
-                className={FIELD}
-                inputMode="numeric"
-                placeholder="00.000.000/0000-00"
-                value={cnpj}
-                onChange={(e) => setCnpj(e.target.value)}
-              />
+          <div className="grid grid-cols-3 gap-2">
+            {OPCOES.map(({ v, rotulo, Icone }) => (
               <button
-                onClick={buscarCnpj}
-                disabled={looking || normalizeCnpj(cnpj).length !== 14}
-                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-ink px-4 text-sm font-semibold text-ground disabled:opacity-40"
+                key={v}
+                onClick={() => trocarTipo(v)}
+                className={
+                  "flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-sm font-semibold transition-colors " +
+                  (tipo === v ? "border-brand bg-brand-wash text-brand-fg" : "border-line bg-surface text-ink hover:bg-sunken")
+                }
               >
-                {looking ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-                Buscar
+                <Icone className="size-5" strokeWidth={1.8} />
+                {rotulo}
               </button>
-            </div>
-            {lookupError && <p className="mt-1.5 text-xs text-danger">{lookupError} Você pode preencher abaixo.</p>}
+            ))}
           </div>
 
-          {(tomador.nome || tomador.doc) && (
-            <div className="space-y-3 rounded-xl border border-line bg-sunken p-4">
-              <div>
-                <label className={LABEL}>Razão social</label>
-                <input className={FIELD} value={tomador.nome} onChange={(e) => setTomador({ ...tomador, nome: e.target.value })} />
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className={LABEL}>E-mail</label>
-                  <input className={FIELD} value={tomador.email} onChange={(e) => setTomador({ ...tomador, email: e.target.value })} />
-                </div>
-                <div>
-                  <label className={LABEL}>Telefone</label>
-                  <input className={FIELD} value={tomador.telefone} onChange={(e) => setTomador({ ...tomador, telefone: e.target.value })} />
-                </div>
-              </div>
-              <div className="border-t border-line pt-3">
-                <p className={LABEL}>Endereço do tomador</p>
-                <p className="mb-3 text-xs text-muted">Obrigatório na nota quando o tomador tem CNPJ.</p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className={LABEL}>CEP</label>
-                    <div className="relative">
-                      <input
-                        className={FIELD}
-                        inputMode="numeric"
-                        placeholder="00000-000"
-                        value={tomador.endereco?.cep ?? ""}
-                        onChange={(e) => onCep(e.target.value)}
-                      />
-                      {cepLooking && <Loader2 className="absolute right-3 top-3 size-4 animate-spin text-muted" />}
-                    </div>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className={LABEL}>Logradouro</label>
-                    <input className={FIELD} value={tomador.endereco?.logradouro ?? ""} onChange={(e) => setEnd({ logradouro: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={LABEL}>Número</label>
-                    <input className={FIELD} placeholder="ou S/N" value={tomador.endereco?.numero ?? ""} onChange={(e) => setEnd({ numero: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={LABEL}>Complemento</label>
-                    <input className={FIELD} value={tomador.endereco?.complemento ?? ""} onChange={(e) => setEnd({ complemento: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={LABEL}>Bairro</label>
-                    <input className={FIELD} value={tomador.endereco?.bairro ?? ""} onChange={(e) => setEnd({ bairro: e.target.value })} />
-                  </div>
-                </div>
-                {tomador.endereco?.municipio && (
-                  <p className="mt-2 text-xs text-muted">
-                    Município: <span className="font-semibold text-ink">{tomador.endereco.municipio}/{tomador.endereco.uf}</span>
-                  </p>
-                )}
-                {cepError && (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs text-danger">{cepError}</p>
-                    <div>
-                      <label className={LABEL}>Código IBGE do município (7 dígitos)</label>
-                      <input
-                        className={FIELD}
-                        inputMode="numeric"
-                        placeholder="peça ao escritório se não souber"
-                        value={tomador.endereco?.codigoMunicipio ?? ""}
-                        onChange={(e) => setEnd({ codigoMunicipio: e.target.value.replace(/\D/g, "").slice(0, 7) })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+          {tipo === "nenhum" ? (
+            <div className="rounded-xl border border-line bg-sunken p-4 text-sm text-muted">
+              <p className="font-semibold text-ink">Nota sem identificação do tomador</p>
+              <p className="mt-1">
+                Para consumidor final que não quis se identificar. Em algumas prefeituras uma nota sem tomador não pode ser
+                substituída depois — só cancelada.
+              </p>
             </div>
+          ) : (
+            <>
+              <div>
+                <label className={LABEL}>{tipo === "cnpj" ? "CNPJ do tomador" : "CPF do tomador"}</label>
+                <div className="relative">
+                  <input
+                    className={FIELD}
+                    inputMode={tipo === "cpf" ? "numeric" : "text"}
+                    autoCapitalize="characters"
+                    placeholder={tipo === "cnpj" ? "00.000.000/0000-00" : "000.000.000-00"}
+                    value={doc}
+                    onChange={(e) => setDoc(e.target.value.toUpperCase())}
+                    onBlur={() => completo && setDoc(formatarInscricao(docLimpo))}
+                    autoFocus
+                  />
+                  {looking && <Loader2 className="absolute right-3 top-3 size-4 animate-spin text-muted" />}
+                </div>
+                {completo && !docValido && (
+                  <p className="mt-1.5 text-xs text-danger">{tipo === "cnpj" ? "CNPJ" : "CPF"} inválido — confira os números.</p>
+                )}
+              </div>
+
+              {tipo === "cnpj" && docValido && !looking && nome && !lookupError && (
+                <div className="flex items-start gap-3 rounded-xl border border-brand/30 bg-brand-wash p-4">
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-brand-fg" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Confira o tomador</p>
+                    <p className="font-semibold text-ink">{nome}</p>
+                    {municipio && <p className="text-xs text-muted">{municipio}</p>}
+                  </div>
+                </div>
+              )}
+
+              {tipo === "cnpj" && docValido && !looking && lookupError && (
+                <div>
+                  <p className="mb-2 text-xs text-muted">{lookupError} Digite a razão social do tomador:</p>
+                  <input className={FIELD} placeholder="Razão social" value={nome} onChange={(e) => setNome(e.target.value)} />
+                </div>
+              )}
+
+              {tipo === "cpf" && (
+                <div>
+                  <label className={LABEL}>Nome do tomador</label>
+                  <input className={FIELD} placeholder="Nome completo" value={nome} onChange={(e) => setNome(e.target.value)} />
+                  <p className="mt-1 text-xs text-muted">Obrigatório na nota quando o tomador é identificado pelo CPF.</p>
+                </div>
+              )}
+            </>
           )}
 
           <button
             onClick={() => setStep(2)}
-            disabled={!tomador.nome || normalizeCnpj(tomador.doc || cnpj).length !== 14 || !enderecoOk}
+            disabled={!tomadorOk}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-40"
           >
             Avançar <ArrowRight className="size-4" />
           </button>
-          {!!tomador.nome && !enderecoOk && (
-            <p className="text-center text-xs text-muted">
-              Para avançar, preencha CEP, logradouro, número e bairro do tomador.
-            </p>
-          )}
         </div>
       </div>
     );
@@ -472,27 +425,35 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
                 Nenhuma atividade configurada. Fale com a contabilidade.
               </p>
             )}
-            {atividades.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => {
-                  setAtividadeId(a.id);
-                  if (!descricao) setDescricao(a.descricaoPadrao);
-                }}
-                className={
-                  "w-full rounded-xl border p-3.5 text-left transition-colors " +
-                  (atividadeId === a.id
-                    ? "border-brand bg-brand-wash"
-                    : "border-line bg-surface hover:bg-sunken")
-                }
-              >
-                <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-                  <span className="font-mono text-xs text-brand-fg">{a.itemListaServico}</span>
-                  {a.nome}
-                </p>
-                <p className="mt-0.5 text-xs text-muted">ISS {a.aliquotaIss}%{a.issRetido ? " · retido" : ""}</p>
-              </button>
-            ))}
+            {atividades.map((a) => {
+              // ISS retido / 17.05.01: a nota exige o tomador com CNPJ.
+              const bloqueada = !!a.exigeTomadorCnpj && tipo !== "cnpj";
+              return (
+                <button
+                  key={a.id}
+                  disabled={bloqueada}
+                  onClick={() => {
+                    setAtividadeId(a.id);
+                    if (!descricao) setDescricao(a.descricaoPadrao);
+                  }}
+                  className={
+                    "w-full rounded-xl border p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
+                    (atividadeId === a.id && !bloqueada
+                      ? "border-brand bg-brand-wash"
+                      : "border-line bg-surface hover:bg-sunken")
+                  }
+                >
+                  <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                    <span className="font-mono text-xs text-brand-fg">{a.itemListaServico}</span>
+                    {a.nome}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    ISS {a.aliquotaIss}%{a.issRetido ? " · retido" : ""}
+                    {bloqueada ? " · exige tomador com CNPJ" : ""}
+                  </p>
+                </button>
+              );
+            })}
           </div>
 
           <div>
@@ -507,7 +468,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
 
           <button
             onClick={() => setStep(3)}
-            disabled={!atividadeId || !descricao.trim()}
+            disabled={!atividadeId || !descricao.trim() || (!!atividade?.exigeTomadorCnpj && tipo !== "cnpj")}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-40"
           >
             Avançar <ArrowRight className="size-4" />
@@ -523,13 +484,15 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
       <Header title="Valor da nota" onBack={() => setStep(prefill ? 2 : 2)} />
       <div className="space-y-4">
         <div className="rounded-xl border border-line bg-sunken p-4 text-sm">
-          <p className="font-semibold text-ink">{tomador.nome}</p>
-          <p className="text-xs text-muted">{formatCnpj(tomador.doc)}</p>
-          {tomador.endereco?.municipio && (
-            <p className="text-xs text-muted">
-              {[tomador.endereco.logradouro, tomador.endereco.numero, tomador.endereco.bairro].filter(Boolean).join(", ")} —{" "}
-              {tomador.endereco.municipio}/{tomador.endereco.uf}
-            </p>
+          {tipo === "nenhum" ? (
+            <p className="font-semibold text-ink">Sem tomador (consumidor não identificado)</p>
+          ) : (
+            <>
+              <p className="font-semibold text-ink">{nome}</p>
+              <p className="text-xs text-muted">
+                {tipo === "cnpj" ? "CNPJ" : "CPF"} {formatarInscricao(docLimpo)}
+              </p>
+            </>
           )}
           <p className="mt-2 text-xs text-muted">{atividade?.nome} — {descricao}</p>
         </div>

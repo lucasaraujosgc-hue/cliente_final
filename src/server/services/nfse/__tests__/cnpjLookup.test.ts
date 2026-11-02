@@ -39,6 +39,7 @@ describe("lookupCnpj", () => {
   it("rejects an invalid CNPJ before any request", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await expect(lookupCnpj("123")).rejects.toThrow(/CNPJ/i);
+    await expect(lookupCnpj("11222333000182")).rejects.toThrow(/CNPJ inválido/i); // dígito errado
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -59,7 +60,7 @@ describe("lookupCnpj", () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("nope", { status: 500 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(receitaWsOk), { status: 200 }));
-    const r = await lookupCnpj("11222333000182");
+    const r = await lookupCnpj("11444777000161");
     expect(r.fonte).toBe("receitaws");
     expect(r.razaoSocial).toBe("EMPRESA RECEITA LTDA");
     expect(r.endereco.codigoMunicipio).toBeNull();
@@ -67,6 +68,6 @@ describe("lookupCnpj", () => {
 
   it("throws a friendly error when both providers fail", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("x", { status: 503 }));
-    await expect(lookupCnpj("11222333000183")).rejects.toThrow(/manualmente/i);
+    await expect(lookupCnpj("06990590000123")).rejects.toThrow(/digite a razão social/i);
   });
 });

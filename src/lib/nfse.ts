@@ -169,6 +169,7 @@ export interface NfseAtividadeCliente {
   descricaoPadrao: string;
   aliquotaIss: number;
   issRetido: boolean;
+  exigeTomadorCnpj?: boolean; // ISS retido / 17.05.01 → a nota exige tomador com CNPJ
 }
 
 export async function getNfseAtividades(): Promise<NfseAtividadeCliente[]> {
@@ -237,14 +238,8 @@ export function enderecoCompleto(e?: NfseEndereco | null): boolean {
 
 export interface EmitirNfseInput {
   atividadeId: string;
-  tomador: {
-    doc: string;
-    nome: string;
-    email?: string;
-    telefone?: string;
-    inscricaoMunicipal?: string;
-    endereco?: NfseEndereco;
-  };
+  // CNPJ, CPF (+ nome) ou null = sem tomador. Sem endereço/telefone/e-mail.
+  tomador: { doc: string; nome: string } | null;
   descricao: string;
   valor: number; // centavos
   competencia?: string;

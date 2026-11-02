@@ -13,6 +13,7 @@ import { parseNfseXml } from "./nfseXml";
 import { reconcileEmissao, pendingEmissoes } from "./reconcile";
 import { nfseLog } from "./log";
 import { NfseError, notConfigured } from "./errors";
+import { resolverTomador, type TomadorInformado } from "./tomador";
 
 // Orquestra a emissão: carrega certificado + config + atividade, monta, valida e
 // assina a DPS, envia à Sefin Nacional (POST /nfse — síncrono, sucesso = 201) e
@@ -59,14 +60,9 @@ function dumpRejeicao(
 
 export interface EmitirInput {
   atividadeId: string;
-  tomador: {
-    doc: string;
-    nome: string;
-    email?: string;
-    telefone?: string;
-    inscricaoMunicipal?: string;
-    endereco?: DpsTomador["endereco"];
-  };
+  // CNPJ, CPF (+ nome) ou nada (consumidor não identificado). Endereço,
+  // telefone e e-mail não são informados: ver services/nfse/tomador.ts.
+  tomador?: TomadorInformado | null;
   descricao: string;
   valor: number; // centavos
   competencia?: string;
@@ -144,7 +140,8 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     input.competencia && /^\d{2}\/\d{4}$/.test(input.competencia)
       ? input.competencia
       : competenciaAtual();
-  const tomadorDoc = normalizeInscricao(input.tomador.doc);
+  const tomador: DpsTomador | null = await resolverTomador(input.tomador, atividade);
+  const tomadorDoc = tomador ? normalizeInscricao(tomador.doc) : "";
 
   // --- dedupe: uma emissão 'processando' recente com os mesmos dados pode ser
   // uma tentativa anterior que o Sefin de fato processou. Reconcilia antes de
@@ -207,14 +204,7 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
       regEspTrib: config.regimeEspecialTrib || REG_ESP_TRIB_DEFAULT,
       regApTribSN: atividade.regApTribSn,
     },
-    tomador: {
-      doc: tomadorDoc,
-      nome: input.tomador.nome,
-      email: input.tomador.email || null,
-      telefone: input.tomador.telefone || null,
-      inscricaoMunicipal: input.tomador.inscricaoMunicipal || null,
-      endereco: input.tomador.endereco || null,
-    },
+    tomador,
     servico: {
       cTribNac: atividade.codTributacaoNac,
       cTribMun: atividade.codTributacaoMun,
@@ -277,11 +267,11 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     aliquotaIss,
     valorIss,
     descricao: input.descricao,
-    tomadorDoc,
-    tomadorNome: input.tomador.nome,
-    tomadorEmail: input.tomador.email || null,
-    tomadorTelefone: input.tomador.telefone || null,
-    tomadorEndereco: (input.tomador.endereco ?? null) as any,
+    tomadorDoc: tomadorDoc || null,
+    tomadorNome: tomador?.nome ?? null,
+    tomadorEmail: null,
+    tomadorTelefone: null,
+    tomadorEndereco: (tomador?.endereco ?? null) as any,
     serieDps: serie,
     numeroDps,
     idDps: built.idDps,

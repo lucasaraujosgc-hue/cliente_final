@@ -90,10 +90,15 @@ export function resolveTotTrib(op: OpSimpNac, pTotTribSN?: number | null): TotTr
 }
 
 /**
- * Endereço nacional do tomador.
- *   E0235  tomador identificado por CNPJ (tpEmit = 1) ...... obrigatório
- *   E0237  ISSQN retido pelo tomador ....................... obrigatório
+ * O tomador (identificado e com endereço) é exigido pela Sefin Nacional só em:
+ *   E0237  ISSQN retido pelo tomador (e E0204: tomador com CNPJ/CPF)
+ *   E0234  serviço com ISSQN devido no estabelecimento do tomador — na tabela
+ *          MUN.INCID_INFO.SERV. do Anexo I (v1.01) é só o 17.05.01
+ * A E0235 ("tomador CNPJ exige endereço") não é executada na Sefin — no Anexo I
+ * ela vale só para NFS-e compartilhada pelos municípios com o ADN.
  */
-export function tomadorExigeEndereco(tomadorEhCnpj: boolean, issRetido: boolean): boolean {
-  return tomadorEhCnpj || issRetido;
+export function tomadorExigeEndereco(cTribNac: string | null | undefined, issRetido: boolean): boolean {
+  let cod = String(cTribNac ?? "").replace(/\D/g, "");
+  if (cod.length === 4) cod += "01"; // item da LC 116 ("17.05") → 1º desdobro
+  return !!issRetido || cod === "170501";
 }

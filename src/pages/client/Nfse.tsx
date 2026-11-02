@@ -99,13 +99,7 @@ export function ClientNfse() {
       setWizard({
         open: true,
         prefill: {
-          tomador: {
-            doc: d.tomadorDoc || "",
-            nome: d.tomadorNome || "",
-            email: d.tomadorEmail,
-            telefone: d.tomadorTelefone,
-            endereco: d.tomadorEndereco,
-          },
+          tomador: d.tomadorDoc ? { doc: d.tomadorDoc, nome: d.tomadorNome || "" } : null,
           atividadeId: d.atividadeId,
           descricao: d.descricao || "",
           valor: d.valorServicos,
@@ -361,7 +355,7 @@ export function ClientNfse() {
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-ink">
-                        {e.tomadorNome || (e.tomadorDoc ? formatCnpj(e.tomadorDoc) : "—")}
+                        {e.tomadorNome || (e.tomadorDoc ? formatCnpj(e.tomadorDoc) : "Sem tomador")}
                       </p>
                       <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
                         <span>

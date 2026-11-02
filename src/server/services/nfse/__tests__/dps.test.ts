@@ -102,11 +102,26 @@ describe("buildDpsXml", () => {
     expect(noAddr.xml).toContain("<xNome>Pessoa Sem Endereço</xNome>");
   });
 
-  // Rejeição real em produção: E0235.
-  it("refuses a CNPJ tomador without a full address (E0235)", () => {
-    expect(() =>
-      buildDpsXml({ ...base, tomador: { doc: "98765432000110", nome: "Sem Endereço SA" } }),
-    ).toThrow(/endereço completo do tomador/);
+  // A E0235 (tomador CNPJ exige endereço) não é executada na Sefin Nacional
+  // (Anexo I v1.01 — só no compartilhamento pelos municípios com o ADN).
+  it("accepts a CNPJ tomador without address", () => {
+    const xml = buildDpsXml({ ...base, tomador: { doc: "98765432000110", nome: "Sem Endereço SA" } }).xml;
+    expect(xml).toContain("<CNPJ>98765432000110</CNPJ>");
+    expect(xml).not.toContain("<endNac>");
+  });
+
+  it("sem tomador: a DPS sai sem o grupo <toma>", () => {
+    const xml = buildDpsXml({ ...base, tomador: null }).xml;
+    expect(xml).not.toContain("<toma>");
+  });
+
+  it("ISS retido ou serviço 17.05.01 exigem tomador com endereço (E0204/E0237/E0234)", () => {
+    const retido = { ...base, valores: { ...base.valores, issRetido: true, aliquotaIss: 2 } };
+    expect(() => buildDpsXml({ ...retido, tomador: null })).toThrow(/precisa do tomador/);
+    expect(() => buildDpsXml({ ...retido, tomador: { doc: "98765432000110", nome: "X SA" } })).toThrow(/endereço do tomador/);
+    expect(buildDpsXml(retido).xml).toContain("<endNac>"); // base tem endereço completo
+    const maoDeObra = { ...base, servico: { ...base.servico, cTribNac: "170501" } };
+    expect(() => buildDpsXml({ ...maoDeObra, tomador: null })).toThrow(/precisa do tomador/);
   });
 
   it("adds tribFed only when there is federal retention", () => {
