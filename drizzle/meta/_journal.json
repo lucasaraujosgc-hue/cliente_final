@@ -120,6 +120,13 @@
       "when": 1793607706687,
       "tag": "0016_nfse_procuracao",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793706759759,
+      "tag": "0017_billing_origem",
+      "breakpoints": true
     }
   ]
 }

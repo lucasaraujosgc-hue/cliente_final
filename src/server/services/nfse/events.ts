@@ -5,6 +5,7 @@ import { clients, nfseEmissoes } from "../../schema";
 import { normalizeInscricao, isChaveAcesso } from "./inscricao";
 import type { NfseEmissaoRow } from "../../types";
 import { loadClientCertContext } from "./cert";
+import { atualizarFaturamentoNfse } from "../billing";
 import { signPedRegEvento } from "./sign";
 import { validatePedRegEvento } from "./validate";
 import { registrarEvento, type Ambiente } from "./client";
@@ -87,5 +88,6 @@ export async function cancelarNfse(
     .where(eq(nfseEmissoes.id, emissaoId))
     .returning();
   nfseLog("info", "cancelamento.ok", { emissaoId, ambiente, chave });
+  atualizarFaturamentoNfse(row.clientId);
   return row;
 }

@@ -11,6 +11,8 @@ import {
   type NfseEmissao,
 } from "../../../lib/nfse";
 import { EmitWizard } from "../../client/nfse/EmitWizard";
+import { FiltroNotasBar, Paginacao } from "../../../components/FiltroNotas";
+import { FILTRO_VAZIO, filtrarNotas, nomeArquivoNfse, paginar, type FiltroNotas } from "../../../lib/filtroNotas";
 
 // Notas de um cliente vistas pelo contador — as emitidas e as recebidas
 // (serviço tomado) — e a emissão em nome dele, com o mesmo assistente do app.
@@ -38,6 +40,8 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
   const [aba, setAba] = useState<"emitidas" | "tomadas">("emitidas");
   const [emitindo, setEmitindo] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Record<"emitidas" | "tomadas", FiltroNotas>>({ emitidas: FILTRO_VAZIO, tomadas: FILTRO_VAZIO });
+  const [pagina, setPagina] = useState<Record<"emitidas" | "tomadas", number>>({ emitidas: 1, tomadas: 1 });
   const api = useMemo(() => nfseApiContador(clientId), [clientId]);
 
   const load = () =>
@@ -67,6 +71,8 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
   };
 
   const lista: NfseEmissao[] = (aba === "emitidas" ? d?.emitidas : d?.tomadas) ?? [];
+  const filtradas = filtrarNotas<NfseEmissao>(lista, filtro[aba], aba === "emitidas" ? "tomador" : "prestador");
+  const pag = paginar(filtradas, pagina[aba]);
 
   return (
     <div className={CARD}>
@@ -113,8 +119,23 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
         </p>
       )}
 
+      {d && lista.length > 0 && (
+        <div className="mt-3 space-y-3">
+          <FiltroNotasBar
+            filtro={filtro[aba]}
+            onChange={(f) => {
+              setFiltro((x) => ({ ...x, [aba]: f }));
+              setPagina((x) => ({ ...x, [aba]: 1 }));
+            }}
+            placeholder={aba === "emitidas" ? "Nome ou CPF/CNPJ do tomador" : "Nome ou CNPJ do prestador"}
+          />
+          <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} total={filtradas.length} onChange={(p) => setPagina((x) => ({ ...x, [aba]: p }))} />
+          {filtradas.length === 0 && <p className="py-4 text-center text-sm text-slate-400">Nenhuma nota com esse filtro.</p>}
+        </div>
+      )}
+
       <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
-        {lista.map((e) => {
+        {pag.itens.map((e) => {
           const s = nfseStatusLabel(e.status);
           const outro = aba === "tomadas" ? e.prestadorNome || e.prestadorDoc : e.tomadorNome || e.tomadorDoc || "Sem tomador";
           const temPdf = !!e.chaveAcesso && (e.status === "emitida" || e.status === "cancelada");
@@ -136,9 +157,14 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {temPdf && (
-                  <button onClick={() => acao(`pdf-${e.id}`, () => api.verDanfse(e.id, e.numeroNota))} disabled={!!ocupado} className={BTN}>
-                    {ocupado === `pdf-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Ver nota (PDF)
-                  </button>
+                  <>
+                    <button onClick={() => acao(`pdf-${e.id}`, () => api.verDanfse(e.id, nomeArquivoNfse(e)))} disabled={!!ocupado} className={BTN}>
+                      {ocupado === `pdf-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Ver nota (PDF)
+                    </button>
+                    <button onClick={() => acao(`baixar-${e.id}`, () => api.baixarDanfse(e.id, nomeArquivoNfse(e)))} disabled={!!ocupado} className={BTN}>
+                      {ocupado === `baixar-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Baixar PDF
+                    </button>
+                  </>
                 )}
                 {e.chaveAcesso && (
                   <button onClick={() => acao(`xml-${e.id}`, () => adminDownloadEmissaoXml(e.id, "nfse"))} disabled={!!ocupado} className={BTN}>

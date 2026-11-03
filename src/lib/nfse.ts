@@ -386,20 +386,58 @@ export async function fetchDanfseBlob(id: string, base = "/api/nfse/emissoes", q
   return res.blob();
 }
 
-export async function viewDanfse(id: string, numero?: string | null, base?: string, quem: Quem = "client"): Promise<void> {
+// `nome`: nome legível do arquivo, sem ".pdf" (ver nomeArquivoNfse em
+// lib/filtroNotas.ts) — "NFS-e 43 - TOMADOR - 02-11-2026", nunca o id.
+const arquivoPdf = (nome?: string | null) => `${(nome || "NFS-e").trim()}.pdf`;
+
+export async function viewDanfse(id: string, nome?: string | null, base?: string, quem: Quem = "client"): Promise<void> {
   const blob = await fetchDanfseBlob(id, base, quem);
+  const arquivo = arquivoPdf(nome);
   const { isNativeApp, shareNativeBlob } = await import("./native");
   if (isNativeApp()) {
-    if (await shareNativeBlob(blob, `NFSe-${numero || id}.pdf`)) return;
+    if (await shareNativeBlob(blob, arquivo)) return;
   }
+  const url = URL.createObjectURL(new File([blob], arquivo, { type: "application/pdf" }));
+  // Abre numa aba com o nome da nota no título (o endereço de um blob seria só
+  // um código aleatório). O botão "Baixar" das listas salva com esse nome.
+  const w = window.open("", "_blank");
+  if (w) {
+    w.document.title = arquivo.replace(/\.pdf$/, "");
+    w.document.body.style.margin = "0";
+    const frame = w.document.createElement("iframe");
+    frame.src = url;
+    frame.title = w.document.title;
+    frame.setAttribute("style", "border:0;width:100vw;height:100vh;display:block");
+    w.document.body.appendChild(frame);
+  } else {
+    baixarBlob(blob, arquivo);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60_000);
+}
+
+function baixarBlob(blob: Blob, arquivo: string) {
   const url = URL.createObjectURL(blob);
-  window.open(url, "_blank", "noopener");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = arquivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export async function shareDanfse(id: string, numero?: string | null, base?: string, quem: Quem = "client"): Promise<"shared" | "downloaded"> {
+/** Baixa o PDF com o nome legível da nota. */
+export async function baixarDanfse(id: string, nome?: string | null, base?: string, quem: Quem = "client"): Promise<void> {
   const blob = await fetchDanfseBlob(id, base, quem);
-  const filename = `NFSe-${numero || id}.pdf`;
+  const arquivo = arquivoPdf(nome);
+  const { isNativeApp, shareNativeBlob } = await import("./native");
+  if (isNativeApp() && (await shareNativeBlob(blob, arquivo))) return;
+  baixarBlob(blob, arquivo);
+}
+
+export async function shareDanfse(id: string, nome?: string | null, base?: string, quem: Quem = "client"): Promise<"shared" | "downloaded"> {
+  const blob = await fetchDanfseBlob(id, base, quem);
+  const filename = arquivoPdf(nome);
   const file = new File([blob], filename, { type: "application/pdf" });
   const nav = navigator as Navigator & { canShare?: (d: any) => boolean };
   if (nav.canShare && nav.canShare({ files: [file] }) && navigator.share) {
@@ -411,14 +449,7 @@ export async function shareDanfse(id: string, numero?: string | null, base?: str
       // fall through to download
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  baixarBlob(blob, filename);
   return "downloaded";
 }
 
@@ -431,8 +462,10 @@ export interface NfseEmitApi {
   lookupCep: (cep: string) => Promise<CepEndereco>;
   emitir: (input: EmitirNfseInput) => Promise<EmitirNfseResult>;
   sincronizar: (id: string) => Promise<SincronizarResult>;
-  verDanfse: (id: string, numero?: string | null) => Promise<void>;
-  compartilharDanfse: (id: string, numero?: string | null) => Promise<"shared" | "downloaded">;
+  // `nome`: nome legível do PDF (nomeArquivoNfse), sem ".pdf".
+  verDanfse: (id: string, nome?: string | null) => Promise<void>;
+  baixarDanfse: (id: string, nome?: string | null) => Promise<void>;
+  compartilharDanfse: (id: string, nome?: string | null) => Promise<"shared" | "downloaded">;
 }
 
 export const nfseApiCliente: NfseEmitApi = {
@@ -440,8 +473,9 @@ export const nfseApiCliente: NfseEmitApi = {
   lookupCep: (cep) => lookupCepTomador(cep),
   emitir: (input) => emitirNfse(input),
   sincronizar: (id) => sincronizarEmissao(id),
-  verDanfse: (id, numero) => viewDanfse(id, numero),
-  compartilharDanfse: (id, numero) => shareDanfse(id, numero),
+  verDanfse: (id, nome) => viewDanfse(id, nome),
+  baixarDanfse: (id, nome) => baixarDanfse(id, nome),
+  compartilharDanfse: (id, nome) => shareDanfse(id, nome),
 };
 
 /** O contador emite em nome do cliente (registrado na auditoria como dele). */
@@ -452,8 +486,9 @@ export function nfseApiContador(clientId: string): NfseEmitApi {
     lookupCep: (cep) => lookupCepTomador(cep, "/api/nfse/admin/lookup-cep", "accountant"),
     emitir: (input) => emitirNfse(input, `/api/nfse/admin/clients/${clientId}/emissoes`, "accountant"),
     sincronizar: (id) => sincronizarEmissao(id, base, "accountant"),
-    verDanfse: (id, numero) => viewDanfse(id, numero, base, "accountant"),
-    compartilharDanfse: (id, numero) => shareDanfse(id, numero, base, "accountant"),
+    verDanfse: (id, nome) => viewDanfse(id, nome, base, "accountant"),
+    baixarDanfse: (id, nome) => baixarDanfse(id, nome, base, "accountant"),
+    compartilharDanfse: (id, nome) => shareDanfse(id, nome, base, "accountant"),
   };
 }
 
@@ -468,6 +503,38 @@ export interface AdminNotasCliente {
   atividades: NfseAtividadeCliente[];
   emitidas: NfseEmissao[];
   tomadas: NfseEmissao[];
+}
+
+// Lote "configurar por procuração e buscar notas de todos" (services/nfse/lote.ts).
+export interface LoteResultadoCliente {
+  clientId: string;
+  nome: string;
+  acao: "configurado" | "procuracao_ligada" | "mantido" | null;
+  municipio: string | null;
+  notasNovas: number;
+  tomadasNovas: number;
+  mesesFaturamento: number;
+  divergentes: number;
+  erro: string | null;
+}
+export interface LoteEstado {
+  emAndamento: boolean;
+  inicio: string;
+  fim: string | null;
+  total: number;
+  feitos: number;
+  resultados: LoteResultadoCliente[];
+}
+export async function adminIniciarLoteProcuracao(): Promise<LoteEstado> {
+  const res = await apiFetch("/api/nfse/admin/lote/procuracao", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, "accountant");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 409) throw new Error(data.error || "Falha ao iniciar.");
+  return data.estado;
+}
+export async function adminEstadoLoteProcuracao(): Promise<LoteEstado | null> {
+  const res = await apiFetch("/api/nfse/admin/lote/procuracao", {}, "accountant");
+  const data = await res.json().catch(() => ({}));
+  return data.estado ?? null;
 }
 
 export async function adminGetNotasCliente(clientId: string): Promise<AdminNotasCliente> {

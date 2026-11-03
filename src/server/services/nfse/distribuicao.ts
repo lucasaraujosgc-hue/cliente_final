@@ -7,6 +7,7 @@ import { contribuintesBase, distribuirDFe, type Ambiente, type DistribuicaoDoc }
 import { parseNfseXml } from "./nfseXml";
 import { nfseLog } from "./log";
 import { NfseError } from "./errors";
+import { aplicarFaturamentoNfse, type FaturamentoNfseResultado } from "../billing";
 
 // Distribuição de DF-e (ADN Contribuinte, GET /DFe/{NSU}).
 //
@@ -33,6 +34,7 @@ export interface SincronizacaoResultado {
   eventos: number;
   ultimoNsu: number;
   lotes: number;
+  faturamento?: FaturamentoNfseResultado | null; // meses do faturamento atualizados pelas notas
 }
 
 // De qual lado o CNPJ do cliente está nesta NFS-e. A distribuição do ADN entrega
@@ -219,6 +221,11 @@ export async function sincronizarDistribuicao(
     clientId,
     ambiente,
     ...res,
+  });
+  // Faturamento do cliente (serviços prestados/tomados) a partir das notas.
+  res.faturamento = await aplicarFaturamentoNfse(clientId).catch((e) => {
+    nfseLog("warn", "faturamento.falhou", { clientId, msg: e instanceof Error ? e.message : String(e) });
+    return null;
   });
   return res;
 }

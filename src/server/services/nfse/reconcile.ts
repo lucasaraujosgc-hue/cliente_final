@@ -3,6 +3,7 @@ import { db } from "../../db";
 import { nfseEmissoes } from "../../schema";
 import type { NfseEmissaoRow } from "../../types";
 import { loadClientCertContext } from "./cert";
+import { atualizarFaturamentoNfse } from "../billing";
 import { consultarNfse, consultarDps, headDps, type Ambiente } from "./client";
 import { parseNfseXml } from "./nfseXml";
 import { isChaveAcesso } from "./inscricao";
@@ -70,6 +71,7 @@ export async function reconcileEmissao(
           .where(eq(nfseEmissoes.id, row.id))
           .returning();
         nfseLog("info", "reconcile.emitida", { emissaoId: row.id, ambiente, chave });
+        atualizarFaturamentoNfse(row.clientId);
         return updated;
       }
     }

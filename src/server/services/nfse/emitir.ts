@@ -14,6 +14,7 @@ import { reconcileEmissao, pendingEmissoes } from "./reconcile";
 import { nfseLog } from "./log";
 import { NfseError, notConfigured } from "./errors";
 import { resolverTomador, type TomadorInformado } from "./tomador";
+import { atualizarFaturamentoNfse } from "../billing";
 
 // Orquestra a emissão: carrega certificado + config + atividade, monta, valida e
 // assina a DPS, envia à Sefin Nacional (POST /nfse — síncrono, sucesso = 201) e
@@ -330,6 +331,7 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
         alertas: result.alertas.length,
         ms: Date.now() - started,
       });
+      atualizarFaturamentoNfse(clientId);
       return row;
     }
 

@@ -20,6 +20,7 @@ import {
   type NfseAtividadeCliente,
 } from "../../../lib/nfse";
 import { cnpjValido, cpfValido, formatarInscricao, limparInscricao } from "../../../lib/inscricao";
+import { nomeArquivoNfse } from "../../../lib/filtroNotas";
 
 const FIELD =
   "w-full rounded-lg border border-line bg-sunken px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint focus:border-brand focus:bg-surface focus:outline-none";
@@ -173,6 +174,15 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
     setResult(null);
   };
 
+  // Nome legível do PDF: "NFS-e 43 - TOMADOR - 02-11-2026".
+  const nomeDoPdf = () =>
+    nomeArquivoNfse({
+      numeroNota: result?.numeroNota ?? null,
+      tomadorNome: tipo === "nenhum" ? null : nome.trim(),
+      tomadorDoc: tipo === "nenhum" ? null : docLimpo,
+      dataEmissao: new Date().toISOString(),
+    });
+
   // ---- shells --------------------------------------------------------------
 
   const Header = ({ title, onBack }: { title: string; onBack?: () => void }) => (
@@ -222,7 +232,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
         {shareMsg && <p className="text-xs text-muted">{shareMsg}</p>}
         <div className="mx-auto flex max-w-sm flex-col gap-2">
           <button
-            onClick={() => result?.id && api.verDanfse(result.id, result.numeroNota)}
+            onClick={() => result?.id && api.verDanfse(result.id, nomeDoPdf())}
             className="flex items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong"
           >
             <FileText className="size-4" /> Visualizar a nota
@@ -230,7 +240,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
           <button
             onClick={async () => {
               if (!result?.id) return;
-              const r = await api.compartilharDanfse(result.id, result.numeroNota).catch(() => null);
+              const r = await api.compartilharDanfse(result.id, nomeDoPdf()).catch(() => null);
               setShareMsg(r === "downloaded" ? "PDF baixado." : r === "shared" ? "" : "Falha ao compartilhar.");
             }}
             className="flex items-center justify-center gap-2 rounded-lg border border-line bg-surface py-3 text-sm font-semibold text-ink hover:bg-sunken"
@@ -434,7 +444,8 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
                   disabled={bloqueada}
                   onClick={() => {
                     setAtividadeId(a.id);
-                    if (!descricao) setDescricao(a.descricaoPadrao);
+                    // Troca a descrição junto com a atividade, a menos que já tenha sido escrita à mão.
+                    if (!descricao.trim() || descricao === atividade?.descricaoPadrao) setDescricao(a.descricaoPadrao || "");
                   }}
                   className={
                     "w-full rounded-xl border p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
@@ -457,13 +468,19 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
           </div>
 
           <div>
-            <label className={LABEL}>Descrição da nota</label>
+            <label className={LABEL}>Descrição da nota (obrigatória)</label>
             <textarea
-              className={FIELD + " min-h-[90px]"}
+              className={FIELD + " min-h-[90px]" + (atividade && !descricao.trim() ? " border-danger" : "")}
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
-              placeholder="O que foi prestado ao tomador"
+              placeholder="Descreva o serviço prestado"
             />
+            {atividade && !atividade.descricaoPadrao?.trim() && (
+              <p className="mt-1 text-xs text-muted">
+                Esta atividade não tem descrição padrão — escreva o que foi prestado ao tomador.
+              </p>
+            )}
+            {atividade && !descricao.trim() && <p className="mt-1 text-xs text-danger">Preencha a descrição para continuar.</p>}
           </div>
 
           <button

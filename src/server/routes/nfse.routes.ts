@@ -12,6 +12,8 @@ import { uploadNfseCert } from "../services/upload";
 import { logAudit } from "../services/audit";
 import { sendDiskFile } from "../services/files";
 import { formatCnpj } from "../../lib/cnpj";
+import { estadoLote, rodarLoteProcuracao } from "../services/nfse/lote";
+import { nomeArquivoNfse } from "../../lib/filtroNotas";
 import { LISTA_SERVICOS_LC116 } from "../../lib/listaServicosLC116";
 import {
   nfseConfigSchema,
@@ -20,6 +22,7 @@ import {
   nfseCepLookupSchema,
   nfseEmitSchema,
   nfseCancelSchema,
+  nfseLoteSchema,
 } from "../schemas/validation";
 import {
   nfseStatusForClient,
@@ -130,6 +133,12 @@ async function emitirPeloCorpo(req: any, clientId: string, b: any, porContador: 
     chaveAcesso: emissao.chaveAcesso,
     numeroNota: emissao.numeroNota,
   };
+}
+
+// "NFS-e 43 - TOMADOR - 02-11-2026.pdf" — o mesmo nome que o app usa.
+function nomePdf(e: { numeroNota?: string | null; papel?: string | null; tomadorNome?: string | null; tomadorDoc?: string | null; prestadorNome?: string | null; dataEmissao?: Date | string | null; createdAt?: Date | string | null }) {
+  const iso = (v: Date | string | null | undefined) => (v instanceof Date ? v.toISOString() : v ?? null);
+  return nomeArquivoNfse({ ...e, dataEmissao: iso(e.dataEmissao), createdAt: iso(e.createdAt) });
 }
 
 function blank(v: unknown): string | undefined {
@@ -334,7 +343,7 @@ export function registerNfseRoutes(app: Express) {
       const download = req.query.download === "1";
       await sendDiskFile(res, pdfPath, {
         disposition: download ? "attachment" : "inline",
-        downloadName: `NFSe-${emissao.numeroNota || emissao.id}.pdf`,
+        downloadName: `${nomePdf(emissao)}.pdf`,
       });
     } catch (e) {
       if (sendNfseError(res, e)) return;
@@ -452,12 +461,25 @@ export function registerNfseRoutes(app: Express) {
       const pdfPath = await getDanfsePdfPath(emissao);
       await sendDiskFile(res, pdfPath, {
         disposition: req.query.download === "1" ? "attachment" : "inline",
-        downloadName: `NFSe-${emissao.numeroNota || emissao.id}.pdf`,
+        downloadName: `${nomePdf(emissao)}.pdf`,
       });
     } catch (e) {
       if (sendNfseError(res, e)) return;
       throw e;
     }
+  });
+
+  // Contador: liga a NFS-e por procuração (sem ligar a emissão) e busca as notas
+  // de todos os clientes no portal nacional — o faturamento sai das notas. Em
+  // segundo plano; o andamento é lido no GET.
+  app.post("/api/nfse/admin/lote/procuracao", verifyAccountantAuth, validateBody(nfseLoteSchema), async (req, res) => {
+    if (estadoLote()?.emAndamento) return res.status(409).json({ error: "Já está em andamento.", estado: estadoLote() });
+    await logAudit(req, "nfse.lote_procuracao", { summary: "Configurar por procuração e buscar as notas de todos os clientes" });
+    res.status(202).json({ estado: await rodarLoteProcuracao() });
+  });
+
+  app.get("/api/nfse/admin/lote/procuracao", verifyAccountantAuth, (_req, res) => {
+    res.json({ estado: estadoLote() });
   });
 
   // Contador: apaga uma tentativa rejeitada de qualquer cliente.

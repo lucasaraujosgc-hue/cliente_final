@@ -1,5 +1,30 @@
 # CHANGELOG.md
 
+## NFS-e: buscar notas de todos, faturamento pelas notas, filtros e PDF com nome (nov/2026)
+
+- **Procuração validada em produção** (busca no portal e emissão, 02/11/2026).
+- **"Configurar e buscar" (NFS-e do contador):** para cada cliente sem A1,
+  liga a NFS-e por procuração em produção (município pela consulta do CNPJ,
+  regime pelo perfil fiscal) **sem ligar a emissão**, e busca as notas no
+  portal nacional; resultado por cliente na tela (`services/nfse/lote.ts`,
+  `POST/GET /api/nfse/admin/lote/procuracao`).
+- **Faturamento pelas notas** (`billing.ts → aplicarFaturamentoNfse`), por
+  competência, só produção e não canceladas: emitidas → "Serviços" do
+  faturamento declarado; recebidas → "Serviços tomados". Reais inteiros, como
+  o resto do faturamento. Roda após cada busca, emissão, cancelamento e
+  reconciliação. Edição à mão vira `origem = manual` (migração
+  `0017_billing_origem`) e não é mais sobrescrita; valor informado antes e
+  diferente das notas fica e aparece como divergente no resultado do lote.
+- **Filtro + paginação** (5 por página) nas notas do cliente (emitidas e
+  tomadas), na tela do cliente no painel do contador e na aba geral: nome ou
+  CPF/CNPJ, data de emissão (de/até) e valor (mín/máx) — `lib/filtroNotas.ts`,
+  `components/FiltroNotas.tsx`.
+- **PDF com nome legível:** "NFS-e 43 - TOMADOR - 02-11-2026.pdf" ao baixar e
+  compartilhar (antes número ou id); botão "Baixar" nas listas; a aba que abre
+  a nota mostra esse nome.
+- **Descrição da nota obrigatória** quando a atividade não tem descrição
+  padrão: o campo esvazia ao trocar para ela e o "Avançar" trava até preencher.
+
 ## NFS-e por procuração com o certificado do escritório (nov/2026)
 
 Desde 01/11/2026 as APIs de emissão e distribuição da NFS-e Nacional aceitam

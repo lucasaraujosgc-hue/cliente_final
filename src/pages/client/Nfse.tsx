@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FileText,
   CalendarClock,
@@ -10,6 +10,7 @@ import {
   Ban,
   RefreshCw,
   Trash2,
+  Download,
 } from "lucide-react";
 import {
   getNfseStatus,
@@ -19,6 +20,7 @@ import {
   getEmissao,
   viewDanfse,
   shareDanfse,
+  baixarDanfse,
   cancelarNfse,
   excluirEmissao,
   sincronizarDistribuicao,
@@ -30,12 +32,17 @@ import {
 } from "../../lib/nfse";
 import { formatCnpj } from "../../lib/cnpj";
 import { EmitWizard, type WizardPrefill } from "./nfse/EmitWizard";
+import { FiltroNotasBar, Paginacao } from "../../components/FiltroNotas";
+import { FILTRO_VAZIO, filtrarNotas, nomeArquivoNfse, paginar, type FiltroNotas } from "../../lib/filtroNotas";
 
 export function ClientNfse() {
   const [status, setStatus] = useState<NfseStatus | null>(null);
   const [emissoes, setEmissoes] = useState<NfseEmissao[]>([]);
   const [tomados, setTomados] = useState<NfseEmissao[]>([]);
   const [tab, setTab] = useState<"emitidas" | "tomados">("emitidas");
+  // Filtro + 5 notas por página (cada aba com o seu).
+  const [filtro, setFiltro] = useState<Record<"emitidas" | "tomados", FiltroNotas>>({ emitidas: FILTRO_VAZIO, tomados: FILTRO_VAZIO });
+  const [pagina, setPagina] = useState<Record<"emitidas" | "tomados", number>>({ emitidas: 1, tomados: 1 });
   const [atividades, setAtividades] = useState<NfseAtividadeCliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState<{ open: boolean; prefill: WizardPrefill | null }>({
@@ -113,7 +120,7 @@ export function ClientNfse() {
   const doShare = async (e: NfseEmissao) => {
     setBusyId(e.id);
     try {
-      const r = await shareDanfse(e.id, e.numeroNota);
+      const r = await shareDanfse(e.id, nomeArquivoNfse(e));
       setFlash(r === "downloaded" ? "PDF baixado." : "");
     } catch {
       setFlash("Não foi possível gerar o PDF.");
@@ -126,9 +133,21 @@ export function ClientNfse() {
   const doView = async (e: NfseEmissao) => {
     setBusyId(e.id);
     try {
-      await viewDanfse(e.id, e.numeroNota);
+      await viewDanfse(e.id, nomeArquivoNfse(e));
     } catch {
       setFlash("Não foi possível abrir o PDF.");
+      setTimeout(() => setFlash(""), 3000);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const doBaixar = async (e: NfseEmissao) => {
+    setBusyId(e.id);
+    try {
+      await baixarDanfse(e.id, nomeArquivoNfse(e));
+    } catch {
+      setFlash("Não foi possível baixar o PDF.");
       setTimeout(() => setFlash(""), 3000);
     } finally {
       setBusyId(null);
@@ -214,6 +233,15 @@ export function ClientNfse() {
     );
   }
 
+  const mudarFiltro = (aba: "emitidas" | "tomados", f: FiltroNotas) => {
+    setFiltro((x) => ({ ...x, [aba]: f }));
+    setPagina((x) => ({ ...x, [aba]: 1 }));
+  };
+  const emitidasFiltradas = filtrarNotas<NfseEmissao>(emissoes, filtro.emitidas, "tomador");
+  const tomadosFiltrados = filtrarNotas<NfseEmissao>(tomados, filtro.tomados, "prestador");
+  const pagEmitidas = paginar(emitidasFiltradas, pagina.emitidas);
+  const pagTomados = paginar(tomadosFiltrados, pagina.tomados);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -282,8 +310,14 @@ export function ClientNfse() {
               </p>
             </div>
           ) : (
+            <>
+            <div className="space-y-3 border-b border-line px-5 py-3">
+              <FiltroNotasBar filtro={filtro.tomados} onChange={(f) => mudarFiltro("tomados", f)} placeholder="Nome ou CNPJ do prestador" />
+              <Paginacao pagina={pagTomados.pagina} totalPaginas={pagTomados.totalPaginas} total={tomadosFiltrados.length} onChange={(p) => setPagina((x) => ({ ...x, tomados: p }))} />
+            </div>
+            {tomadosFiltrados.length === 0 && <p className="px-5 py-8 text-center text-sm text-muted">Nenhuma nota com esse filtro.</p>}
             <ul className="divide-y divide-line">
-              {tomados.map((e) => {
+              {pagTomados.itens.map((e) => {
                 const s = nfseStatusLabel(e.status);
                 return (
                   <li key={e.id} className="px-5 py-4">
@@ -328,6 +362,7 @@ export function ClientNfse() {
                 );
               })}
             </ul>
+            </>
           )}
         </section>
       )}
@@ -346,8 +381,14 @@ export function ClientNfse() {
             </p>
           </div>
         ) : (
+          <>
+          <div className="space-y-3 border-b border-line px-5 py-3">
+            <FiltroNotasBar filtro={filtro.emitidas} onChange={(f) => mudarFiltro("emitidas", f)} />
+            <Paginacao pagina={pagEmitidas.pagina} totalPaginas={pagEmitidas.totalPaginas} total={emitidasFiltradas.length} onChange={(p) => setPagina((x) => ({ ...x, emitidas: p }))} />
+          </div>
+          {emitidasFiltradas.length === 0 && <p className="px-5 py-8 text-center text-sm text-muted">Nenhuma nota com esse filtro.</p>}
           <ul className="divide-y divide-line">
-            {emissoes.map((e) => {
+            {pagEmitidas.itens.map((e) => {
               const s = nfseStatusLabel(e.status);
               const canPdf = e.status === "emitida" || e.status === "cancelada";
               return (
@@ -406,6 +447,13 @@ export function ClientNfse() {
                         </button>
                         <button
                           disabled={busyId === e.id}
+                          onClick={() => doBaixar(e)}
+                          className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-sunken disabled:opacity-50"
+                        >
+                          <Download className="size-3.5" /> Baixar
+                        </button>
+                        <button
+                          disabled={busyId === e.id}
                           onClick={() => doShare(e)}
                           className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-sunken disabled:opacity-50"
                         >
@@ -443,6 +491,7 @@ export function ClientNfse() {
               );
             })}
           </ul>
+          </>
         )}
       </section>
       )}

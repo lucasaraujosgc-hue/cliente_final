@@ -195,6 +195,9 @@ const optBoolStr = z
   });
 
 // Accountant: per-client certificate + fiscal data (multipart, cert file apart).
+// Contador: configurar por procuração e buscar as notas de todos os clientes.
+export const nfseLoteSchema = z.object({}).strict();
+
 export const nfseConfigSchema = z.object({
   codigoMunicipio: optStr(10),
   regimeTributario: z.enum(["simples_nacional", "mei", "normal"]).optional().or(z.literal("")),

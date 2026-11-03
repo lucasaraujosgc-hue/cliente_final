@@ -58,6 +58,11 @@ export const billingData = pgTable('billing_data', {
   salesRevenue: integer('sales_revenue').default(0).notNull(),
   totalIncomes: integer('total_incomes').default(0).notNull(),
   servicesTaken: integer('services_taken').default(0).notNull(),
+  // De onde veio o valor: 'nfse' = soma das NFS-e da competência (atualiza
+  // sozinho); 'manual' = alguém editou (as notas não sobrescrevem); null =
+  // anterior a isso. Ver services/billing.ts (aplicarFaturamentoNfse).
+  servicesRevenueOrigem: text('services_revenue_origem'),
+  servicesTakenOrigem: text('services_taken_origem'),
   // Keeping old fields just in case or we can just replace them entirely.
   // Actually replacing them entirely is better but we might have seed data.
   revenue: integer('revenue').default(0).notNull(),

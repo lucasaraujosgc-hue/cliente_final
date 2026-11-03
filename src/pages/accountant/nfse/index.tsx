@@ -23,12 +23,16 @@ import {
   type NfseEmissaoDetail,
 } from "../../../lib/nfse";
 import { ClientNfsePanel } from "./ClientNfsePanel";
+import { LoteProcuracao } from "./LoteProcuracao";
+import { FiltroNotasBar, Paginacao } from "../../../components/FiltroNotas";
+import { FILTRO_VAZIO, filtrarNotas, nomeArquivoNfse, paginar, type FiltroNotas } from "../../../lib/filtroNotas";
 
 type Tab = "clients" | "emissoes";
 
 export function AccountantNfse() {
   const [tab, setTab] = useState<Tab>("clients");
   const [selected, setSelected] = useState<string | null>(null);
+  const [versaoLista, setVersaoLista] = useState(0); // recarrega a lista quando o lote termina
 
   return (
     <div className="space-y-6">
@@ -65,7 +69,12 @@ export function AccountantNfse() {
       {selected ? (
         <ClientNfsePanel clientId={selected} onBack={() => setSelected(null)} />
       ) : tab === "clients" ? (
-        <ClientsTab onSelect={setSelected} />
+        <div className="space-y-4">
+          <LoteProcuracao onFim={() => setVersaoLista((v) => v + 1)} />
+          <div key={versaoLista}>
+            <ClientsTab onSelect={setSelected} />
+          </div>
+        </div>
       ) : (
         <EmissoesTab />
       )}
@@ -154,6 +163,8 @@ function EmissoesTab() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [xmlErr, setXmlErr] = useState("");
+  const [filtro, setFiltro] = useState<FiltroNotas>(FILTRO_VAZIO);
+  const [pagina, setPagina] = useState(1);
 
   useEffect(() => {
     adminListNfseEmissoes()
@@ -181,11 +192,19 @@ function EmissoesTab() {
   if (loading) return <p className="p-8 text-center text-sm text-slate-400">Carregando…</p>;
   if (rows.length === 0) return <p className="p-8 text-center text-sm text-slate-400">Nenhuma nota emitida ainda.</p>;
 
+  // Nas recebidas (serviço tomado) a outra parte é o prestador.
+  const filtradas = rows.filter((r) => filtrarNotas<(typeof rows)[number]>([r], filtro, r.papel === "tomador" ? "prestador" : "tomador").length > 0);
+  const pag = paginar<(typeof rows)[number]>(filtradas, pagina);
+
   return (
+    <div className="space-y-3">
+    <FiltroNotasBar filtro={filtro} onChange={(f) => { setFiltro(f); setPagina(1); }} placeholder="Nome ou CPF/CNPJ do tomador (ou do prestador, nas recebidas)" />
+    <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} total={filtradas.length} onChange={setPagina} />
+    {filtradas.length === 0 && <p className="p-6 text-center text-sm text-slate-400">Nenhuma nota com esse filtro.</p>}
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       {xmlErr && <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">{xmlErr}</p>}
       <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-        {rows.map((e) => {
+        {pag.itens.map((e) => {
           const s = nfseStatusLabel(e.status);
           const isOpen = open === e.id;
           return (
@@ -274,7 +293,7 @@ function EmissoesTab() {
                   <div className="flex flex-wrap gap-2 pt-1">
                     {e.chaveAcesso && (e.status === "emitida" || e.status === "cancelada") && (
                       <button
-                        onClick={() => viewDanfse(e.id, e.numeroNota, "/api/nfse/admin/emissoes", "accountant").catch((err) => setXmlErr(err.message || "Falha ao abrir a nota."))}
+                        onClick={() => viewDanfse(e.id, nomeArquivoNfse(e), "/api/nfse/admin/emissoes", "accountant").catch((err) => setXmlErr(err.message || "Falha ao abrir a nota."))}
                         className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         <FileText className="h-3.5 w-3.5" /> Ver nota (PDF)
@@ -302,6 +321,7 @@ function EmissoesTab() {
           );
         })}
       </ul>
+    </div>
     </div>
   );
 }
