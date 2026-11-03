@@ -1,5 +1,35 @@
 # CHANGELOG.md
 
+## NFS-e: obra, evento e local da prestação; cancelar/excluir pelo contador (nov/2026)
+
+Motivo: rejeição **E0390** em produção (Execução de música, 12.12.01) — o
+sistema não mandava os grupos que a Receita exige por código.
+
+- **Evento (item 12, E0390):** na emissão o assistente pede nome do evento,
+  datas de início/fim e o endereço do local (CEP → cidade, rua, número,
+  bairro); a DPS leva `serv/atvEvento`.
+- **Obra (construção civil, E0370 — 07.02.01, 07.02.02, 07.04.01, 07.05.01/02,
+  07.06.01/02, 07.07.01, 07.08.01, 07.17.01, 07.19.01, 14.14.03/04):** CNO da
+  obra ou o endereço; `serv/obra` com `cObra` ou `end`.
+- **ISS no local da prestação (E1317 — 52 códigos, ex. 3.05, 7.02, 7.09–7.12,
+  11.xx, 12.xx, 16.01/16.02, 17.10, 22.01):** o CEP da obra/evento (ou, nos
+  demais, "o serviço foi prestado em outra cidade" + CEP) define
+  `cLocPrestacao` — e para onde vai o ISS. Os CEPs de obra e evento precisam ser
+  do município da prestação (E0380/E0398). Quando o ISS é de outra cidade, a nota
+  vai sem o código municipal da atividade, que é da cidade do prestador (E0314).
+- Os grupos só vão quando o código pede (E0372/E0392 proíbem nos demais).
+  Listas em `src/lib/nfseGrupos.ts` (compartilhado: servidor e tela); a
+  atividade avisa no cadastro o que a emissão vai pedir.
+- Validação local da ordem de `serv` (locPrest, cServ, comExt, obra,
+  atvEvento, infoCompl).
+- **Contador:** botões **Cancelar nota** (evento de cancelamento na Receita,
+  com motivo; `POST /api/nfse/admin/emissoes/:id/cancelar`, auditado) e
+  **Excluir tentativa** (só rejeitadas) nas notas do cliente e na aba geral.
+
+Ainda não suportado (nenhum cliente hoje): não optante do Simples (E0713 —
+exige tributos aproximados por esfera), exportação (`comExt`) e deduções da
+base de cálculo (materiais da obra).
+
 ## NFS-e: atividades sugeridas pelas notas ou pelo CNAE + "Ver PDF" (nov/2026)
 
 - **Sugerir atividades** (por cliente, botão "Sugerir" nas atividades; ou de

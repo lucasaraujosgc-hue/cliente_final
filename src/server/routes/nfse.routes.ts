@@ -112,6 +112,9 @@ async function emitirPeloCorpo(req: any, clientId: string, b: any, porContador: 
     descricao: b.descricao,
     valor: b.valor,
     competencia: b.competencia || undefined,
+    obra: b.obra ?? null,
+    evento: b.evento ?? null,
+    localPrestacaoCep: b.localPrestacaoCep || null,
   });
   await logAudit(req, "nfse.emissao", {
     targetType: "nfse_emissao",
@@ -508,6 +511,34 @@ export function registerNfseRoutes(app: Express) {
     }
     res.json(r);
   });
+
+  // Contador: cancela uma NFS-e emitida de qualquer cliente (evento de
+  // cancelamento assinado com o certificado do cliente ou do escritório).
+  app.post(
+    "/api/nfse/admin/emissoes/:id/cancelar",
+    verifyAccountantAuth,
+    nfseEmitLimiter,
+    validateBody(nfseCancelSchema),
+    async (req, res) => {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const atual = await getEmissaoById(req.params.id);
+      if (!atual) return res.status(404).json({ error: "Nota não encontrada." });
+      if (atual.papel !== "prestador") return res.status(400).json({ error: "Só a nota emitida pelo cliente (prestador) pode ser cancelada por aqui." });
+      try {
+        const row = await cancelarNfse(atual.clientId, atual.id, req.body.motivo);
+        await logAudit(req, "nfse.cancelamento", {
+          targetType: "nfse_emissao",
+          targetId: row.id,
+          summary: `NFS-e nº ${row.numeroNota || row.id} cancelada (pelo contador)`,
+          metadata: { clientId: row.clientId, chaveAcesso: row.chaveAcesso, motivo: req.body.motivo },
+        });
+        res.json({ ok: true, status: row.status, canceladaEm: row.canceladaEm });
+      } catch (e) {
+        if (sendNfseError(res, e)) return;
+        throw e;
+      }
+    },
+  );
 
   // Contador: apaga uma tentativa rejeitada de qualquer cliente.
   app.delete("/api/nfse/admin/emissoes/:id", verifyAccountantAuth, async (req, res) => {

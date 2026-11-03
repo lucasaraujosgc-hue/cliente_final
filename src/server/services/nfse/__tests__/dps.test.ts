@@ -340,3 +340,44 @@ describe("parseChaveAcesso", () => {
     expect(info.dv).toBe("5");
   });
 });
+
+describe("buildDpsXml — obra e evento (E0370/E0390)", () => {
+  const local = { cep: "44001000", logradouro: "Praça da Matriz", numero: "S/N", bairro: "Centro" };
+  const evento = { ...local, nome: "Show de aniversário da cidade", dataInicio: "2026-11-20", dataFim: "2026-11-21" };
+
+  it("item 12: atvEvento com nome, datas e endereço, depois de cServ", async () => {
+    const { validateDps } = await import("../validate");
+    const xml = buildDpsXml({ ...base, servico: { cTribNac: "121201", descricao: "Execução de música", evento } }).xml;
+    expect(xml).toContain(
+      "<atvEvento><xNome>Show de aniversário da cidade</xNome><dtIni>2026-11-20</dtIni><dtFim>2026-11-21</dtFim>" +
+        "<end><CEP>44001000</CEP><xLgr>Praça da Matriz</xLgr><nro>S/N</nro><xBairro>Centro</xBairro></end></atvEvento>",
+    );
+    expect(xml.indexOf("</cServ>")).toBeLessThan(xml.indexOf("<atvEvento>"));
+    expect(() => validateDps(xml)).not.toThrow();
+  });
+
+  it("item 12 sem os dados do evento é barrado antes do envio", () => {
+    expect(() => buildDpsXml({ ...base, servico: { cTribNac: "121201", descricao: "x" } })).toThrow(
+      expect.objectContaining({ reason: "evento_obrigatorio" }),
+    );
+    expect(() =>
+      buildDpsXml({ ...base, servico: { cTribNac: "121201", descricao: "x", evento: { ...evento, dataFim: "2026-11-19" } } }),
+    ).toThrow(expect.objectContaining({ reason: "evento_datas" }));
+  });
+
+  it("obra: CNO quando informado, senão o endereço; sem nenhum é barrado", () => {
+    const comCno = buildDpsXml({ ...base, servico: { cTribNac: "070202", descricao: "Obra", obra: { ...local, cno: "90.008.12345/67" } } }).xml;
+    expect(comCno).toContain("<obra><cObra>900081234567</cObra></obra>");
+    const comEnd = buildDpsXml({ ...base, servico: { cTribNac: "070202", descricao: "Obra", obra: local } }).xml;
+    expect(comEnd).toContain("<obra><end><CEP>44001000</CEP><xLgr>Praça da Matriz</xLgr>");
+    expect(() => buildDpsXml({ ...base, servico: { cTribNac: "070202", descricao: "Obra", obra: { cep: "44001000" } } })).toThrow(
+      expect.objectContaining({ reason: "obra_obrigatoria" }),
+    );
+  });
+
+  it("código sem grupo não leva obra nem evento (E0372/E0392)", () => {
+    const xml = buildDpsXml({ ...base, servico: { ...base.servico, obra: local, evento } }).xml;
+    expect(xml).not.toContain("<obra>");
+    expect(xml).not.toContain("<atvEvento>");
+  });
+});

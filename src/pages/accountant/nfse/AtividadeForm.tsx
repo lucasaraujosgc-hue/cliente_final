@@ -7,6 +7,7 @@ import {
   type AtividadeInput,
 } from "../../../lib/nfse";
 import { sanitizeDecimalText, decimalTextToNumber, numberToDecimalText } from "../../../lib/decimalInput";
+import { grupoDoServico, issNoLocalDaPrestacao } from "../../../lib/nfseGrupos";
 
 const FIELD =
   "w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 dark:text-white";
@@ -247,6 +248,23 @@ export function AtividadeForm({ initial, onCancel, onSave }: Props) {
             {text("cnae", "CNAE", "7 dígitos")}
             {text("cNbs", "Código NBS", "9 dígitos", "Nomenclatura Brasileira de Serviços 2.0 — Anexo B.")}
           </div>
+
+          {(() => {
+            const cod = form.codTributacaoNac || form.itemListaServico;
+            const grupo = grupoDoServico(cod);
+            const noLocal = issNoLocalDaPrestacao(cod);
+            if (!grupo && !noLocal) return null;
+            return (
+              <p className="rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
+                {grupo === "evento"
+                  ? "Item 12 (eventos): na emissão serão pedidos o nome do evento, as datas e o endereço do local (exigência da Receita, E0390). "
+                  : grupo === "obra"
+                    ? "Construção civil: na emissão serão pedidos o CNO da obra ou o endereço dela (exigência da Receita, E0370). "
+                    : "Na emissão dá para informar outra cidade. "}
+                O ISS deste serviço é devido na cidade onde ele é prestado — o CEP informado na emissão define essa cidade.
+              </p>
+            );
+          })()}
 
           <div>
             <label className={LABEL}>Descrição padrão do serviço</label>

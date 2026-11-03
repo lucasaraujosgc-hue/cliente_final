@@ -259,6 +259,23 @@ export const nfseCepLookupSchema = z.object({
 
 // Client: emit a new NFS-e (JSON). `valor` is in centavos. O cliente só informa
 // tomador + descrição + valor — o resto vem da atividade pré-configurada.
+// Local da obra / do evento (só endereço nacional). O CEP define o município
+// da prestação; rua/número/bairro só são exigidos pelo serviço (dps.ts) quando
+// o grupo vai com endereço.
+const cepLocal = z
+  .string()
+  .transform((s) => s.replace(/\D/g, ""))
+  .pipe(z.string().length(8, "CEP do local inválido (8 dígitos)."));
+const textoEnd = (max: number) => z.string().trim().max(max).optional().nullable();
+const dataIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida (AAAA-MM-DD).");
+const enderecoLocalCampos = {
+  cep: cepLocal,
+  logradouro: textoEnd(255),
+  numero: textoEnd(60),
+  complemento: textoEnd(156),
+  bairro: textoEnd(60),
+};
+
 export const nfseEmitSchema = z.object({
   atividadeId: z.string().uuid("Selecione uma atividade."),
   // CNPJ (também alfanumérico), CPF + nome, ou ausente/null = sem tomador
@@ -286,6 +303,18 @@ export const nfseEmitSchema = z.object({
       return /^\d{2}\/\d{4}$/.test(s) ? s : undefined;
     })
     .optional(),
+  // Construção civil (E0370): CNO da obra ou endereço.
+  obra: z.object({ ...enderecoLocalCampos, cno: z.string().trim().max(30).optional().nullable() }).nullish(),
+  // Item 12 — eventos (E0390).
+  evento: z
+    .object({ ...enderecoLocalCampos, nome: z.string().trim().min(1, "Informe o nome do evento.").max(255), dataInicio: dataIso, dataFim: dataIso })
+    .nullish(),
+  // Serviço com ISS no local da prestação feito em outra cidade.
+  localPrestacaoCep: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ""))
+    .pipe(z.string().refine((s) => s === "" || s.length === 8, "CEP do local inválido (8 dígitos)."))
+    .nullish(),
 });
 
 export const nfseCancelSchema = z.object({

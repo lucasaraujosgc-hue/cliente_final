@@ -4,7 +4,9 @@ import { clients, nfseAtividades, nfseConfig, nfseEmissoes } from "../../schema"
 import { normalizeInscricao, isChaveAcesso } from "./inscricao";
 import type { NfseEmissaoRow } from "../../types";
 import { loadClientCertContext } from "./cert";
-import { buildDpsXml, type BuildDpsInput, type DpsTomador } from "./dps";
+import { buildDpsXml, type BuildDpsInput, type DpsTomador, type DpsObra, type DpsEvento } from "./dps";
+import { grupoDoServico, issNoLocalDaPrestacao } from "./regras";
+import { lookupCep } from "./cnpjLookup";
 import { signDps } from "./sign";
 import { validateDps } from "./validate";
 import { emitirNfse as postNfse, type Ambiente } from "./client";
@@ -67,9 +69,36 @@ export interface EmitirInput {
   descricao: string;
   valor: number; // centavos
   competencia?: string;
+  // Só quando o código pede (regras.ts grupoDoServico): obra ou evento, com o
+  // CEP do local — que também define o local da prestação.
+  obra?: DpsObra | null;
+  evento?: DpsEvento | null;
+  // Serviço com ISS no local da prestação (E1317) feito em outra cidade: o CEP
+  // de lá.
+  localPrestacaoCep?: string | null;
 }
 
 const REG_ESP_TRIB_DEFAULT = "0";
+
+// Município (IBGE) do local da prestação pelo CEP informado na emissão. Obra e
+// evento sempre trazem o CEP do local (E0380/E0398 exigem que ele seja do
+// município da prestação); nos demais códigos com ISS no local da prestação ele
+// é opcional (serviço feito em outra cidade).
+async function municipioDoLocal(cod: string, input: EmitirInput): Promise<string | null> {
+  const grupo = grupoDoServico(cod);
+  const cep =
+    grupo === "obra"
+      ? input.obra?.cep
+      : grupo === "evento"
+        ? input.evento?.cep
+        : issNoLocalDaPrestacao(cod)
+          ? input.localPrestacaoCep
+          : null;
+  const d = String(cep || "").replace(/\D/g, "");
+  if (d.length !== 8) return null;
+  const l = await lookupCep(d);
+  return l.codigoMunicipio;
+}
 
 function competenciaAtual(now = new Date()): string {
   return `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
@@ -182,10 +211,18 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     atividade.aliquotaIss || 0,
   );
 
+  // Local da prestação: o do CEP da obra/evento/outra cidade; senão o da
+  // atividade; senão (buildDpsXml) o município do prestador.
+  const cLocPrestacao = (await municipioDoLocal(codServico, input)) || atividade.municipioIncidencia || null;
+  const municipioPrestador = String(config.codigoMunicipio || "").replace(/\D/g, "");
+  // ISS devido em outra cidade (E1317): o código municipal da atividade é da
+  // cidade do prestador e lá seria recusado (E0314) — vai sem ele (é opcional).
+  const issEmOutraCidade = issNoLocalDaPrestacao(codServico) && !!cLocPrestacao && cLocPrestacao !== municipioPrestador;
+
   const municipioConveniado = await convenioAtivo(
     cert.agent,
     ambiente,
-    String(atividade.municipioIncidencia || config.codigoMunicipio || ""),
+    String((issEmOutraCidade ? cLocPrestacao : null) || atividade.municipioIncidencia || config.codigoMunicipio || ""),
   );
 
   const dhEmi = new Date();
@@ -195,8 +232,7 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     competencia,
     dhEmi,
     cLocEmi: String(config.codigoMunicipio || ""),
-    // ISS devido em outro município → local da prestação = município de incidência.
-    cLocPrestacao: atividade.municipioIncidencia || null,
+    cLocPrestacao,
     prestador: {
       cnpj: normalizeInscricao(client.cnpj),
       inscricaoMunicipal: null,
@@ -208,10 +244,12 @@ export async function emitirNfse(clientId: string, input: EmitirInput): Promise<
     tomador,
     servico: {
       cTribNac: atividade.codTributacaoNac,
-      cTribMun: atividade.codTributacaoMun,
+      cTribMun: issEmOutraCidade ? null : atividade.codTributacaoMun,
       cNBS: atividade.cNbs,
       itemListaServico: atividade.itemListaServico,
       descricao: input.descricao,
+      obra: input.obra ?? null,
+      evento: input.evento ?? null,
     },
     valores: {
       valorServicosCentavos: input.valor,

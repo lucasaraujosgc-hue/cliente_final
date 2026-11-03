@@ -174,6 +174,8 @@ export interface NfseAtividadeCliente {
   aliquotaIss: number;
   issRetido: boolean;
   exigeTomadorCnpj?: boolean; // ISS retido / 17.05.01 → a nota exige tomador com CNPJ
+  grupo?: "obra" | "evento" | null; // a emissão pede o local da obra / do evento
+  issNoLocal?: boolean; // ISS devido no local da prestação (pode ser outra cidade)
 }
 
 export async function getNfseAtividades(): Promise<NfseAtividadeCliente[]> {
@@ -240,6 +242,15 @@ export function enderecoCompleto(e?: NfseEndereco | null): boolean {
   return !!e && d(e.cep).length === 8 && d(e.codigoMunicipio).length === 7 && !!t(e.logradouro) && !!t(e.numero) && !!t(e.bairro);
 }
 
+// Local da obra / do evento (o CEP define a cidade da prestação).
+export interface EnderecoLocal {
+  cep: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+}
+
 export interface EmitirNfseInput {
   atividadeId: string;
   // CNPJ, CPF (+ nome) ou null = sem tomador. Sem endereço/telefone/e-mail.
@@ -247,6 +258,9 @@ export interface EmitirNfseInput {
   descricao: string;
   valor: number; // centavos
   competencia?: string;
+  obra?: (EnderecoLocal & { cno?: string }) | null; // construção civil
+  evento?: (EnderecoLocal & { nome: string; dataInicio: string; dataFim: string }) | null; // item 12
+  localPrestacaoCep?: string | null; // serviço feito em outra cidade
 }
 
 export interface EmitirNfseResult {
@@ -364,6 +378,16 @@ export async function limparRejeitadas(): Promise<{ ok: boolean; removidas?: num
   const res = await apiFetch("/api/nfse/emissoes/limpar-rejeitadas", { method: "POST" });
   const data = await res.json().catch(() => ({}));
   return res.ok ? { ok: true, removidas: data.removidas } : { ok: false, error: data.error || "Falha ao limpar." };
+}
+
+export async function adminCancelarEmissao(id: string, motivo: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await apiFetch(
+    `/api/nfse/admin/emissoes/${id}/cancelar`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo }) },
+    "accountant",
+  );
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true } : { ok: false, error: data.error || "Falha ao cancelar." };
 }
 
 export async function adminExcluirEmissao(id: string): Promise<{ ok: boolean; error?: string }> {

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, FileText, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Ban, Download, FileText, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
+  adminCancelarEmissao,
   adminDownloadEmissaoXml,
+  adminExcluirEmissao,
   adminGetNotasCliente,
   centavosToBRL,
   nfseApiContador,
@@ -19,6 +21,7 @@ import { FILTRO_VAZIO, filtrarNotas, nomeArquivoNfse, paginar, type FiltroNotas 
 
 const CARD = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const BTN = "flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800";
+const BTN_PERIGO = "flex items-center gap-1.5 rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-900/20";
 
 const MOTIVO: Record<string, string> = {
   sem_config: "configure a emissão acima",
@@ -68,6 +71,33 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
     } finally {
       setOcupado(null);
     }
+  };
+
+  // Cancelamento = evento na Receita (definitivo); a nota continua na lista
+  // como "cancelada". Excluir só existe para tentativa rejeitada (nunca virou nota).
+  const cancelar = (e: NfseEmissao) => {
+    const motivo = window.prompt(
+      `Cancelar a NFS-e ${e.numeroNota ? `nº ${e.numeroNota}` : ""} de ${centavosToBRL(e.valorServicos)}?\n\n` +
+        "O cancelamento é registrado na Receita e não pode ser desfeito.\n\nMotivo (mínimo 15 caracteres):",
+    );
+    if (motivo == null) return;
+    if (motivo.trim().length < 15) {
+      setErro("Cancelamento não enviado: o motivo precisa de pelo menos 15 caracteres.");
+      return;
+    }
+    acao(`cancelar-${e.id}`, async () => {
+      const r = await adminCancelarEmissao(e.id, motivo.trim());
+      if (!r.ok) throw new Error(r.error || "Falha ao cancelar.");
+      await load();
+    });
+  };
+  const excluir = (e: NfseEmissao) => {
+    if (!window.confirm("Excluir esta tentativa rejeitada? Ela nunca virou nota e some da lista definitivamente.")) return;
+    acao(`excluir-${e.id}`, async () => {
+      const r = await adminExcluirEmissao(e.id);
+      if (!r.ok) throw new Error(r.error || "Falha ao excluir.");
+      await load();
+    });
   };
 
   const lista: NfseEmissao[] = (aba === "emitidas" ? d?.emitidas : d?.tomadas) ?? [];
@@ -184,6 +214,16 @@ export function NotasCliente({ clientId, versao }: { clientId: string; versao?: 
                     className={BTN}
                   >
                     {ocupado === `sync-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Atualizar situação
+                  </button>
+                )}
+                {aba === "emitidas" && e.status === "emitida" && (
+                  <button onClick={() => cancelar(e)} disabled={!!ocupado} className={BTN_PERIGO}>
+                    {ocupado === `cancelar-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />} Cancelar nota
+                  </button>
+                )}
+                {aba === "emitidas" && e.status === "rejeitada" && (
+                  <button onClick={() => excluir(e)} disabled={!!ocupado} className={BTN_PERIGO}>
+                    {ocupado === `excluir-${e.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Excluir tentativa
                   </button>
                 )}
               </div>

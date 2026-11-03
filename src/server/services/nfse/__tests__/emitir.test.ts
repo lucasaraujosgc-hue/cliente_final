@@ -21,6 +21,20 @@ vi.mock("../params", () => ({
   getAliquotaParametrizada: async () => null,
 }));
 
+// CEP → município: 44001000 é de Feira de Santana (2910800); o resto, São Paulo.
+vi.mock("../cnpjLookup", async (orig) => ({
+  ...((await orig()) as object),
+  lookupCep: async (cep: string) => ({
+    cep,
+    logradouro: null,
+    bairro: null,
+    municipio: cep === "44001000" ? "Feira de Santana" : "São Paulo",
+    uf: cep === "44001000" ? "BA" : "SP",
+    codigoMunicipio: cep === "44001000" ? "2910800" : "3550308",
+    fonte: "viacep",
+  }),
+}));
+
 const cert = { config: { ambiente: "homologacao" }, agent: {}, parsed: { keyPem: "k", certPem: "c", cnpj: "12345678000199" } };
 vi.mock("../cert", () => ({ loadClientCertContext: async () => cert }));
 
@@ -179,6 +193,29 @@ describe("emitirNfse — orquestração", () => {
     await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "52998224725", nome: "" } })).rejects.toMatchObject({ reason: "tomador_nome" });
     await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "52998224700", nome: "Fulano" } })).rejects.toMatchObject({ reason: "tomador_doc" });
     await expect(emitirNfse(CLIENT_ID, { ...input, tomador: { doc: "98765432000110", nome: "X" } })).rejects.toMatchObject({ reason: "tomador_doc" });
+    expect(postNfse).not.toHaveBeenCalled();
+    const [cfg] = await testDb.select().from(nfseConfig).where(eq(nfseConfig.clientId, CLIENT_ID));
+    expect(cfg.proxNumeroDps).toBe(antes.proxNumeroDps);
+  });
+
+  it("evento (item 12) em outra cidade: local da prestação pelo CEP e sem o código municipal", async () => {
+    await testDb.update(nfseAtividades).set({ codTributacaoNac: "121201", itemListaServico: "12.12", codTributacaoMun: "408" }).where(eq(nfseAtividades.id, atividadeId));
+    postNfse.mockResolvedValueOnce(okResult());
+    const row = await emitirNfse(CLIENT_ID, {
+      ...input,
+      evento: { nome: "Show", dataInicio: "2026-08-20", dataFim: "2026-08-20", cep: "44001000", logradouro: "Praça", numero: "1", bairro: "Centro" },
+    });
+    expect(row.status).toBe("emitida");
+    const dps = String(postNfse.mock.calls[0][2]);
+    expect(dps).toContain("<cLocPrestacao>2910800</cLocPrestacao>");
+    expect(dps).toContain("<atvEvento><xNome>Show</xNome>");
+    expect(dps).not.toContain("<cTribMun>");
+  });
+
+  it("obra sem CNO nem endereço é barrada antes de gastar número", async () => {
+    await testDb.update(nfseAtividades).set({ codTributacaoNac: "070202", itemListaServico: "7.02" }).where(eq(nfseAtividades.id, atividadeId));
+    const [antes] = await testDb.select().from(nfseConfig).where(eq(nfseConfig.clientId, CLIENT_ID));
+    await expect(emitirNfse(CLIENT_ID, { ...input, obra: { cep: "44001000" } })).rejects.toMatchObject({ reason: "obra_obrigatoria" });
     expect(postNfse).not.toHaveBeenCalled();
     const [cfg] = await testDb.select().from(nfseConfig).where(eq(nfseConfig.clientId, CLIENT_ID));
     expect(cfg.proxNumeroDps).toBe(antes.proxNumeroDps);

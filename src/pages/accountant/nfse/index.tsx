@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Download,
   Trash2,
+  Ban,
 } from "lucide-react";
 import { cnpjMatches } from "../../../lib/cnpj";
 import {
@@ -16,6 +17,7 @@ import {
   adminListNfseEmissoes,
   adminDownloadEmissaoXml,
   adminExcluirEmissao,
+  adminCancelarEmissao,
   centavosToBRL,
   viewDanfse,
   nfseStatusLabel,
@@ -191,6 +193,18 @@ function EmissoesTab() {
     setRows((prev) => prev.filter((x) => x.id !== id));
   };
 
+  const cancelar = async (e: (typeof rows)[number]) => {
+    const motivo = window.prompt(
+      `Cancelar a NFS-e ${e.numeroNota ? `nº ${e.numeroNota}` : ""}?\n\nO cancelamento é registrado na Receita e não pode ser desfeito.\n\nMotivo (mínimo 15 caracteres):`,
+    );
+    if (motivo == null) return;
+    setXmlErr("");
+    if (motivo.trim().length < 15) return setXmlErr("Cancelamento não enviado: o motivo precisa de pelo menos 15 caracteres.");
+    const r = await adminCancelarEmissao(e.id, motivo.trim());
+    if (!r.ok) return setXmlErr(r.error || "Falha ao cancelar.");
+    setRows((prev) => prev.map((x) => (x.id === e.id ? { ...x, status: "cancelada" } : x)));
+  };
+
   if (loading) return <p className="p-8 text-center text-sm text-slate-400">Carregando…</p>;
   if (rows.length === 0) return <p className="p-8 text-center text-sm text-slate-400">Nenhuma nota emitida ainda.</p>;
 
@@ -309,6 +323,11 @@ function EmissoesTab() {
                     {e.hasXmlNfse && (
                       <button onClick={() => baixar(e.id, "nfse")} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
                         <Download className="h-3.5 w-3.5" /> XML da NFS-e
+                      </button>
+                    )}
+                    {e.status === "emitida" && e.papel !== "tomador" && (
+                      <button onClick={() => cancelar(e)} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-2.5 py-1.5 font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-900/20">
+                        <Ban className="h-3.5 w-3.5" /> Cancelar nota
                       </button>
                     )}
                     {e.status === "rejeitada" && (

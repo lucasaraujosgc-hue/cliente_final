@@ -12,12 +12,14 @@ import {
   User,
   UserX,
   CheckCircle2,
+  MapPin,
 } from "lucide-react";
 import {
   nfseApiCliente,
   centavosToBRL,
   type NfseEmitApi,
   type NfseAtividadeCliente,
+  type EmitirNfseInput,
 } from "../../../lib/nfse";
 import { cnpjValido, cpfValido, formatarInscricao, limparInscricao } from "../../../lib/inscricao";
 import { nomeArquivoNfse } from "../../../lib/filtroNotas";
@@ -25,6 +27,226 @@ import { nomeArquivoNfse } from "../../../lib/filtroNotas";
 const FIELD =
   "w-full rounded-lg border border-line bg-sunken px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint focus:border-brand focus:bg-surface focus:outline-none";
 const LABEL = "mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted";
+
+// ---- local da obra / do evento / outra cidade -------------------------------
+// A Receita exige o local na construção civil (E0370: CNO ou endereço) e no
+// item 12 (E0390: nome, datas e endereço do evento). Nos serviços com ISS no
+// local da prestação dá para informar outra cidade. O CEP define a cidade da
+// prestação — e para onde vai o ISS.
+
+interface LocalState {
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string; // "Feira de Santana/BA" — confirmada pelo CEP
+  cno: string;
+  nome: string;
+  dataInicio: string; // AAAA-MM-DD
+  dataFim: string;
+  outraCidade: boolean;
+}
+const LOCAL_VAZIO: LocalState = {
+  cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "",
+  cno: "", nome: "", dataInicio: "", dataFim: "", outraCidade: false,
+};
+type ModoLocal = "obra" | "evento" | "outra" | null;
+const modoDoLocal = (a: NfseAtividadeCliente | null): ModoLocal => (a?.grupo ? a.grupo : a?.issNoLocal ? "outra" : null);
+const cepDigitos = (c: string) => c.replace(/\D/g, "");
+const enderecoCompleto = (l: LocalState) => !!(l.cidade && l.logradouro.trim() && l.numero.trim() && l.bairro.trim());
+
+function localValido(modo: ModoLocal, l: LocalState): boolean {
+  if (modo === "evento")
+    return !!(l.nome.trim() && l.dataInicio && l.dataFim && l.dataFim >= l.dataInicio && enderecoCompleto(l));
+  if (modo === "obra") return !!l.cidade && (!!l.cno.trim() || enderecoCompleto(l));
+  if (modo === "outra") return !l.outraCidade || !!l.cidade;
+  return true;
+}
+
+function camposDoLocal(modo: ModoLocal, l: LocalState): Pick<EmitirNfseInput, "obra" | "evento" | "localPrestacaoCep"> {
+  const end = {
+    cep: cepDigitos(l.cep),
+    logradouro: l.logradouro.trim(),
+    numero: l.numero.trim(),
+    complemento: l.complemento.trim(),
+    bairro: l.bairro.trim(),
+  };
+  if (modo === "evento") return { evento: { ...end, nome: l.nome.trim(), dataInicio: l.dataInicio, dataFim: l.dataFim } };
+  if (modo === "obra") return { obra: { ...end, cno: l.cno.trim() } };
+  if (modo === "outra" && l.outraCidade) return { localPrestacaoCep: end.cep };
+  return {};
+}
+
+const dataBR = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
+
+function resumoDoLocal(modo: ModoLocal, l: LocalState): string | null {
+  if (modo === "evento")
+    return `Evento: ${l.nome.trim()} · ${dataBR(l.dataInicio)}${l.dataFim !== l.dataInicio ? ` a ${dataBR(l.dataFim)}` : ""} · ${l.cidade}`;
+  if (modo === "obra")
+    return `Obra: ${l.cno.trim() ? `CNO ${l.cno.trim()}` : `${l.logradouro.trim()}, ${l.numero.trim()}`} · ${l.cidade}`;
+  if (modo === "outra" && l.outraCidade) return `Prestado em ${l.cidade}`;
+  return null;
+}
+
+function LocalServico({
+  modo,
+  local,
+  onChange,
+  lookupCep,
+}: {
+  modo: Exclude<ModoLocal, null>;
+  local: LocalState;
+  onChange: (l: LocalState) => void;
+  lookupCep: NfseEmitApi["lookupCep"];
+}) {
+  const [buscando, setBuscando] = useState(false);
+  const [erroCep, setErroCep] = useState("");
+  const cep = cepDigitos(local.cep);
+  const set = (patch: Partial<LocalState>) => onChange({ ...local, ...patch });
+
+  // CEP completo → cidade (e rua/bairro, se ainda em branco).
+  useEffect(() => {
+    if (cep.length !== 8) return;
+    let vivo = true;
+    setBuscando(true);
+    setErroCep("");
+    lookupCep(cep)
+      .then((e) => {
+        if (!vivo) return;
+        if (!e.codigoMunicipio) throw new Error("O CEP não trouxe a cidade.");
+        onChange({
+          ...local,
+          cidade: `${e.municipio ?? ""}/${e.uf ?? ""}`,
+          logradouro: local.logradouro || e.logradouro || "",
+          bairro: local.bairro || e.bairro || "",
+        });
+      })
+      .catch((e: any) => {
+        if (!vivo) return;
+        setErroCep(e?.message || "Não foi possível consultar o CEP.");
+        onChange({ ...local, cidade: "" });
+      })
+      .finally(() => vivo && setBuscando(false));
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cep]);
+
+  const campoCep = (rotulo: string) => (
+    <div>
+      <label className={LABEL}>{rotulo}</label>
+      <div className="relative">
+        <input
+          className={FIELD}
+          inputMode="numeric"
+          placeholder="00000-000"
+          value={local.cep}
+          onChange={(e) => set({ cep: e.target.value, cidade: "" })}
+        />
+        {buscando && <Loader2 className="absolute right-3 top-3 size-4 animate-spin text-muted" />}
+      </div>
+      {erroCep && <p className="mt-1 text-xs text-danger">{erroCep}</p>}
+      {local.cidade && (
+        <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+          <MapPin className="size-3.5" /> {local.cidade} — o ISS desta nota é devido nesta cidade.
+        </p>
+      )}
+    </div>
+  );
+
+  const endereco = (
+    <>
+      <div>
+        <label className={LABEL}>Rua</label>
+        <input className={FIELD} value={local.logradouro} onChange={(e) => set({ logradouro: e.target.value })} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={LABEL}>Número</label>
+          <input className={FIELD} value={local.numero} onChange={(e) => set({ numero: e.target.value })} placeholder="S/N se não houver" />
+        </div>
+        <div>
+          <label className={LABEL}>Complemento</label>
+          <input className={FIELD} value={local.complemento} onChange={(e) => set({ complemento: e.target.value })} placeholder="Opcional" />
+        </div>
+      </div>
+      <div>
+        <label className={LABEL}>Bairro</label>
+        <input className={FIELD} value={local.bairro} onChange={(e) => set({ bairro: e.target.value })} />
+      </div>
+    </>
+  );
+
+  if (modo === "outra") {
+    return (
+      <div className="space-y-3 rounded-xl border border-line bg-sunken p-4">
+        <label className="flex items-start gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={local.outraCidade}
+            onChange={(e) => set({ outraCidade: e.target.checked })}
+          />
+          <span>
+            O serviço foi prestado em outra cidade
+            <span className="block text-xs text-muted">Neste serviço o ISS é devido na cidade onde ele foi feito.</span>
+          </span>
+        </label>
+        {local.outraCidade && campoCep("CEP do local onde o serviço foi prestado")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-sunken p-4">
+      <div>
+        <p className="text-sm font-semibold text-ink">{modo === "evento" ? "Dados do evento" : "Dados da obra"}</p>
+        <p className="text-xs text-muted">
+          {modo === "evento"
+            ? "A Receita exige nome, datas e local do evento nos serviços de diversão e eventos (item 12)."
+            : "A Receita exige a identificação da obra na construção civil: o CNO ou o endereço."}
+        </p>
+      </div>
+      {modo === "evento" && (
+        <>
+          <div>
+            <label className={LABEL}>Nome do evento</label>
+            <input className={FIELD} value={local.nome} onChange={(e) => set({ nome: e.target.value })} placeholder="Ex.: Show de aniversário da cidade" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={LABEL}>Início</label>
+              <input
+                type="date"
+                className={FIELD}
+                value={local.dataInicio}
+                onChange={(e) => set({ dataInicio: e.target.value, dataFim: local.dataFim || e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={LABEL}>Fim</label>
+              <input type="date" className={FIELD} value={local.dataFim} min={local.dataInicio || undefined} onChange={(e) => set({ dataFim: e.target.value })} />
+            </div>
+          </div>
+          {local.dataInicio && local.dataFim && local.dataFim < local.dataInicio && (
+            <p className="text-xs text-danger">A data de fim é anterior à de início.</p>
+          )}
+        </>
+      )}
+      {campoCep(modo === "evento" ? "CEP do local do evento" : "CEP da obra")}
+      {modo === "obra" && (
+        <div>
+          <label className={LABEL}>CNO da obra (se tiver)</label>
+          <input className={FIELD} value={local.cno} onChange={(e) => set({ cno: e.target.value })} placeholder="Cadastro Nacional de Obras" />
+          <p className="mt-1 text-xs text-muted">Com o CNO, o endereço abaixo não é necessário.</p>
+        </div>
+      )}
+      {(modo === "evento" || !local.cno.trim()) && endereco}
+    </div>
+  );
+}
 
 export interface WizardPrefill {
   // Nota duplicada: doc vazio/nulo = nota sem tomador.
@@ -121,6 +343,8 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
     () => atividades.find((a) => a.id === atividadeId) || null,
     [atividades, atividadeId],
   );
+  const [local, setLocal] = useState<LocalState>(LOCAL_VAZIO);
+  const modoLocal = modoDoLocal(atividade);
 
   const valorCentavos = useMemo(() => {
     const n = Number(valorStr.replace(/\./g, "").replace(",", "."));
@@ -136,6 +360,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
       tomador: tipo === "nenhum" ? null : { doc: docLimpo, nome: nome.trim() },
       descricao,
       valor: valorCentavos,
+      ...camposDoLocal(modoLocal, local),
     });
     if (r.ok) {
       setResult({ id: r.id, numeroNota: r.numeroNota, chaveAcesso: r.chaveAcesso });
@@ -171,6 +396,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
     setDescricao("");
     setValorStr("");
     setKeepValue(false);
+    setLocal(LOCAL_VAZIO);
     setResult(null);
   };
 
@@ -483,9 +709,16 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
             {atividade && !descricao.trim() && <p className="mt-1 text-xs text-danger">Preencha a descrição para continuar.</p>}
           </div>
 
+          {modoLocal && <LocalServico modo={modoLocal} local={local} onChange={setLocal} lookupCep={api.lookupCep} />}
+
           <button
             onClick={() => setStep(3)}
-            disabled={!atividadeId || !descricao.trim() || (!!atividade?.exigeTomadorCnpj && tipo !== "cnpj")}
+            disabled={
+              !atividadeId ||
+              !descricao.trim() ||
+              (!!atividade?.exigeTomadorCnpj && tipo !== "cnpj") ||
+              !localValido(modoLocal, local)
+            }
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-3 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-40"
           >
             Avançar <ArrowRight className="size-4" />
@@ -512,6 +745,7 @@ export function EmitWizard({ atividades, prefill, onClose, api = nfseApiCliente 
             </>
           )}
           <p className="mt-2 text-xs text-muted">{atividade?.nome} — {descricao}</p>
+          {resumoDoLocal(modoLocal, local) && <p className="mt-1 text-xs text-muted">{resumoDoLocal(modoLocal, local)}</p>}
         </div>
 
         {prefill?.valor ? (

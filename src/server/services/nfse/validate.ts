@@ -47,6 +47,9 @@ const INFDPS_SEQ = [
   "IBSCBS?",
 ];
 
+// Sequência de TCServ (tiposComplexos_v1.01.xsd).
+const SERV_SEQ = ["locPrest", "cServ", "comExt?", "obra?", "atvEvento?", "infoCompl?"];
+
 // Sequência de TCInfPedReg (tiposEventos_v1.01.xsd l.78). O grupo do autor é um
 // choice CNPJAutor|CPFAutor; o evento específico é um choice e######.
 const INFPEDREG_SEQ = ["tpAmb", "verAplic", "dhEvento", "@autor", "chNFSe", "@evento"];
@@ -215,6 +218,7 @@ export function validateDps(xml: string, opts: { requireSignature?: boolean } = 
     fail("regTrib requer opSimpNac e regEspTrib", `${path}/prest/regTrib`);
 
   const serv = childByName(inf, "serv");
+  checkSequence(elementChildren(serv), SERV_SEQ, `${path}/serv`);
   const cServ = childByName(serv, "cServ");
   if (!RE_CTRIBNAC.test(textOf(childByName(cServ, "cTribNac"))))
     fail(`cTribNac deve ter 6 dígitos ("${textOf(childByName(cServ, "cTribNac"))}")`, `${path}/serv/cServ/cTribNac`);

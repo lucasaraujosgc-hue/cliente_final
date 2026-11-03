@@ -102,3 +102,8 @@ export function tomadorExigeEndereco(cTribNac: string | null | undefined, issRet
   if (cod.length === 4) cod += "01"; // item da LC 116 ("17.05") → 1º desdobro
   return !!issRetido || cod === "170501";
 }
+
+
+// Grupos de detalhamento (obra / evento) e local de incidência: compartilhados
+// com a tela (src/lib/nfseGrupos.ts).
+export { CODIGOS_OBRA, CODIGOS_ISS_NO_LOCAL, grupoDoServico, issNoLocalDaPrestacao } from "../../../lib/nfseGrupos";

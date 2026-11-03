@@ -13,6 +13,7 @@ import {
   regraAliquota,
   resolveTotTrib,
   tomadorExigeEndereco,
+  grupoDoServico,
   ALIQUOTA_MIN_SN_RETIDO,
 } from "./regras";
 
@@ -26,7 +27,9 @@ import {
 // retenções federais, PIS/COFINS CST + alíquotas, códigos IBS/CBS); o cliente só
 // informa tomador + descrição + valor.
 //
-// Deduções/reduções, obra, comércio exterior, exigibilidade suspensa e imunidade
+// Obra (construção civil, E0370) e atividade/evento (item 12, E0390) vão quando
+// o código exige — o endereço do local vem do assistente de emissão.
+// Deduções/reduções, comércio exterior, exigibilidade suspensa e imunidade
 // detalhada ficam para depois.
 //
 // O grupo IBSCBS (reforma — NT-009, cronograma ainda não publicado) só é emitido
@@ -76,12 +79,35 @@ export interface DpsTomador {
   endereco?: DpsEndereco | null;
 }
 
+// Endereço do local da obra / do evento (TCEnderObraEvento / TCEnderecoSimples,
+// só nacional). O CEP precisa ser do município do local da prestação (E0380/E0398).
+export interface DpsEnderecoLocal {
+  cep: string;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+}
+
+// Obra: CNO/CEI da obra OU o endereço (choice do XSD).
+export interface DpsObra extends DpsEnderecoLocal {
+  cno?: string | null;
+}
+
+export interface DpsEvento extends DpsEnderecoLocal {
+  nome: string;
+  dataInicio: string; // AAAA-MM-DD
+  dataFim: string; // AAAA-MM-DD
+}
+
 export interface DpsServico {
   cTribNac?: string | null; // 6 dígitos — autoritativo
   cTribMun?: string | null; // 3 dígitos
   cNBS?: string | null; // 9 dígitos (Anexo B)
   itemListaServico?: string | null; // usado só p/ derivar cTribNac quando ausente
   descricao: string;
+  obra?: DpsObra | null; // obrigatório nos códigos de obra (regras.ts CODIGOS_OBRA)
+  evento?: DpsEvento | null; // obrigatório no item 12
 }
 
 export interface DpsValores {
@@ -156,6 +182,28 @@ export function sanitizeText(s: string | null | undefined): string {
     .replace(/[^\x20-\x7E\xA1-\xFF]/g, "") // fora do Latin-1 imprimível → remove
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+const DATA_ISO = /^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+// end do grupo obra/atvEvento: CEP, xLgr, nro, xCpl?, xBairro. Devolve null se
+// faltar algum obrigatório.
+function enderecoLocal(e: DpsEnderecoLocal | null | undefined) {
+  const cep = String(e?.cep || "").replace(/\D/g, "");
+  const xLgr = sanitizeText(e?.logradouro).slice(0, 255);
+  const nro = sanitizeText(e?.numero).slice(0, 60);
+  const xBairro = sanitizeText(e?.bairro).slice(0, 60);
+  if (cep.length !== 8 || !xLgr || !nro || !xBairro) return null;
+  return { cep, xLgr, nro, xCpl: sanitizeText(e?.complemento).slice(0, 156), xBairro };
+}
+
+function addEndereco(parent: any, end: NonNullable<ReturnType<typeof enderecoLocal>>) {
+  const el = parent.ele("end");
+  el.ele("CEP").txt(end.cep);
+  el.ele("xLgr").txt(end.xLgr);
+  el.ele("nro").txt(end.nro);
+  if (end.xCpl) el.ele("xCpl").txt(end.xCpl);
+  el.ele("xBairro").txt(end.xBairro);
 }
 
 function serie5(serie: string): string {
@@ -316,6 +364,44 @@ export function buildDpsXml(input: BuildDpsInput): BuiltDps {
   cServ.ele("xDescServ").txt(sanitizeText(input.servico.descricao).slice(0, XDESC_MAX) || "Servico prestado");
   const cNBS = String(input.servico.cNBS || "").replace(/\D/g, "");
   if (cNBS.length === 9) cServ.ele("cNBS").txt(cNBS);
+
+  // obra / atvEvento: obrigatórios conforme o código e proibidos nos demais
+  // (E0372/E0392) — então só vão quando o código pede.
+  const grupo = grupoDoServico(cTribNac);
+  if (grupo === "obra") {
+    const o = input.servico.obra;
+    const cno = String(o?.cno || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 30);
+    const end = enderecoLocal(o);
+    if (!cno && !end) {
+      throw new NfseError(
+        "Serviço de obra: informe o CNO da obra ou o endereço completo (CEP, rua, número e bairro).",
+        { status: 400, reason: "obra_obrigatoria" },
+      );
+    }
+    const obra = serv.ele("obra");
+    if (cno) obra.ele("cObra").txt(cno);
+    else addEndereco(obra, end!);
+  } else if (grupo === "evento") {
+    const ev = input.servico.evento;
+    const xNome = sanitizeText(ev?.nome).slice(0, 255);
+    const end = enderecoLocal(ev);
+    const dtIni = String(ev?.dataInicio || "");
+    const dtFim = String(ev?.dataFim || "");
+    if (!xNome || !end || !DATA_ISO.test(dtIni) || !DATA_ISO.test(dtFim)) {
+      throw new NfseError(
+        "Serviço de evento (item 12): informe o nome do evento, as datas de início e fim e o endereço do local (CEP, rua, número e bairro).",
+        { status: 400, reason: "evento_obrigatorio" },
+      );
+    }
+    if (dtFim < dtIni) {
+      throw new NfseError("A data de fim do evento é anterior à de início.", { status: 400, reason: "evento_datas" });
+    }
+    const atv = serv.ele("atvEvento");
+    atv.ele("xNome").txt(xNome);
+    atv.ele("dtIni").txt(dtIni);
+    atv.ele("dtFim").txt(dtFim);
+    addEndereco(atv, end);
+  }
 
   // valores
   const valores = inf.ele("valores");
