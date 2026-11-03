@@ -1,10 +1,9 @@
 import { Express } from "express";
-import { eq, desc, inArray, sql } from "drizzle-orm";
-import { getApps } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
+import { eq, desc, sql } from "drizzle-orm";
 import { db } from "../db";
 import { clients, subscriptions, scheduledNotifications } from "../schema";
-import { vapidKeys, webpush } from "../services/push";
+import { vapidKeys, enviarParaClientes, pushStatus, testarDispositivo } from "../services/push";
+import { logAudit } from "../services/audit";
 import { verifyClientAuth, verifyAccountantAuth } from "../middleware/auth";
 import { getClientId } from "../types";
 import { validateBody } from "../middleware/validate";
@@ -12,6 +11,7 @@ import {
   scheduledNotificationSchema,
   notificationSubscribeSchema,
   adminNotificationSendSchema,
+  pushTesteSchema,
 } from "../schemas/validation";
 
 // Web-push / FCM subscription management and scheduled-notification rules.
@@ -77,72 +77,51 @@ export function registerNotificationRoutes(app: Express) {
     async (req, res) => {
       try {
         const { userIds, title, body } = req.body;
-
-        let subs = [];
-        if (userIds && userIds.length > 0) {
-          subs = await db
-            .select()
-            .from(subscriptions)
-            .where(inArray(subscriptions.clientId, userIds));
-        } else {
-          subs = await db.select().from(subscriptions);
-        }
-
-        const payload = JSON.stringify({ title, body });
-
-        const promises = subs.map(async (sub) => {
-          const pushes = [];
-
-          // 1. Web Push (PWA/Browser)
-          if (sub.subscriptionObject) {
-            pushes.push(
-              webpush
-                .sendNotification(
-                  sub.subscriptionObject as webpush.PushSubscription,
-                  payload,
-                )
-                .catch((err) => {
-                  console.error("Error sending Web Push to sub:", sub.id, err);
-                  // Remove invalid subscriptions
-                  if (err.statusCode === 410 || err.statusCode === 404) {
-                    return db
-                      .delete(subscriptions)
-                      .where(eq(subscriptions.id, sub.id));
-                  }
-                })
-            );
-          }
-
-          // 2. Firebase Cloud Messaging (Capacitor Android/iOS app)
-          if (sub.fcmToken && getApps().length > 0) {
-            pushes.push(
-              getMessaging().send({
-                token: sub.fcmToken,
-                notification: {
-                  title,
-                  body,
-                },
-                data: {
-                  // Can add extra payload data here if needed
-                  click_action: "FLUTTER_NOTIFICATION_CLICK"
-                }
-              }).catch(err => {
-                console.error("Error sending FCM to sub:", sub.id, err);
-                // Handle invalid tokens if needed (err.code === 'messaging/invalid-registration-token')
-              })
-            );
-          }
-
-          return Promise.all(pushes);
+        // Mesmo funil dos avisos automáticos: entra no histórico do cliente
+        // (visto no portal mesmo sem aparelho cadastrado) e vai por push.
+        const r = await enviarParaClientes(userIds?.length ? userIds : null, title, body);
+        await logAudit(req, "notification.send", {
+          summary: `Aviso "${String(title).slice(0, 60)}" para ${userIds?.length ? `${userIds.length} cliente(s)` : "todos"}: ${r.entregues}/${r.resultados.length} entrega(s)`,
+          metadata: { clientes: userIds?.length ?? null, dispositivos: r.dispositivos, entregues: r.entregues, falhas: r.falhas, clientesSemAparelho: r.clientesSemAparelho },
         });
-
-        await Promise.all(promises);
-        res.status(200).json({ success: true });
+        res.status(200).json({
+          success: true,
+          dispositivos: r.dispositivos,
+          entregues: r.entregues,
+          falhas: r.falhas,
+          clientesSemAparelho: r.clientesSemAparelho,
+          erros: [...new Set(r.resultados.filter((x) => !x.ok).map((x) => x.erro))],
+        });
       } catch (e: any) {
         res.status(500).json({ error: e.message });
       }
     },
   );
+
+  // Diagnóstico do push (tela Dispositivos): Firebase configurado? chaves do
+  // navegador fixas? quantos aparelhos de cada tipo.
+  app.get("/api/admin/notifications/status", verifyAccountantAuth, async (_req, res) => {
+    const subs = await db.select({ fcm: subscriptions.fcmToken, web: subscriptions.subscriptionObject }).from(subscriptions);
+    res.json({
+      ...pushStatus(),
+      dispositivos: { app: subs.filter((x) => x.fcm).length, navegador: subs.filter((x) => x.web).length },
+    });
+  });
+
+  // Teste de um aparelho. `dryRun` = o Firebase valida credenciais e token sem
+  // entregar nada (só para o app); sem ele, a notificação de teste chega mesmo.
+  app.post("/api/accountant/subscriptions/:id/test", verifyAccountantAuth, validateBody(pushTesteSchema), async (req, res) => {
+    const resultados = await testarDispositivo(req.params.id, { dryRun: !!req.body.dryRun });
+    if (!resultados) return res.status(404).json({ error: "Aparelho não encontrado." });
+    if (!req.body.dryRun) {
+      await logAudit(req, "notification.test", {
+        targetType: "subscription",
+        targetId: req.params.id,
+        summary: `Notificação de teste: ${resultados.map((r) => `${r.canal} ${r.ok ? "ok" : r.erro}`).join(", ") || "aparelho sem canal"}`,
+      });
+    }
+    res.json({ resultados });
+  });
 
   app.get(
     "/api/admin/notifications/scheduled",

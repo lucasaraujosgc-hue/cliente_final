@@ -365,6 +365,10 @@ export const adminNotificationSendSchema = z.object({
   body: z.string().min(1).max(2000),
 });
 
+export const pushTesteSchema = z.object({
+  dryRun: z.boolean().optional(),
+});
+
 // --- Webhooks -------------------------------------------------------------
 
 export const webhookDocumentosSchema = z.object({

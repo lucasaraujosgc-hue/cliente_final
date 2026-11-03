@@ -1,5 +1,42 @@
 # CHANGELOG.md
 
+## Notificações: diagnóstico do push, envio manual no histórico, fuso do agendado (nov/2026)
+
+Revisão das rotas de notificação e do Firebase (03/11/2026). Em produção: 4
+aparelhos cadastrados (1 app, 3 navegadores; nenhum novo desde 31/08); o
+histórico de avisos funciona ("Pagamento confirmado", "Novas Guias
+Disponíveis").
+
+- **Dispositivos (contador):** quadro de status — App (Firebase) configurado e
+  com qual projeto, ou por que não; Navegador com chaves VAPID fixas ou
+  temporárias — e, por aparelho, **Verificar** (o Firebase confere credenciais e
+  token sem enviar nada, `dryRun`) e **Testar** (envia uma notificação de teste).
+  `GET /api/admin/notifications/status`, `POST /api/accountant/subscriptions/:id/test`.
+- **Envio manual** (`/api/admin/notifications/send`) agora entra no histórico
+  do cliente (antes só ia por push: quem não tinha aparelho não via nada) e
+  devolve o resultado — entregas, falhas, clientes sem aparelho; auditado.
+- Um funil só (`services/push.ts → enviarParaClientes`) para envio manual,
+  automático e agendado. Token do app não registrado
+  (`registration-token-not-registered`) é apagado como a inscrição de navegador
+  expirada (404/410).
+- **Agendados no horário de Brasília:** o servidor roda em UTC; depois das 21h o
+  "hoje" já era o dia seguinte e o lembrete do dia saía na véspera, às 21h
+  (`notificationSweeper.ts`).
+- Navegador: inscrição feita com outra chave VAPID é refeita (antes o
+  `subscribe()` falhava calado).
+- O servidor não imprime mais a chave privada VAPID no log quando gera chaves
+  temporárias.
+
+## Aviso do app Android no Google Play (nov/2026)
+
+- Quem abre o portal pelo **navegador de um celular Android** vê, no login e no
+  topo da área do cliente, o aviso "O app do portal já está disponível" com o
+  botão **Baixar no Google Play** (`components/AndroidAppBanner.tsx`). Não
+  aparece dentro do próprio app (`isNativeApp()`), nem no iPhone ou no
+  computador. Dispensado, volta depois de 30 dias (`localStorage`).
+- O aviso antigo "Instale o portal como app" (Visão Geral) não aparece mais no
+  app nativo nem no Android; para Android ele agora aponta para o Google Play.
+
 ## NFS-e: obra, evento e local da prestação; cancelar/excluir pelo contador (nov/2026)
 
 Motivo: rejeição **E0390** em produção (Execução de música, 12.12.01) — o

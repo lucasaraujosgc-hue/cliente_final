@@ -86,7 +86,17 @@ export function AccountantNotifications() {
         })
       }, "accountant");
       if (res.ok) {
-        alert("Notificação push disparada com sucesso!");
+        const r = await res.json().catch(() => ({}));
+        // O aviso sempre entra no histórico do cliente; o push depende de aparelho cadastrado.
+        alert(
+          `Aviso registrado para ${selectedClientIds.length} cliente(s) — eles veem no portal.
+` +
+            `Push: ${r.entregues ?? 0} de ${(r.entregues ?? 0) + (r.falhas ?? 0)} entrega(s) em ${r.dispositivos ?? 0} aparelho(s).` +
+            (r.clientesSemAparelho ? `
+${r.clientesSemAparelho} cliente(s) sem aparelho com notificações ativas.` : "") +
+            (r.erros?.length ? `
+Falhas: ${r.erros.join(", ")}` : ""),
+        );
         setFormImmediate({ title: "", body: "" });
         setSelectedClientIds([]);
       } else {

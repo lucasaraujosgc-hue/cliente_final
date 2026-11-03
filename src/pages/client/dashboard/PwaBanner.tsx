@@ -1,4 +1,5 @@
 import { Smartphone, X } from "lucide-react";
+import { PLAY_STORE_URL } from "../../../components/AndroidAppBanner";
 
 interface PwaBannerProps {
   onDismiss: () => void;
@@ -15,8 +16,11 @@ export function PwaBanner({ onDismiss }: PwaBannerProps) {
         <p className="mt-1 text-xs leading-relaxed text-muted">
           <span className="font-medium text-ink">iOS:</span> pelo Safari, toque em
           Compartilhar → “Adicionar à Tela de Início”.{" "}
-          <span className="font-medium text-ink">Android:</span> menu do Chrome →
-          “Instalar aplicativo”.
+          <span className="font-medium text-ink">Android:</span> baixe o app no{" "}
+          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-fg underline">
+            Google Play
+          </a>
+          .
         </p>
       </div>
       <button

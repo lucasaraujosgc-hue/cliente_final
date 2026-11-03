@@ -1,6 +1,7 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { AndroidAppBanner } from "../components/AndroidAppBanner";
 import { apiFetch, saveSession } from "../lib/apiClient";
 import { MfaCodeForm } from "../components/MfaCodeForm";
 import { RateLimitNotice, lockUntilFrom } from "../components/RateLimitNotice";
@@ -205,6 +206,8 @@ export function Login() {
           <div className="mb-9 lg:hidden">
             <Logo size="md" />
           </div>
+
+          <AndroidAppBanner className="mb-7" />
 
           <h1 className="font-serif text-2xl font-semibold text-ink">
             {mfaChallengeId ? "Verificação em duas etapas" : "Entrar no portal"}

@@ -17,6 +17,7 @@ import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PwaBanner } from "./dashboard/PwaBanner";
+import { ehAndroidNoNavegador } from "../../components/AndroidAppBanner";
 import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
 import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
@@ -194,10 +195,20 @@ export function ClientDashboard() {
         const vapidPublicKey = await response.text();
         const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-        subscriptionObject = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey
-        });
+        // Inscrição antiga feita com outra chave do servidor (VAPID trocada):
+        // o subscribe() recusaria com InvalidStateError — refaz do zero.
+        let existente = await registration.pushManager.getSubscription();
+        const chaveAtual = existente?.options?.applicationServerKey;
+        if (existente && chaveAtual && !mesmaChave(new Uint8Array(chaveAtual), convertedVapidKey)) {
+          await existente.unsubscribe().catch(() => {});
+          existente = null;
+        }
+        subscriptionObject =
+          existente ??
+          (await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: convertedVapidKey,
+          }));
       }
 
       if (fcmToken || subscriptionObject) {
@@ -247,6 +258,10 @@ export function ClientDashboard() {
     setIsCapacitorApp(native);
     refreshPushGranted();
   }, []);
+
+  function mesmaChave(a: Uint8Array, b: Uint8Array) {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
 
   function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -715,7 +730,7 @@ export function ClientDashboard() {
         <BillingHistoryCharts chartData={chartData} />
       </div>
 
-      {showPwaBanner && <PwaBanner onDismiss={dismissPwaBanner} />}
+      {showPwaBanner && !isCapacitorApp && !ehAndroidNoNavegador() && <PwaBanner onDismiss={dismissPwaBanner} />}
 
       {/* MODAL CONFIG NOTIFICAÇÕES */}
       <NotificationPreferencesModal
