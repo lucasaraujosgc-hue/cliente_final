@@ -323,7 +323,8 @@ export async function updateAtividade(
 ): Promise<NfseAtividadeRow | null> {
   const [row] = await db
     .update(nfseAtividades)
-    .set({ ...normalizeAtividade(input), updatedAt: new Date() })
+    // Salvar pelo formulário = o contador conferiu: deixa de ser "sugerida".
+    .set({ ...normalizeAtividade(input), sugestao: null, updatedAt: new Date() })
     .where(and(eq(nfseAtividades.id, id), eq(nfseAtividades.clientId, clientId)))
     .returning();
   return row ?? null;

@@ -10,6 +10,17 @@ import { baixarDanfse } from "./client";
 import { renderDanfsePdf } from "./danfseRender";
 import { nfseLog } from "./log";
 import { NfseError } from "./errors";
+import { PDFDocument } from "pdf-lib";
+import { nomeArquivoNfse } from "../../../lib/filtroNotas";
+
+// v2: o PDF leva no título o número, o tomador e a data. Os gerados antes (sem
+// título) são refeitos na próxima abertura.
+const VERSAO_PDF = "v2";
+
+function tituloDa(e: NfseEmissaoRow): string {
+  const iso = (v: Date | string | null | undefined) => (v instanceof Date ? v.toISOString() : v ?? null);
+  return nomeArquivoNfse({ ...e, dataEmissao: iso(e.dataEmissao), createdAt: iso(e.createdAt) });
+}
 
 // Caminho local do PDF do DANFSe de uma NFS-e.
 //
@@ -28,7 +39,7 @@ async function isReadable(p: string): Promise<boolean> {
 
 async function cache(chave: string, bytes: Buffer, emissaoId: string): Promise<string> {
   await fs.promises.mkdir(NFSE_PDF_DIR, { recursive: true });
-  const dest = path.join(NFSE_PDF_DIR, `danfse_${chave || emissaoId}.pdf`);
+  const dest = path.join(NFSE_PDF_DIR, `danfse_${VERSAO_PDF}_${chave || emissaoId}.pdf`);
   await fs.promises.writeFile(dest, bytes);
   await db
     .update(nfseEmissoes)
@@ -47,6 +58,7 @@ export async function getDanfsePdfPath(emissao: NfseEmissaoRow): Promise<string>
   // Regenera se o cancelamento aconteceu depois do PDF em cache (marca d'água).
   const cachedFresh =
     emissao.danfsePdfPath &&
+    path.basename(emissao.danfsePdfPath).startsWith(`danfse_${VERSAO_PDF}_`) &&
     (await isReadable(emissao.danfsePdfPath)) &&
     !(emissao.status === "cancelada" && emissao.canceladaEm &&
       new Date(emissao.canceladaEm) > (await fs.promises.stat(emissao.danfsePdfPath)).mtime);
@@ -58,6 +70,7 @@ export async function getDanfsePdfPath(emissao: NfseEmissaoRow): Promise<string>
       const bytes = await renderDanfsePdf(emissao.xmlNfse, {
         cancelada: emissao.status === "cancelada",
         substituida: !!emissao.substituiChave,
+        titulo: tituloDa(emissao),
       });
       nfseLog("info", "danfse.local", { emissaoId: emissao.id, chave });
       return cache(chave, bytes, emissao.id);
@@ -73,7 +86,14 @@ export async function getDanfsePdfPath(emissao: NfseEmissaoRow): Promise<string>
   try {
     const cert = await loadClientCertContext(emissao.clientId);
     const ambiente = cert.config.ambiente === "producao" ? "producao" : "homologacao";
-    const pdf = await baixarDanfse(cert.agent, ambiente, chave);
+    let pdf = await baixarDanfse(cert.agent, ambiente, chave);
+    try {
+      const doc = await PDFDocument.load(pdf);
+      doc.setTitle(tituloDa(emissao), { showInWindowTitleBar: true });
+      pdf = Buffer.from(await doc.save());
+    } catch {
+      /* PDF do ADN sem como editar: vai como veio */
+    }
     nfseLog("info", "danfse.adn", { emissaoId: emissao.id, chave });
     return cache(chave, pdf, emissao.id);
   } catch (e) {

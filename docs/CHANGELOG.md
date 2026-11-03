@@ -1,5 +1,35 @@
 # CHANGELOG.md
 
+## NFS-e: atividades sugeridas pelas notas ou pelo CNAE + "Ver PDF" (nov/2026)
+
+- **Sugerir atividades** (por cliente, botão "Sugerir" nas atividades; ou de
+  todos, card "Sugerir as atividades de todos os clientes" — `POST
+  /api/nfse/admin/clients/:id/atividades/sugerir`, `POST/GET
+  /api/nfse/admin/lote/atividades`, `services/nfse/sugestao.ts`):
+  1. pelas **notas já emitidas** (produção, trazidas do portal nacional): um
+     código de tributação nacional por atividade, com o código municipal, o NBS
+     e a **descrição mais usada** como descrição padrão;
+  2. sem notas, pelo **CNAE** principal + secundários (BrasilAPI) na tabela de
+     referência CNAE → cTribNac (`services/nfse/cnaeServico.ts`, 72 CNAEs com os
+     códigos e descrições da lista oficial do Anexo I v1.01). Não existe tabela
+     oficial CNAE × LC 116: correspondências menos diretas trazem o motivo
+     para conferir (ex.: instalação elétrica 7.02 × manutenção 14.01).
+     Comércio, indústria, locação de bens e transporte intermunicipal ficam de
+     fora.
+  - Valores do escritório: ISS **2,01%**, tributação normal, não retido;
+    Simples 6% de tributos aproximados. A alíquota parametrizada pela
+    prefeitura para o código (quando há) aparece junto para conferência.
+  - Tudo criado **desligado** e marcado "sugerida — conferir"
+    (`nfse_atividades.sugestao`, migração `0018_nfse_atividade_sugestao`); a
+    marca some ao salvar a atividade. Código que já existe não é tocado; MEI e
+    cliente sem configuração de NFS-e ficam de fora com o motivo.
+- **"Ver PDF" abria uma aba sem o PDF:** a aba em branco herdava a CSP do
+  portal, que bloqueava o PDF embutido. Agora abre o PDF direto; o nome legível
+  vai no título do próprio PDF (metadado exibido na aba). Cache do DANFSE
+  renomeado (`danfse_v2_*`) para regerar com o título.
+- Consulta de CNPJ (BrasilAPI) passa a enviar User-Agent (sem ele a API
+  recusa chamadas do servidor) e devolve CNAEs secundários e MEI.
+
 ## NFS-e: buscar notas de todos, faturamento pelas notas, filtros e PDF com nome (nov/2026)
 
 - **Procuração validada em produção** (busca no portal e emissão, 02/11/2026).

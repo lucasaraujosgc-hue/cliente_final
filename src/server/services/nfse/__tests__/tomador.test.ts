@@ -10,6 +10,8 @@ const cadastro = {
   email: null,
   telefone: null,
   cnaePrincipal: null,
+  cnaesSecundarios: [] as string[],
+  mei: null,
   situacao: "ATIVA",
   endereco: { logradouro: "RUA A", numero: null, complemento: null, bairro: "CENTRO", municipio: "SAO PAULO", codigoMunicipio: "3550308", uf: "SP", cep: "01001000" },
   fonte: "brasilapi" as const,

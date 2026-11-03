@@ -24,6 +24,8 @@ export interface TomadorLookup {
   email: string | null;
   telefone: string | null;
   cnaePrincipal: string | null;
+  cnaesSecundarios: string[]; // subclasses (7 dígitos)
+  mei: boolean | null; // optante pelo MEI (BrasilAPI); null = não informado
   situacao: string | null;
   endereco: TomadorEndereco;
   fonte: "brasilapi" | "receitaws";
@@ -40,7 +42,8 @@ async function getJson(url: string): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), LOOKUP_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
+    // Sem User-Agent a BrasilAPI (Cloudflare) recusa parte das chamadas.
+    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json", "User-Agent": "portal-virgula/1.0 (+https://cliente.virgulacontabil.com.br)" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -67,6 +70,10 @@ async function fromBrasilApi(cnpj: string): Promise<TomadorLookup> {
     email: clean(d.email),
     telefone: digits(d.ddd_telefone_1) || digits(d.ddd_telefone_2),
     cnaePrincipal: digits(d.cnae_fiscal),
+    cnaesSecundarios: (Array.isArray(d.cnaes_secundarios) ? d.cnaes_secundarios : [])
+      .map((x: any) => digits(x?.codigo))
+      .filter((x: string | null): x is string => !!x && x !== "0"),
+    mei: typeof d.opcao_pelo_mei === "boolean" ? d.opcao_pelo_mei : null,
     situacao: clean(d.descricao_situacao_cadastral),
     endereco: {
       logradouro: [clean(d.descricao_tipo_de_logradouro), clean(d.logradouro)].filter(Boolean).join(" ") || null,
@@ -92,6 +99,10 @@ async function fromReceitaWs(cnpj: string): Promise<TomadorLookup> {
     email: clean(d.email),
     telefone: digits(d.telefone),
     cnaePrincipal: digits(d.atividade_principal?.[0]?.code),
+    cnaesSecundarios: (Array.isArray(d.atividades_secundarias) ? d.atividades_secundarias : [])
+      .map((x: any) => digits(x?.code))
+      .filter((x: string | null): x is string => !!x && !/^0+$/.test(x)),
+    mei: null,
     situacao: clean(d.situacao),
     endereco: {
       logradouro: clean(d.logradouro),

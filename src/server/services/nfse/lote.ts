@@ -106,3 +106,51 @@ export async function rodarLoteProcuracao(): Promise<EstadoLote> {
   })();
   return estado;
 }
+
+// --- "Sugerir atividades de todos" -------------------------------------------
+// Para cada cliente: atividades pelas notas anteriores ou pelo CNAE, criadas
+// desligadas e marcadas como sugeridas (services/nfse/sugestao.ts).
+
+export interface ResultadoAtividades {
+  clientId: string;
+  nome: string;
+  criadas: { cTribNac: string; nome: string; origem: "notas" | "cnae"; conferir: string | null; aliqMunicipal: number | null }[];
+  jaExistiam: number;
+  motivo: string | null;
+  erro: string | null;
+}
+export interface EstadoLoteAtividades {
+  emAndamento: boolean;
+  inicio: string;
+  fim: string | null;
+  total: number;
+  feitos: number;
+  resultados: ResultadoAtividades[];
+}
+
+let estadoAtv: EstadoLoteAtividades | null = null;
+export const estadoLoteAtividades = () => estadoAtv;
+
+export async function rodarLoteAtividades(): Promise<EstadoLoteAtividades> {
+  if (estadoAtv?.emAndamento) return estadoAtv;
+  const { sugerirAtividades } = await import("./sugestao");
+  const todos = await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name));
+  estadoAtv = { emAndamento: true, inicio: new Date().toISOString(), fim: null, total: todos.length, feitos: 0, resultados: [] };
+  const atual = estadoAtv;
+  void (async () => {
+    for (const c of todos) {
+      try {
+        const r = await sugerirAtividades(c.id);
+        atual.resultados.push({ clientId: c.id, nome: c.name, ...r, erro: null });
+      } catch (e) {
+        atual.resultados.push({ clientId: c.id, nome: c.name, criadas: [], jaExistiam: 0, motivo: null, erro: e instanceof Error ? e.message : String(e) });
+      }
+      atual.feitos++;
+      await espera(600); // consulta de CNAE e de parâmetros municipais
+    }
+    atual.emAndamento = false;
+    atual.fim = new Date().toISOString();
+    nfseLog("info", "lote.atividades.fim", { total: atual.total, criadas: atual.resultados.reduce((a, x) => a + x.criadas.length, 0) });
+  })();
+  return estadoAtv;
+}

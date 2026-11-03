@@ -135,6 +135,9 @@ const SITUACAO: Record<string, string> = {
 export interface DanfseOptions {
   cancelada?: boolean;
   substituida?: boolean;
+  // Título do documento ("NFS-e 43 - TOMADOR - 02-11-2026"): o leitor de PDF do
+  // navegador mostra na aba, no lugar do código aleatório do endereço.
+  titulo?: string;
 }
 
 export async function renderDanfsePdf(nfseXml: string, opts: DanfseOptions = {}): Promise<Buffer> {
@@ -334,6 +337,10 @@ export async function renderDanfsePdf(nfseXml: string, opts: DanfseOptions = {})
     });
   }
 
+  if (opts.titulo) {
+    pdf.setTitle(opts.titulo, { showInWindowTitleBar: true });
+    pdf.setSubject("DANFSe — Documento Auxiliar da NFS-e");
+  }
   const bytes = await pdf.save();
   return Buffer.from(bytes);
 }

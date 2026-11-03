@@ -255,6 +255,10 @@ export const nfseAtividades = pgTable('nfse_atividades', {
   ibsCbsClassTrib: text('ibs_cbs_class_trib'), // cClassTrib 6 dígitos (Anexo VIII)
   ibsCbsCindOp: text('ibs_cbs_cind_op'), // cIndOp 6 dígitos (Anexo VII)
   ibsCbsIndDest: text('ibs_cbs_ind_dest').default('0').notNull(), // indDest 0 | 1
+  // Atividade criada pelo sistema (pelas notas anteriores ou pelo CNAE) e ainda
+  // não conferida pelo contador: { origem: 'notas' | 'cnae', conferir, … }.
+  // Salvar a atividade no formulário limpa o campo. Ver services/nfse/sugestao.ts.
+  sugestao: jsonb('sugestao'),
   ativo: boolean('ativo').default(true).notNull(),
   ordem: integer('ordem').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

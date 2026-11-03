@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Loader2,
   Power,
+  Wand2,
 } from "lucide-react";
 import {
   adminGetClientNfse,
@@ -20,6 +21,7 @@ import {
   adminDeleteAtividade,
   adminTestNfseConfig,
   adminSincronizarDistribuicao,
+  adminSugerirAtividades,
   type AdminClientNfse,
   type NfseAtividade,
   type NfseTestResult,
@@ -58,6 +60,24 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
   });
 
   const [editingAtv, setEditingAtv] = useState<NfseAtividade | null | undefined>(undefined);
+  const [sugerindo, setSugerindo] = useState(false);
+  const sugerir = async () => {
+    setSugerindo(true);
+    setMsg(null);
+    try {
+      const r = await adminSugerirAtividades(clientId);
+      setMsg(
+        r.criadas.length
+          ? { tone: "ok", text: `${r.criadas.length} atividade(s) sugerida(s), desligadas — confira cada uma abaixo.` }
+          : { tone: "err", text: r.motivo || (r.jaExistiam ? "As atividades sugeridas já estão cadastradas." : "Nenhuma atividade para sugerir.") },
+      );
+      await load();
+    } catch (e: any) {
+      setMsg({ tone: "err", text: e.message });
+    } finally {
+      setSugerindo(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -411,9 +431,19 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
           <h3 className="font-bold text-slate-800 dark:text-white">
             Atividades pré-configuradas <span className="text-slate-400">({ativas} ativa{ativas === 1 ? "" : "s"})</span>
           </h3>
-          <button onClick={() => setEditingAtv(null)} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-bold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">
-            <Plus className="h-4 w-4" /> Adicionar
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={sugerir}
+              disabled={sugerindo}
+              title="Pelas notas que o cliente já emitiu ou, sem notas, pelo CNAE — criadas desligadas para você conferir"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {sugerindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Sugerir
+            </button>
+            <button onClick={() => setEditingAtv(null)} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-bold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">
+              <Plus className="h-4 w-4" /> Adicionar
+            </button>
+          </div>
         </div>
 
         {data.atividades.length === 0 ? (
@@ -429,7 +459,17 @@ export function ClientNfsePanel({ clientId, onBack }: { clientId: string; onBack
                     <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{a.itemListaServico}</span>
                     {a.nome}
                     {!a.ativo && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800">inativa</span>}
+                    {a.sugestao && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">sugerida — conferir</span>}
                   </p>
+                  {a.sugestao && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {a.sugestao.origem === "notas" ? `Pelas notas anteriores (${a.sugestao.notas ?? "?"} nota(s))` : `Pelo CNAE ${a.sugestao.cnae ?? ""}`}
+                      {" · código "}{a.codTributacaoNac}
+                      {a.sugestao.aliqMunicipal != null ? ` · ISS parametrizado pela prefeitura: ${a.sugestao.aliqMunicipal.toLocaleString("pt-BR")}%` : ""}
+                      {a.sugestao.conferir ? ` · ${a.sugestao.conferir}` : ""}
+                      {" — abra, confira, marque como ativa e salve."}
+                    </p>
+                  )}
                   <p className="truncate text-xs text-slate-500">
                     ISS {a.aliquotaIss}%{a.issRetido ? " · retido" : ""} · {a.descricaoPadrao || "sem descrição padrão"}
                   </p>

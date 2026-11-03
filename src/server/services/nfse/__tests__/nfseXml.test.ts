@@ -63,6 +63,13 @@ describe("renderDanfsePdf", () => {
     expect(pdf.length).toBeGreaterThan(1000);
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
+  it("grava o título legível no PDF (aparece na aba do navegador)", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    const pdf = await renderDanfsePdf(NFSE_XML, { titulo: "NFS-e 42 - Tomador SA - 02-11-2026" });
+    const doc = await PDFDocument.load(pdf);
+    expect(doc.getTitle()).toBe("NFS-e 42 - Tomador SA - 02-11-2026");
+    expect(doc.catalog.getOrCreateViewerPreferences().getDisplayDocTitle()).toBe(true);
+  });
   it("aplica a marca d'água de cancelamento sem erro", async () => {
     const pdf = await renderDanfsePdf(NFSE_XML, { cancelada: true });
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");

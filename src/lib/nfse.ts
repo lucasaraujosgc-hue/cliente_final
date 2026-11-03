@@ -116,6 +116,8 @@ export interface NfseAtividade {
   ibsCbsIndDest: string;
   ativo: boolean;
   ordem: number;
+  // Criada pelo sistema (notas anteriores / CNAE) e ainda não conferida.
+  sugestao?: { origem: "notas" | "cnae"; conferir?: string | null; notas?: number | null; cnae?: string | null; aliqMunicipal?: number | null } | null;
 }
 
 export interface NfseAdminConfig {
@@ -398,20 +400,11 @@ export async function viewDanfse(id: string, nome?: string | null, base?: string
     if (await shareNativeBlob(blob, arquivo)) return;
   }
   const url = URL.createObjectURL(new File([blob], arquivo, { type: "application/pdf" }));
-  // Abre numa aba com o nome da nota no título (o endereço de um blob seria só
-  // um código aleatório). O botão "Baixar" das listas salva com esse nome.
-  const w = window.open("", "_blank");
-  if (w) {
-    w.document.title = arquivo.replace(/\.pdf$/, "");
-    w.document.body.style.margin = "0";
-    const frame = w.document.createElement("iframe");
-    frame.src = url;
-    frame.title = w.document.title;
-    frame.setAttribute("style", "border:0;width:100vw;height:100vh;display:block");
-    w.document.body.appendChild(frame);
-  } else {
-    baixarBlob(blob, arquivo);
-  }
+  // Abre o PDF direto na aba (um quadro com o PDF dentro é barrado pela política
+  // de segurança do site). O nome aparece pelo título gravado no próprio PDF; o
+  // botão "Baixar" salva o arquivo com esse nome.
+  const w = window.open(url, "_blank");
+  if (!w) baixarBlob(blob, arquivo);
   setTimeout(() => URL.revokeObjectURL(url), 10 * 60_000);
 }
 
@@ -525,6 +518,47 @@ export interface LoteEstado {
   feitos: number;
   resultados: LoteResultadoCliente[];
 }
+// Sugestão de atividades (notas anteriores ou CNAE) — services/nfse/sugestao.ts.
+export interface SugestaoCriada {
+  cTribNac: string;
+  nome: string;
+  origem: "notas" | "cnae";
+  conferir: string | null;
+  aliqMunicipal: number | null;
+}
+export interface ResultadoSugestao {
+  criadas: SugestaoCriada[];
+  jaExistiam: number;
+  motivo: string | null;
+}
+export interface LoteAtividadesEstado {
+  emAndamento: boolean;
+  inicio: string;
+  fim: string | null;
+  total: number;
+  feitos: number;
+  resultados: (ResultadoSugestao & { clientId: string; nome: string; erro: string | null })[];
+}
+const postVazio = (url: string) =>
+  apiFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, "accountant");
+export async function adminSugerirAtividades(clientId: string): Promise<ResultadoSugestao> {
+  const res = await postVazio(`/api/nfse/admin/clients/${clientId}/atividades/sugerir`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Falha ao sugerir atividades.");
+  return data;
+}
+export async function adminIniciarLoteAtividades(): Promise<LoteAtividadesEstado> {
+  const res = await postVazio("/api/nfse/admin/lote/atividades");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 409) throw new Error(data.error || "Falha ao iniciar.");
+  return data.estado;
+}
+export async function adminEstadoLoteAtividades(): Promise<LoteAtividadesEstado | null> {
+  const res = await apiFetch("/api/nfse/admin/lote/atividades", {}, "accountant");
+  const data = await res.json().catch(() => ({}));
+  return data.estado ?? null;
+}
+
 export async function adminIniciarLoteProcuracao(): Promise<LoteEstado> {
   const res = await apiFetch("/api/nfse/admin/lote/procuracao", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, "accountant");
   const data = await res.json().catch(() => ({}));

@@ -24,6 +24,7 @@ import {
 } from "../../../lib/nfse";
 import { ClientNfsePanel } from "./ClientNfsePanel";
 import { LoteProcuracao } from "./LoteProcuracao";
+import { LoteAtividades } from "./LoteAtividades";
 import { FiltroNotasBar, Paginacao } from "../../../components/FiltroNotas";
 import { FILTRO_VAZIO, filtrarNotas, nomeArquivoNfse, paginar, type FiltroNotas } from "../../../lib/filtroNotas";
 
@@ -71,6 +72,7 @@ export function AccountantNfse() {
       ) : tab === "clients" ? (
         <div className="space-y-4">
           <LoteProcuracao onFim={() => setVersaoLista((v) => v + 1)} />
+          <LoteAtividades onFim={() => setVersaoLista((v) => v + 1)} />
           <div key={versaoLista}>
             <ClientsTab onSelect={setSelected} />
           </div>

@@ -62,6 +62,8 @@ export function nfseAtividadeAdminDTO(a: NfseAtividadeRow) {
     ibsCbsIndDest: a.ibsCbsIndDest,
     ativo: a.ativo,
     ordem: a.ordem,
+    // Criada pelo sistema e ainda não conferida (services/nfse/sugestao.ts).
+    sugestao: (a.sugestao ?? null) as null | { origem: "notas" | "cnae"; conferir?: string | null; notas?: number; cnae?: string; aliqMunicipal?: number | null },
   };
 }
 

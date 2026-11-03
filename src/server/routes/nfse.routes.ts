@@ -12,7 +12,8 @@ import { uploadNfseCert } from "../services/upload";
 import { logAudit } from "../services/audit";
 import { sendDiskFile } from "../services/files";
 import { formatCnpj } from "../../lib/cnpj";
-import { estadoLote, rodarLoteProcuracao } from "../services/nfse/lote";
+import { estadoLote, estadoLoteAtividades, rodarLoteAtividades, rodarLoteProcuracao } from "../services/nfse/lote";
+import { sugerirAtividades } from "../services/nfse/sugestao";
 import { nomeArquivoNfse } from "../../lib/filtroNotas";
 import { LISTA_SERVICOS_LC116 } from "../../lib/listaServicosLC116";
 import {
@@ -480,6 +481,32 @@ export function registerNfseRoutes(app: Express) {
 
   app.get("/api/nfse/admin/lote/procuracao", verifyAccountantAuth, (_req, res) => {
     res.json({ estado: estadoLote() });
+  });
+
+  // Sugere as atividades (pelas notas anteriores ou pelo CNAE) — criadas
+  // desligadas e marcadas para o contador conferir. Todos (lote) ou um cliente.
+  app.post("/api/nfse/admin/lote/atividades", verifyAccountantAuth, validateBody(nfseLoteSchema), async (req, res) => {
+    if (estadoLoteAtividades()?.emAndamento) return res.status(409).json({ error: "Já está em andamento.", estado: estadoLoteAtividades() });
+    await logAudit(req, "nfse.lote_atividades", { summary: "Sugerir atividades de NFS-e de todos os clientes" });
+    res.status(202).json({ estado: await rodarLoteAtividades() });
+  });
+
+  app.get("/api/nfse/admin/lote/atividades", verifyAccountantAuth, (_req, res) => {
+    res.json({ estado: estadoLoteAtividades() });
+  });
+
+  app.post("/api/nfse/admin/clients/:id/atividades/sugerir", verifyAccountantAuth, validateBody(nfseLoteSchema), async (req, res) => {
+    const client = await loadClientOr404(req.params.id, res);
+    if (!client) return;
+    const r = await sugerirAtividades(client.id);
+    if (r.criadas.length) {
+      await logAudit(req, "nfse.atividades_sugeridas", {
+        targetType: "client",
+        targetId: client.id,
+        summary: `${r.criadas.length} atividade(s) sugerida(s): ${r.criadas.map((c) => c.cTribNac).join(", ")}`,
+      });
+    }
+    res.json(r);
   });
 
   // Contador: apaga uma tentativa rejeitada de qualquer cliente.
