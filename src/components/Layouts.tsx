@@ -7,6 +7,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { AccountDeletion } from "./AccountDeletion";
 import { AndroidAppBanner } from "./AndroidAppBanner";
+import { NotificacoesAviso } from "./NotificacoesAviso";
 
 const CHROME_FIELD =
   "w-full rounded-lg bg-sunken border border-line px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:outline-none focus:border-brand focus:bg-surface";
@@ -224,6 +225,7 @@ export function ClientLayout() {
         <div className="z-0 flex flex-1 flex-col overflow-auto">
           <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 md:px-8 md:py-9">
             <AndroidAppBanner className="mb-5" />
+            <NotificacoesAviso className="mb-5" />
             <Outlet />
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { apiFetch } from "../../lib/apiClient";
-import { isNativeApp, nativePushPermission, nativeEnablePush } from "../../lib/native";
+import { ativarPush, estadoPush, plataformaPush, type EstadoPush } from "../../lib/pushCliente";
 import React, { useEffect, useState, useRef } from "react";
 import {
   Bell,
@@ -17,7 +17,6 @@ import { format, parse, subMonths, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PwaBanner } from "./dashboard/PwaBanner";
-import { ehAndroidNoNavegador } from "../../components/AndroidAppBanner";
 import { DueDatesCard, DocDueStatus } from "./dashboard/DueDatesCard";
 import { BillingHistoryCharts } from "./dashboard/BillingHistoryCharts";
 import { SupportCards } from "./dashboard/SupportCards";
@@ -38,20 +37,15 @@ export function ClientDashboard() {
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [paidFlashId, setPaidFlashId] = useState<string | null>(null);
-  const [isCapacitorApp, setIsCapacitorApp] = useState(false);
   const [pushGranted, setPushGranted] = useState(false);
 
+  // Estado das notificações — o aviso do topo (NotificacoesAviso) também ativa
+  // e avisa pelo evento "push-estado".
   useEffect(() => {
-    const checkPushState = async () => {
-      const native = isNativeApp();
-      setIsCapacitorApp(native);
-      if (native) {
-        setPushGranted((await nativePushPermission()) === "granted");
-      } else if ('Notification' in window) {
-        setPushGranted(Notification.permission === 'granted');
-      }
-    };
-    checkPushState();
+    estadoPush().then((e) => setPushGranted(e === "ativo"));
+    const aoMudar = (ev: Event) => setPushGranted((ev as CustomEvent<EstadoPush>).detail === "ativo");
+    window.addEventListener("push-estado", aoMudar);
+    return () => window.removeEventListener("push-estado", aoMudar);
   }, []);
 
   const [showPwaBanner, setShowPwaBanner] = useState(() => {
@@ -176,107 +170,15 @@ export function ClientDashboard() {
   }, [selectedCompetence]);
 
   const subscribeToPush = async () => {
-    try {
-      const native = isNativeApp();
-
-      let fcmToken: string | null = null;
-      let subscriptionObject = null;
-
-      if (native) {
-        // App: token FCM único (iOS + Android) via @capacitor-firebase/messaging.
-        fcmToken = await nativeEnablePush();
-        if (!fcmToken) throw new Error("Permissão de notificação negada");
-      } else if ("serviceWorker" in navigator && "PushManager" in window) {
-        // Handle Web Push (PWA/Browser)
-        const registration = await navigator.serviceWorker.ready;
-        
-        // Get public key
-        const response = await apiFetch("/api/vapidPublicKey");
-        const vapidPublicKey = await response.text();
-        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-        // Inscrição antiga feita com outra chave do servidor (VAPID trocada):
-        // o subscribe() recusaria com InvalidStateError — refaz do zero.
-        let existente = await registration.pushManager.getSubscription();
-        const chaveAtual = existente?.options?.applicationServerKey;
-        if (existente && chaveAtual && !mesmaChave(new Uint8Array(chaveAtual), convertedVapidKey)) {
-          await existente.unsubscribe().catch(() => {});
-          existente = null;
-        }
-        subscriptionObject =
-          existente ??
-          (await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: convertedVapidKey,
-          }));
-      }
-
-      if (fcmToken || subscriptionObject) {
-        await apiFetch("/api/notifications/subscribe", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            subscriptionObject,
-            fcmToken,
-            deviceName: navigator.userAgent
-          })
-        });
-        console.log("Push notifications subscribed!");
-      }
-      await refreshPushGranted();
-    } catch (e) {
-      console.error("Failed to subscribe to push notifications", e);
-      await refreshPushGranted();
-    }
-  };
-
-  const refreshPushGranted = async () => {
-    if (isNativeApp()) {
-      setPushGranted((await nativePushPermission()) === "granted");
-    } else if ("Notification" in window) {
-      setPushGranted(Notification.permission === "granted");
-    }
+    setPushGranted((await ativarPush()) === "ativo");
   };
 
   useEffect(() => {
+    // Renovar o registro do aparelho já autorizado é com o aviso do topo da
+    // área do cliente — components/NotificacoesAviso.tsx.
     loadData();
-
-    // Only refresh the push subscription automatically when the user has
-    // already granted permission — never prompt on mount. The "Ativar
-    // Notificações" button handles the opt-in flow explicitly.
-    const native = isNativeApp();
-    if (native) {
-      // No app, re-registra em silêncio se já autorizado (o token FCM roda).
-      nativePushPermission().then((p) => {
-        if (p === "granted") subscribeToPush();
-      });
-    } else if ("Notification" in window && Notification.permission === "granted") {
-      subscribeToPush();
-    }
-    setIsCapacitorApp(native);
-    refreshPushGranted();
   }, []);
 
-  function mesmaChave(a: Uint8Array, b: Uint8Array) {
-    return a.length === b.length && a.every((v, i) => v === b[i]);
-  }
-
-  function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
-
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
 
   const handleUploadBankStatement = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -693,7 +595,7 @@ export function ClientDashboard() {
         onGoCharts={scrollToCharts}
         unreadNotifications={unreadNotifs}
         onOpenNotifications={() => setShowPrefsModal(true)}
-        onEnableNotifications={() => subscribeToPush().then(() => setPushGranted(true))}
+        onEnableNotifications={subscribeToPush}
       />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
@@ -730,7 +632,7 @@ export function ClientDashboard() {
         <BillingHistoryCharts chartData={chartData} />
       </div>
 
-      {showPwaBanner && !isCapacitorApp && !ehAndroidNoNavegador() && <PwaBanner onDismiss={dismissPwaBanner} />}
+      {showPwaBanner && plataformaPush() === "web" && <PwaBanner onDismiss={dismissPwaBanner} />}
 
       {/* MODAL CONFIG NOTIFICAÇÕES */}
       <NotificationPreferencesModal

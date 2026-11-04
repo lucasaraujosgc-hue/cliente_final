@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## Notificações no iPhone: instalar o portal e ativar (nov/2026)
+
+- Aviso no topo da área do cliente, **só no iPhone/iPad**
+  (`components/NotificacoesAviso.tsx`):
+  - no Safari: "Receba os avisos no seu iPhone" — como instalar na tela de
+    início (o iOS só entrega push para o portal instalado);
+  - aberto pelo ícone (PWA): botão **Ativar notificações** (o iOS só deixa
+    pedir a permissão a partir de um toque); negada, diz onde ligar em Ajustes.
+  - Dispensado, volta depois de 30 dias. App Android, Android no navegador e
+    computador: sem mudança.
+- Ativar/estado das notificações num módulo só (`lib/pushCliente.ts`), usado
+  pelo aviso e pelo botão da Visão Geral; quem já autorizou tem o registro do
+  aparelho renovado ao abrir a área do cliente (antes só na Visão Geral).
+- "Instale o portal como app" (Visão Geral) fica só no computador.
+
 ## Notificações: diagnóstico do push, envio manual no histórico, fuso do agendado (nov/2026)
 
 Revisão das rotas de notificação e do Firebase (03/11/2026). Em produção: 4
