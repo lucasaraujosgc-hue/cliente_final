@@ -1,0 +1,175 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head><body>
+<div id="probe"></div>
+<script>
+// ---- Ícone: SVG idêntico ao favicon.html -------------------------------------
+const COMMA = `<g transform="translate(-186.45, 579.05) scale(0.1, -0.1)" fill="FILL"><path d="M4160 4946 c-229 -49 -424 -182 -549 -375 -144 -223 -150 -568 -14 -801 104 -177 280 -285 511 -312 163 -19 233 -4 425 88 86 42 174 78 195 81 34 5 42 1 65 -26 57 -68 69 -180 41 -368 -49 -335 -213 -635 -493 -905 -196 -189 -449 -342 -733 -444 l-108 -39 0 -155 1 -155 26 -19 c25 -18 27 -18 82 -1 124 38 395 152 551 231 448 227 728 464 965 819 77 115 181 322 224 446 136 394 131 872 -13 1225 -135 330 -426 605 -736 695 -96 27 -340 36 -440 15z"/></g>`;
+const DEFS = `<defs>
+  <linearGradient id="bgGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512">
+    <stop offset="0%" stop-color="#04382c"/><stop offset="100%" stop-color="#022c22"/>
+  </linearGradient>
+  <radialGradient id="glowTL" cx="0" cy="0" r="1">
+    <stop offset="0%" stop-color="#10b981" stop-opacity="0.30"/>
+    <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+  </radialGradient>
+  <clipPath id="squircle"><rect x="0" y="0" width="512" height="512" rx="115" ry="115"/></clipPath>
+  <clipPath id="circle"><circle cx="256" cy="256" r="256"/></clipPath>
+</defs>`;
+const comma = (fill, scale = 1) =>
+  scale === 1 ? COMMA.replace("FILL", fill)
+              : `<g transform="translate(256 256) scale(${scale}) translate(-256 -256)">${COMMA.replace("FILL", fill)}</g>`;
+const bgLayer = (x, y, s) =>
+  `<rect x="${x}" y="${y}" width="${s}" height="${s}" fill="url(#bgGrad)"/><circle cx="70" cy="60" r="260" fill="url(#glowTL)"/>`;
+
+// viewBox do ícone adaptativo: a arte de 512 ocupa os 72dp visíveis de 108dp.
+const AD = 512 * 108 / 72, AO = (512 - AD) / 2;
+
+function svgIcon(mode, opts = {}) {
+  let vb = "0 0 512 512", body = "";
+  switch (mode) {
+    case "square":    body = bgLayer(0, 0, 512) + comma("#E78A45"); break;                       // Play Store (sem cantos)
+    case "squircle":  body = `<g clip-path="url(#squircle)">${bgLayer(0,0,512)}${comma("#E78A45")}</g>`; break;
+    case "circle":    body = `<g clip-path="url(#circle)">${bgLayer(0,0,512)}${comma("#E78A45")}</g>`; break;
+    case "adaptive-bg": vb = `${AO} ${AO} ${AD} ${AD}`; body = bgLayer(AO, AO, AD); break;
+    case "adaptive-fg": vb = `${AO} ${AO} ${AD} ${AD}`; body = comma("#E78A45", opts.scale); break;
+    case "mono":        vb = `${AO} ${AO} ${AD} ${AD}`; body = comma("#FFFFFF", opts.scale); break;
+    case "notify": {   // vírgula branca ocupando 20dp de altura num quadro de 24dp
+      const b = opts.bbox, side = b.h * 24 / 20, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      vb = `${cx - side/2} ${cy - side/2} ${side} ${side}`; body = comma("#FFFFFF"); break;
+    }
+    case "splash": {   // Android 12+: quadro de 288dp, ícone de 152dp (cabe no círculo de 192dp)
+      const S = 512 * 288 / 152, o = (512 - S) / 2;
+      vb = `${o} ${o} ${S} ${S}`;
+      body = `<g clip-path="url(#squircle)">${bgLayer(0,0,512)}${comma("#E78A45")}</g>`; break;
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="512" height="512">${DEFS}${body}</svg>`;
+}
+
+function loadImg(src) {
+  return new Promise((ok, err) => { const i = new Image(); i.onload = () => ok(i); i.onerror = err; i.src = src; });
+}
+async function svgCanvas(svg, w, h) {
+  const img = await loadImg("data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, w, h); return c;
+}
+async function iconPNG(mode, w, h = w, opts) { return (await svgCanvas(svgIcon(mode, opts), w, h)).toDataURL("image/png"); }
+
+// Caixa da vírgula no espaço 512 do ícone
+function commaBBox() {
+  const p = document.getElementById("probe");
+  p.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" style="position:absolute;left:0;top:0">${comma("#000")}</svg>`;
+  const r = p.querySelector("path").getBoundingClientRect(); p.innerHTML = "";
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
+}
+
+// ---- Wordmark: renderLogo() do exportar-logo.html (sem alterações de desenho) ----
+const COLORS = { primary: 'oklch(0.36 0.06 165)', accent: 'oklch(0.72 0.14 55)', muted: 'oklch(0.48 0.02 160)' };
+let fontsReady = false;
+async function ensureFonts(){
+  if (fontsReady) return;
+  try{ await Promise.all([document.fonts.load("700 200px 'Fraunces'"), document.fonts.load("400 200px 'Inter'"),
+                          document.fonts.load("600 200px 'Inter'")]); await document.fonts.ready; }catch(e){}
+  fontsReady = true;
+}
+function measureLogo(ctx, refSize){
+  const subSize = refSize * (11/28); const letterSpacing = subSize * 0.3;
+  ctx.font = `700 ${refSize}px 'Fraunces', serif`;
+  const wV = ctx.measureText('Vírgula').width; const wComma = ctx.measureText(',').width;
+  const headlineWidth = wV + wComma; const headlineHeight = refSize * 0.98;
+  ctx.font = `400 ${subSize}px 'Inter', sans-serif`;
+  const sub = 'CONTÁBIL'; let subWidth = 0;
+  for (let i=0;i<sub.length;i++){ subWidth += ctx.measureText(sub[i]).width; if (i < sub.length-1) subWidth += letterSpacing; }
+  const subIndent = subSize * 0.3; const gap = refSize * 0.09; const subHeight = subSize * 1.1;
+  const blockWidth = Math.max(headlineWidth, subWidth + subIndent); const blockHeight = headlineHeight + gap + subHeight;
+  return { headlineWidth, headlineHeight, wV, wComma, subWidth, subIndent, gap, subHeight, blockWidth, blockHeight, subSize, letterSpacing };
+}
+function drawTextSpaced(ctx, text, startX, y, letterSpacing){
+  let x = startX; for (let i=0;i<text.length;i++){ ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + letterSpacing; }
+}
+async function renderLogo(canvas, targetW, targetH, opts){
+  await ensureFonts();
+  canvas.width = targetW; canvas.height = targetH;
+  const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,targetW,targetH);
+  if (opts.background && opts.background !== 'transparent'){ ctx.fillStyle = opts.background; ctx.fillRect(0,0,targetW,targetH); }
+  const padFrac = (opts.padding ?? 14) / 100;
+  const maxW = targetW * (1 - padFrac*2), maxH = targetH * (1 - padFrac*2);
+  const refSize = 200; const m = measureLogo(ctx, refSize);
+  const scale = Math.min(maxW / m.blockWidth, maxH / m.blockHeight);
+  const finalRef = refSize * scale; const m2 = measureLogo(ctx, finalRef);
+  const blockX = (targetW - m2.blockWidth) / 2, blockTop = (targetH - m2.blockHeight) / 2;
+  ctx.textBaseline = 'alphabetic'; ctx.font = `700 ${finalRef}px 'Fraunces', serif`;
+  const headlineBaselineY = blockTop + m2.headlineHeight * 0.82;
+  const headlineStartX = blockX + (m2.blockWidth - m2.headlineWidth) / 2;
+  ctx.fillStyle = opts.primary || COLORS.primary; ctx.fillText('Vírgula', headlineStartX, headlineBaselineY);
+  ctx.fillStyle = COLORS.accent; ctx.fillText(',', headlineStartX + m2.wV, headlineBaselineY);
+  ctx.font = `400 ${m2.subSize}px 'Inter', sans-serif`; ctx.fillStyle = opts.muted || COLORS.muted;
+  const subStartX = blockX + (m2.blockWidth - m2.subWidth) / 2 + m2.subIndent/2;
+  const subBaselineY = blockTop + m2.headlineHeight + m2.gap + m2.subHeight * 0.78;
+  drawTextSpaced(ctx, 'CONTÁBIL', subStartX, subBaselineY, m2.letterSpacing);
+  return m2;
+}
+async function logoPNG(w, h, opts) { const c = document.createElement("canvas"); await renderLogo(c, w, h, opts); return c.toDataURL("image/png"); }
+
+// ---- Play Store: feature graphic 1024x500 ------------------------------------
+async function featureGraphic() {
+  await ensureFonts();
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 500; const ctx = c.getContext("2d");
+  ctx.fillStyle = "#f8f8f6"; ctx.fillRect(0, 0, 1024, 500);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 620);
+  g.addColorStop(0, "rgba(16,185,129,0.10)"); g.addColorStop(1, "rgba(16,185,129,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 1024, 500);
+  const icon = await svgCanvas(svgIcon("squircle"), 200, 200);
+  const logo = document.createElement("canvas"); await renderLogo(logo, 440, 200, { padding: 0 });
+  const blockW = 200 + 44 + 440, x0 = (1024 - blockW) / 2, y0 = 118;
+  ctx.shadowColor = "rgba(2,44,34,0.22)"; ctx.shadowBlur = 30; ctx.shadowOffsetY = 12;
+  ctx.drawImage(icon, x0, y0); ctx.shadowColor = "transparent";
+  ctx.drawImage(logo, x0 + 244, y0);
+  ctx.font = "500 25px 'Inter', sans-serif"; ctx.fillStyle = "#4b5a53"; ctx.textAlign = "center";
+  ctx.fillText("Guias, vencimentos e documentos da sua empresa num só lugar", 512, 400);
+  return c.toDataURL("image/png");
+}
+
+// ---- Play Store: screenshot de celular 1080x1920 (9:16) ---------------------
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+// Quebra em no máx. 2 linhas equilibradas (evita palavra órfã na 2ª linha)
+function wrap(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return [text];
+  const words = text.split(" "); let best = null;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(" "), b = words.slice(i).join(" ");
+    const w = Math.max(ctx.measureText(a).width, ctx.measureText(b).width);
+    if (!best || w < best.w) best = { w, lines: [a, b] };
+  }
+  return best.lines;
+}
+async function phoneShot(shotDataUrl, title, subtitle) {
+  await ensureFonts();
+  const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H; const ctx = c.getContext("2d");
+  const bg = ctx.createLinearGradient(0, 0, W, H); bg.addColorStop(0, "#04382c"); bg.addColorStop(1, "#022c22");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(140, 110, 0, 140, 110, 1100);
+  glow.addColorStop(0, "rgba(16,185,129,0.30)"); glow.addColorStop(1, "rgba(16,185,129,0)");
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center"; ctx.fillStyle = "#f8fafc"; ctx.font = "700 76px 'Fraunces', serif";
+  const lines = wrap(ctx, title, 920); let y = 180;
+  for (const l of lines) { ctx.fillText(l, W / 2, y); y += 90; }
+  ctx.font = "400 38px 'Inter', sans-serif"; ctx.fillStyle = "rgba(236,253,245,0.78)";
+  ctx.fillText(subtitle, W / 2, y + 8);
+
+  const shot = await loadImg(shotDataUrl);
+  const top = y + 70, screenH = H - top - 70 - 28, screenW = Math.round(screenH * shot.width / shot.height);
+  const bez = 14, fx = (W - screenW) / 2 - bez, fy = top;
+  ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 60; ctx.shadowOffsetY = 24;
+  ctx.fillStyle = "#0b1512"; roundRect(ctx, fx, fy, screenW + bez * 2, screenH + bez * 2, 58); ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.save(); roundRect(ctx, fx + bez, fy + bez, screenW, screenH, 44); ctx.clip();
+  ctx.imageSmoothingQuality = "high"; ctx.drawImage(shot, fx + bez, fy + bez, screenW, screenH); ctx.restore();
+  return c.toDataURL("image/png");
+}
+</script></body></html>

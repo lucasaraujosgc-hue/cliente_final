@@ -8,13 +8,16 @@ export function validateBody(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({
-        error: "Dados inválidos.",
-        details: result.error.issues.map((issue) => ({
-          field: issue.path.join("."),
-          message: issue.message,
-        })),
-      });
+      const details = result.error.issues.map((issue) => ({
+        field: issue.path.join(".") || "(raiz)",
+        message: issue.message,
+      }));
+      // Log no stdout — sem isso "Dados inválidos." é impossível de diagnosticar.
+      console.warn(
+        `[validateBody] 400 ${req.method} ${req.originalUrl} — ` +
+          details.map((d) => `${d.field}: ${d.message}`).join(" | "),
+      );
+      return res.status(400).json({ error: "Dados inválidos.", details });
     }
     // Replace body with the parsed/coerced data so handlers get clean types.
     req.body = result.data;

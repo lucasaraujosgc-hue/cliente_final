@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { differenceInDays, format } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { db } from "../db";
 import { documents, scheduledNotifications } from "../schema";
 import { sendClientNotification, sendPushToClients } from "./push";
@@ -93,9 +93,17 @@ export function getDaysDiff(dueDateStr: string, today: Date) {
   return differenceInDays(dueStart, todayStart);
 }
 
+// Data (AAAA-MM-DD) no horário de Brasília. O servidor roda em UTC: depois das
+// 21h o "hoje" do servidor já é amanhã — o lembrete saía na véspera, às 21h.
+const diaBrasilia = (d: Date) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
 export async function runNotificationSweeper() {
   const now = new Date();
-  const todayStr = format(now, "yyyy-MM-dd");
+  const todayStr = diaBrasilia(now);
+  const [anoBR, mesBR, diaBR] = todayStr.split("-").map(Number);
+  // "Hoje" de Brasília à meia-noite local — getDaysDiff só usa ano/mês/dia.
+  const hojeBR = new Date(anoBR, mesBR - 1, diaBR);
 
   const brTimeStr = new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -117,14 +125,14 @@ export async function runNotificationSweeper() {
       }
       
       const lastSent = rule.lastSent;
-      const alreadySentToday = lastSent && format(lastSent, "yyyy-MM-dd") === todayStr;
+      const alreadySentToday = lastSent && diaBrasilia(lastSent) === todayStr;
       
       if (alreadySentToday) continue;
 
       let sentAny = false;
 
       if (rule.type === "recurrent") {
-        if (rule.scheduleDay && now.getDate() === rule.scheduleDay) {
+        if (rule.scheduleDay && diaBR === rule.scheduleDay) {
            console.log(`[Notification Sweeper] Disparando lembrete recorrente "${rule.title}"`);
            await sendPushToClients(rule.clientId, rule.title, rule.body);
            sentAny = true;
@@ -148,7 +156,7 @@ export async function runNotificationSweeper() {
         for (const doc of docs) {
           if (doc.status === "paid" || !doc.dueDate) continue;
           
-          const diff = getDaysDiff(doc.dueDate, now);
+          const diff = getDaysDiff(doc.dueDate, hojeBR);
           if (diff === targetDays) {
             const dynamicBody = rule.body
               .replace(/\[NOME_GUIA\]/g, doc.title)
@@ -172,7 +180,7 @@ export async function runNotificationSweeper() {
            .update(scheduledNotifications)
            .set({ lastSent: now })
            .where(eq(scheduledNotifications.id, rule.id));
-      } else if (rule.type !== "recurrent" || now.getDate() !== rule.scheduleDay) {
+      } else if (rule.type !== "recurrent" || diaBR !== rule.scheduleDay) {
          // Para 3_days_before/on_due_date que não enviaram nada hoje, nós podemos
          // ou marcar como verificado hoje para não rodar de novo na próxima meia hora,
          // ou não marcar e deixar rodar depois. Se deixarmos rodar depois, 

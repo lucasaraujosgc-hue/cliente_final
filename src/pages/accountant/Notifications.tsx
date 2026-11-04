@@ -1,4 +1,5 @@
 import { apiFetch } from "../../lib/apiClient";
+import { formatCnpj } from "../../lib/cnpj";
 import React, { useState, useEffect } from "react";
 import { Send, Bell, CheckSquare, Square, Clock, Trash2, Calendar, AlertTriangle } from "lucide-react";
 
@@ -85,7 +86,17 @@ export function AccountantNotifications() {
         })
       }, "accountant");
       if (res.ok) {
-        alert("Notificação push disparada com sucesso!");
+        const r = await res.json().catch(() => ({}));
+        // O aviso sempre entra no histórico do cliente; o push depende de aparelho cadastrado.
+        alert(
+          `Aviso registrado para ${selectedClientIds.length} cliente(s) — eles veem no portal.
+` +
+            `Push: ${r.entregues ?? 0} de ${(r.entregues ?? 0) + (r.falhas ?? 0)} entrega(s) em ${r.dispositivos ?? 0} aparelho(s).` +
+            (r.clientesSemAparelho ? `
+${r.clientesSemAparelho} cliente(s) sem aparelho com notificações ativas.` : "") +
+            (r.erros?.length ? `
+Falhas: ${r.erros.join(", ")}` : ""),
+        );
         setFormImmediate({ title: "", body: "" });
         setSelectedClientIds([]);
       } else {
@@ -225,7 +236,7 @@ export function AccountantNotifications() {
     <div className="space-y-8 animate-in fade-in max-w-6xl mx-auto pb-16">
       
       {/* HEADER SECTION */}
-      <header className="h-16 flex items-center justify-between px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm">
+      <header className="min-h-16 py-3 flex items-center justify-between px-5 sm:px-8 bg-white/40 dark:bg-slate-900/30 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Notificações Push</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">Disparar ou agendar alertas automáticos para seus clientes fiscais.</p>
@@ -340,7 +351,7 @@ export function AccountantNotifications() {
                      <div className="flex-1 min-w-0">
                        <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{client.name}</p>
                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate uppercase">
-                         {client.accountantCategory || "Geral"} • {client.cnpj}
+                         {client.accountantCategory || "Geral"} • {formatCnpj(client.cnpj)}
                        </p>
                      </div>
                    </div>
