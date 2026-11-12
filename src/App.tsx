@@ -43,6 +43,7 @@ const AccountantPayments = named(() => import("./pages/accountant/Payments"), "A
 const FileGallery = named(() => import("./pages/accountant/FileGallery"), "FileGallery");
 const Settings = named(() => import("./pages/accountant/Settings"), "Settings");
 const Devices = named(() => import("./pages/accountant/Devices"), "Devices");
+const DownloadsXml = named(() => import("./pages/accountant/DownloadsXml"), "DownloadsXml");
 const Audit = named(() => import("./pages/accountant/Audit"), "Audit");
 const AccountantFiscal = named(() => import("./pages/accountant/Fiscal"), "AccountantFiscal");
 
@@ -91,6 +92,7 @@ export default function App() {
               <Route path="payments" element={<AccountantPayments />} />
               <Route path="fiscal" element={<Navigate to="/admin" replace />} />
               <Route path="devices" element={<Devices />} />
+              <Route path="downloads" element={<DownloadsXml />} />
               <Route path="audit" element={<Audit />} />
               <Route path="gallery" element={<FileGallery />} />
               <Route path="settings" element={<Settings />} />

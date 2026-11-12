@@ -13,6 +13,7 @@ import { logAudit } from "../services/audit";
 import { sendDiskFile } from "../services/files";
 import { formatCnpj } from "../../lib/cnpj";
 import { estadoLote, estadoLoteAtividades, rodarLoteAtividades, rodarLoteProcuracao } from "../services/nfse/lote";
+import { resumoXml, zipXmlCliente } from "../services/nfse/exportacao";
 import { sugerirAtividades } from "../services/nfse/sugestao";
 import { nomeArquivoNfse } from "../../lib/filtroNotas";
 import { LISTA_SERVICOS_LC116 } from "../../lib/listaServicosLC116";
@@ -23,6 +24,8 @@ import {
   nfseCepLookupSchema,
   nfseEmitSchema,
   nfseCancelSchema,
+  nfseXmlPeriodoSchema,
+  nfseXmlZipSchema,
   nfseLoteSchema,
 } from "../schemas/validation";
 import {
@@ -510,6 +513,31 @@ export function registerNfseRoutes(app: Express) {
       });
     }
     res.json(r);
+  });
+
+  // Download dos XML por empresa e período (aba Downloads do contador).
+  app.get("/api/nfse/admin/xml/resumo", verifyAccountantAuth, async (req, res) => {
+    const q = nfseXmlPeriodoSchema.safeParse(req.query);
+    if (!q.success) return res.status(400).json({ error: q.error.issues[0]?.message || "Período inválido." });
+    res.json({ empresas: await resumoXml(q.data.de, q.data.ate) });
+  });
+
+  app.get("/api/nfse/admin/xml/zip", verifyAccountantAuth, async (req, res) => {
+    const q = nfseXmlZipSchema.safeParse(req.query);
+    if (!q.success) return res.status(400).json({ error: q.error.issues[0]?.message || "Parâmetros inválidos." });
+    const { clientId, de, ate, tipos } = q.data;
+    const z = await zipXmlCliente(clientId, de, ate, tipos);
+    if (!z) return res.status(404).json({ error: "Nenhuma nota com XML no período." });
+    await logAudit(req, "nfse.xml_download", {
+      targetType: "client",
+      targetId: clientId,
+      summary: `Download dos XML ${de === ate ? de : `${de} a ${ate}`}: ${z.prestados} prestado(s), ${z.tomados} tomado(s)`,
+      metadata: { de, ate, tipos, prestados: z.prestados, tomados: z.tomados },
+    });
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="xml-nfse.zip"; filename*=UTF-8''${encodeURIComponent(z.arquivo)}`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(z.bytes);
   });
 
   // Contador: cancela uma NFS-e emitida de qualquer cliente (evento de

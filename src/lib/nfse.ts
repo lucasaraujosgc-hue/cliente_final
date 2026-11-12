@@ -697,6 +697,38 @@ export async function adminListNfseEmissoes(): Promise<(NfseEmissaoDetail & { cl
 }
 
 // Baixa o XML da DPS assinada ou da NFS-e de uma emissão (diagnóstico).
+// Download dos XML por empresa e período (aba Downloads) — services/nfse/exportacao.ts.
+export interface ResumoXmlEmpresa {
+  clientId: string;
+  nome: string;
+  cnpj: string;
+  prestados: number;
+  tomados: number;
+  canceladas: number;
+}
+export type TipoXml = "prestados" | "tomados";
+
+export async function adminResumoXml(de: string, ate: string): Promise<ResumoXmlEmpresa[]> {
+  const res = await apiFetch(`/api/nfse/admin/xml/resumo?de=${de}&ate=${ate}`, {}, "accountant");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Falha ao consultar as notas do período.");
+  return data.empresas || [];
+}
+
+/** Baixa o .zip de uma empresa; devolve o nome do arquivo. */
+export async function adminBaixarZipXml(clientId: string, de: string, ate: string, tipos: TipoXml[]): Promise<string> {
+  const res = await apiFetch(`/api/nfse/admin/xml/zip?clientId=${clientId}&de=${de}&ate=${ate}&tipos=${tipos.join(",")}`, {}, "accountant");
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || "Falha ao gerar o zip.");
+  }
+  const cd = res.headers.get("Content-Disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  const arquivo = m ? decodeURIComponent(m[1]) : `xml-nfse-${clientId}.zip`;
+  baixarBlob(await res.blob(), arquivo);
+  return arquivo;
+}
+
 export async function adminDownloadEmissaoXml(id: string, tipo: "dps" | "nfse"): Promise<void> {
   const res = await apiFetch(`/api/nfse/admin/emissoes/${id}/xml?tipo=${tipo}`, {}, "accountant");
   if (!res.ok) {

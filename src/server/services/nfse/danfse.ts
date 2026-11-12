@@ -13,9 +13,9 @@ import { NfseError } from "./errors";
 import { PDFDocument } from "pdf-lib";
 import { nomeArquivoNfse } from "../../../lib/filtroNotas";
 
-// v2: o PDF leva no título o número, o tomador e a data. Os gerados antes (sem
-// título) são refeitos na próxima abertura.
-const VERSAO_PDF = "v2";
+// v2: o PDF leva no título o número, o tomador e a data. v3: layout em grade
+// (o do emissor INTER). Os gerados antes são refeitos na próxima abertura.
+const VERSAO_PDF = "v3";
 
 function tituloDa(e: NfseEmissaoRow): string {
   const iso = (v: Date | string | null | undefined) => (v instanceof Date ? v.toISOString() : v ?? null);

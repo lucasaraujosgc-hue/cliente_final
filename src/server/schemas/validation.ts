@@ -317,6 +317,24 @@ export const nfseEmitSchema = z.object({
     .nullish(),
 });
 
+// Download dos XML (query string): período por competência AAAA-MM.
+const mesAno = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use AAAA-MM.");
+export const nfseXmlPeriodoSchema = z
+  .object({ de: mesAno, ate: mesAno })
+  .refine((q) => q.de <= q.ate, "O mês inicial é depois do final.");
+export const nfseXmlZipSchema = z
+  .object({
+    clientId: uuid,
+    de: mesAno,
+    ate: mesAno,
+    tipos: z
+      .string()
+      .optional()
+      .transform((s) => (s ? s.split(",") : ["prestados", "tomados"]))
+      .pipe(z.array(z.enum(["prestados", "tomados"])).min(1, "Escolha prestados e/ou tomados.")),
+  })
+  .refine((q) => q.de <= q.ate, "O mês inicial é depois do final.");
+
 export const nfseCancelSchema = z.object({
   motivo: z
     .string()

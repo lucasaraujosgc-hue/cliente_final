@@ -1,5 +1,25 @@
 # CHANGELOG.md
 
+## DANFSe no layout do emissor INTER + aba Downloads de XML (nov/2026)
+
+- **DANFSe novo** (`services/nfse/danfseRender.ts`): o layout em grade do
+  emissor do sistema INTER (branch `feat/dashboard-pagadores-tema-virgula`),
+  refeito em pdf-lib — sem Chrome/Puppeteer no servidor. Chave em blocos de 4
+  com QR Code da consulta pública; prestador e tomador com IM, telefone, e-mail
+  e endereço; código nacional e municipal com descrição; NBS; obra/evento;
+  ISSQN (tributação, retenção, município de incidência, alíquota, base, ISS);
+  valores; informações complementares. Marca d'água CANCELADA / SUBSTITUÍDA /
+  SEM VALOR FISCAL (homologação). Leitura completa do XML em
+  `nfseXml.ts → lerNfseDanfse`. Datas/horas como estão no XML (Brasília) — o
+  PDF antigo mostrava o horário do servidor (UTC). Cache `danfse_v3_*`: os PDFs
+  antigos são refeitos na próxima abertura.
+- **Downloads** (barra lateral do contador, `/admin/downloads`): competência de/até,
+  prestados e/ou tomados, lista das empresas com notas no período (busca,
+  selecionar todas) e **um .zip por empresa** com as pastas `Prestados/` e
+  `Tomados/` (canceladas em `Canceladas/` dentro de cada uma). Só produção e só
+  notas com o XML oficial. `GET /api/nfse/admin/xml/resumo` e
+  `GET /api/nfse/admin/xml/zip` (auditado), `services/nfse/exportacao.ts`.
+
 ## Notificações no iPhone: instalar o portal e ativar (nov/2026)
 
 - Aviso no topo da área do cliente, **só no iPhone/iPad**

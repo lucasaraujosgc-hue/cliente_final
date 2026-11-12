@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History, Receipt, FileText, MessageSquare, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Menu, Pin, X, Bell, AlertCircle, Smartphone, History, Receipt, FileText, MessageSquare, ShieldCheck, FileDown } from "lucide-react";
 import { cn } from "../lib/utils";
 import { apiFetch, hasSession, logout } from "../lib/apiClient";
 import { ThemeToggle } from "./ThemeToggle";
@@ -383,6 +383,7 @@ export function AccountantLayout() {
     { name: "Clientes", path: "/admin/clients", icon: Users },
     { name: "Mensagens", path: "/admin/mensagens", icon: MessageSquare, badge: unreadMsgs },
     { name: "NFS-e", path: "/admin/nfse", icon: FileText },
+    { name: "Downloads", path: "/admin/downloads", icon: FileDown },
     { name: "Pagamentos", path: "/admin/payments", icon: Receipt },
     { name: "Notificações", path: "/admin/notifications", icon: Bell },
     { 
