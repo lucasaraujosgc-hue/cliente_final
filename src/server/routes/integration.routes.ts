@@ -1,9 +1,19 @@
 import { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { clients, documents, billingData } from "../schema";
+import { clients, documents } from "../schema";
 import { verifyIntegrationToken } from "../middleware/auth";
+import { getIntegrationClient } from "../types";
+import { clientIntegrationDTO } from "../dto/client";
+import { normalizeCnpj } from "../../lib/cnpj";
 import { hashPassword } from "../services/password";
+import { upsertBilling } from "../services/billing";
+import { validateBody } from "../middleware/validate";
+import {
+  integrationUploadDocSchema,
+  integrationSyncClientSchema,
+  integrationUpdateBillingSchema,
+} from "../schemas/validation";
 
 // External-facing integration API, authenticated via each client's
 // integration hash token (not JWT).
@@ -11,8 +21,9 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/upload-doc",
     verifyIntegrationToken,
+    validateBody(integrationUploadDocSchema),
     async (req, res) => {
-      const client = (req as any).integrationClient;
+      const client = getIntegrationClient(req);
       const { title, category, dueDate } = req.body;
 
       const [newDoc] = await db
@@ -38,27 +49,29 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/sync-client",
     verifyIntegrationToken,
+    validateBody(integrationSyncClientSchema),
     async (req, res) => {
-      const { cnpj, name, regularityStatus } = req.body;
-      const integrationClient = (req as any).integrationClient;
+      const { name, regularityStatus } = req.body;
+      const cnpjDigits = normalizeCnpj(req.body.cnpj);
+      const integrationClient = getIntegrationClient(req);
 
-      // Segurança: O token de integração de um cliente só pode sincronizar o faturamento dele mesmo (mesmo CNPJ)!
-      if (cnpj.replace(/\D/g, "") !== integrationClient.cnpj.replace(/\D/g, "")) {
+      // A client's integration token may only sync that same client (CNPJ).
+      if (cnpjDigits !== normalizeCnpj(integrationClient.cnpj)) {
         return res.status(403).json({ error: "Acesso negado. Token não autorizado para este CNPJ." });
       }
 
       const clientList = await db
         .select()
         .from(clients)
-        .where(eq(clients.cnpj, cnpj));
+        .where(eq(clients.cnpj, cnpjDigits));
       let client;
       if (clientList.length === 0) {
         [client] = await db
           .insert(clients)
           .values({
-            cnpj,
+            cnpj: cnpjDigits,
             name,
-            passwordHash: await hashPassword(cnpj.replace(/[^0-9]/g, "").slice(0, 6)),
+            passwordHash: await hashPassword(cnpjDigits),
             regularityStatus: regularityStatus || "green",
           })
           .returning();
@@ -70,10 +83,10 @@ export function registerIntegrationRoutes(app: Express) {
             regularityStatus:
               regularityStatus || clientList[0].regularityStatus,
           })
-          .where(eq(clients.cnpj, cnpj))
+          .where(eq(clients.cnpj, cnpjDigits))
           .returning();
       }
-      res.json({ success: true, client });
+      res.json({ success: true, client: clientIntegrationDTO(client) });
     },
   );
 
@@ -81,39 +94,22 @@ export function registerIntegrationRoutes(app: Express) {
   app.post(
     "/api/integration/update-billing",
     verifyIntegrationToken,
+    validateBody(integrationUpdateBillingSchema),
     async (req, res) => {
-      const { clientId, month, revenue, expenses, payroll } = req.body;
-      const integrationClient = (req as any).integrationClient;
+      const { clientId, month } = req.body;
+      const integrationClient = getIntegrationClient(req);
 
       // Segurança: O token de integração de um cliente só pode alterar o faturamento dele mesmo!
       if (clientId !== integrationClient.id) {
         return res.status(403).json({ error: "Acesso negado. Token não autorizado para este clientId." });
       }
-
-      const existing = await db
-        .select()
-        .from(billingData)
-        .where(eq(billingData.clientId, clientId));
-      const target = existing.find((b) => b.month === month);
-
-      if (target) {
-        await db
-          .update(billingData)
-          .set({
-            revenue,
-            expenses,
-            payroll,
-          })
-          .where(eq(billingData.id, target.id));
-      } else {
-        await db.insert(billingData).values({
-          clientId,
-          month,
-          revenue,
-          expenses,
-          payroll,
-        });
+      if (!month) {
+        return res.status(400).json({ error: "month é obrigatório." });
       }
+
+      // Accepts either the current services model or the legacy
+      // revenue/expenses/payroll fields (see upsertBilling).
+      await upsertBilling(clientId, req.body);
       res.json({ success: true });
     },
   );

@@ -1,14 +1,22 @@
 import { Express } from "express";
 import fs from "fs";
 import path from "path";
-import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { clients, documents } from "../schema";
-import { upload, UPLOADS_DIR } from "../services/upload";
+import { documents } from "../schema";
+import { findClientByIntegrationToken } from "../services/integrationToken";
+import {
+  upload,
+  UPLOADS_DIR,
+  sanitizeFilename,
+  isAllowedUploadName,
+  validateUploadedFileContent,
+  MAX_UPLOAD_BYTES,
+} from "../services/upload";
+import { contentMatchesExtension } from "../services/fileType";
 import { triggerDebouncedDocumentNotification } from "../services/notificationSweeper";
 import { webhookLimiter } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validate";
-import { webhookReceitasSchema } from "../schemas/validation";
+import { webhookReceitasSchema, webhookDocumentosSchema } from "../schemas/validation";
 
 // Routes used by external systems (accounting software, file providers, etc.)
 // to push documents into the platform.
@@ -34,16 +42,12 @@ export function registerWebhookRoutes(app: Express) {
       }
 
       // Find client
-      const clientList = await db
-        .select()
-        .from(clients)
-        .where(eq(clients.integrationHash, hash_empresa));
-      if (clientList.length === 0) {
+      const client = await findClientByIntegrationToken(hash_empresa);
+      if (!client) {
         return res
           .status(404)
           .json({ error: "Client not found using provided hash" });
       }
-      const client = clientList[0];
 
       // Save file
       let safeFilename = "";
@@ -51,9 +55,19 @@ export function registerWebhookRoutes(app: Express) {
       let extractedValue = null;
       if (arquivo_base64) {
         const buffer = Buffer.from(arquivo_base64, "base64");
-        safeFilename = `${Date.now()}_${nome_arquivo || "documento"}`;
+        if (buffer.length > MAX_UPLOAD_BYTES) {
+          return res.status(413).json({ error: "Arquivo excede o limite de 10 MB." });
+        }
+        // Only enforce the extension allow-list when the caller gave a name.
+        if (nome_arquivo && !isAllowedUploadName(nome_arquivo)) {
+          return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+        }
+        if (nome_arquivo && !contentMatchesExtension(buffer, nome_arquivo)) {
+          return res.status(415).json({ error: "O conteúdo do arquivo não corresponde à sua extensão." });
+        }
+        safeFilename = `${Date.now()}_${sanitizeFilename(nome_arquivo || "documento")}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
-        fs.writeFileSync(filePath, buffer);
+        await fs.promises.writeFile(filePath, buffer);
 
         // Extract Pix Code and Value if it's a PDF
         if (safeFilename.toLowerCase().endsWith(".pdf")) {
@@ -119,8 +133,9 @@ export function registerWebhookRoutes(app: Express) {
 
       res.status(200).json({ success: true, documentId: newDoc[0].id });
     } catch (e: any) {
-      console.error("Webhook Error:", e);
-      res.status(500).json({ error: e.message });
+      // Log the detail server-side; never echo e.message to an external caller.
+      console.error("Webhook /receitas error:", e);
+      res.status(500).json({ error: "Erro ao processar o webhook." });
     }
   });
 
@@ -130,61 +145,60 @@ export function registerWebhookRoutes(app: Express) {
     "/api/webhook/documentos",
     webhookLimiter,
     upload.single("arquivo"),
+    validateUploadedFileContent,
+    validateBody(webhookDocumentosSchema),
     async (req, res) => {
       try {
-        let companyHash, categoria, nomeArquivo, dataVencimento;
-        let arquivoBase64 = null;
+        const companyHash = req.body.companyHash;
+        const categoria = req.body.categoria || "Outros";
+        const dataVencimento = req.body.dataVencimento;
+        // multer diskStorage populates req.file.path/.filename (not .buffer).
+        const nomeArquivo =
+          req.body.nomeArquivo ||
+          (req.file ? req.file.originalname : "Documento Integrado");
 
-        if (req.file) {
-          // multipart/form-data
-          companyHash = req.body.companyHash;
-          categoria = req.body.categoria || "Outros";
-          nomeArquivo = req.body.nomeArquivo || req.file.originalname;
-          dataVencimento = req.body.dataVencimento;
-          arquivoBase64 =
-            "data:" +
-            req.file.mimetype +
-            ";base64," +
-            req.file.buffer.toString("base64");
-        } else {
-          // JSON
-          companyHash = req.body.companyHash;
-          categoria = req.body.categoria || "Outros";
-          nomeArquivo = req.body.nomeArquivo || "Documento Integrado";
-          dataVencimento = req.body.dataVencimento;
-          if (req.body.arquivo) {
-            arquivoBase64 = String(req.body.arquivo).startsWith("data:")
-              ? req.body.arquivo
-              : "data:application/pdf;base64," + req.body.arquivo;
-          }
+        let arquivoBase64: string | null = null;
+        if (!req.file && req.body.arquivo) {
+          arquivoBase64 = String(req.body.arquivo).startsWith("data:")
+            ? req.body.arquivo
+            : "data:application/pdf;base64," + req.body.arquivo;
         }
 
         if (!companyHash) {
+          // A rejected multipart upload already wrote a temp file — clean it.
+          if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
           return res
             .status(400)
             .json({ error: "O parâmetro companyHash é obrigatório" });
         }
 
-        const clientList = await db
-          .select()
-          .from(clients)
-          .where(eq(clients.integrationHash, companyHash));
-        if (clientList.length === 0) {
+        const targetClient = await findClientByIntegrationToken(companyHash);
+        if (!targetClient) {
+          if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
           return res
             .status(404)
             .json({ error: "Empresa não encontrada para este hash" });
         }
 
-        const targetClient = clientList[0];
-
-        let finalFileUrl = null;
+        // multipart: multer already saved it and validateUploadedFileContent
+        // verified the magic bytes.
+        let finalFileUrl: string | null = req.file ? `/uploads/${req.file.filename}` : null;
         if (arquivoBase64) {
            const match = arquivoBase64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
            if (match) {
               const buffer = Buffer.from(match[2], 'base64');
-              const safeFilename = `${Date.now()}_${nomeArquivo || "documento.pdf"}`;
+              if (buffer.length > MAX_UPLOAD_BYTES) {
+                return res.status(413).json({ error: "Arquivo excede o limite de 10 MB." });
+              }
+              if (nomeArquivo && !isAllowedUploadName(nomeArquivo)) {
+                return res.status(415).json({ error: "Tipo de arquivo não permitido." });
+              }
+              if (nomeArquivo && !contentMatchesExtension(buffer, nomeArquivo)) {
+                return res.status(415).json({ error: "O conteúdo do arquivo não corresponde à sua extensão." });
+              }
+              const safeFilename = `${Date.now()}_${sanitizeFilename(nomeArquivo || "documento.pdf")}`;
               const filePath = path.join(UPLOADS_DIR, safeFilename);
-              fs.writeFileSync(filePath, buffer);
+              await fs.promises.writeFile(filePath, buffer);
               finalFileUrl = `/uploads/${safeFilename}`;
            }
         }
@@ -209,10 +223,11 @@ export function registerWebhookRoutes(app: Express) {
           documentId: newDoc.id,
         });
       } catch (e: any) {
-        console.error("Webhook Erro:", e);
+        // Log the detail server-side; never echo e.message to an external caller.
+        console.error("Webhook /documentos error:", e);
         return res
           .status(500)
-          .json({ error: "Erro interno no servidor webhook: " + e.message });
+          .json({ error: "Erro ao processar o webhook." });
       }
     },
   );
